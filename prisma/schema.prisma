@@ -1,0 +1,247 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// ---------------------------------------------------------
+// 1. Authentication & Roles
+// ---------------------------------------------------------
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String?   @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?
+  roleId        String?
+  role          Role?     @relation(fields: [roleId], references: [id])
+  employee      Employee?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Role {
+  id          String   @id @default(cuid())
+  name        String   @unique // e.g., "Super Admin", "CEO / Founder", "Sales"
+  permissions String   // JSON string of permissions
+  users       User[]
+}
+
+// ---------------------------------------------------------
+// 2. HR / Team / Employees
+// ---------------------------------------------------------
+model Employee {
+  id               String   @id @default(cuid())
+  userId           String   @unique
+  user             User     @relation(fields: [userId], references: [id])
+  designation      String?
+  department       String?
+  contactNumber    String?
+  joiningDate      DateTime?
+  managerId        String?
+  manager          Employee?  @relation("ManagerToEmployee", fields: [managerId], references: [id])
+  subordinates     Employee[] @relation("ManagerToEmployee")
+  
+  // Relations
+  tasksAssigned    Task[]     @relation("TaskAssignee")
+  projectsManaged  Project[]  @relation("ProjectManager")
+  siteVisits       SiteVisit[]
+  rewards          Reward[]
+  activities       Activity[]
+  
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+// ---------------------------------------------------------
+// 3. CRM (Leads, Customers, Contacts, Quotes)
+// ---------------------------------------------------------
+model Customer {
+  id        String   @id @default(cuid())
+  name      String
+  email     String?
+  phone     String?
+  address   String?
+  
+  leads     Lead[]
+  projects  Project[]
+  payments  Payment[]
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Lead {
+  id                   String   @id @default(cuid())
+  customerId           String
+  customer             Customer @relation(fields: [customerId], references: [id])
+  propertyType         String?
+  budgetRange          String?
+  status               String   @default("New") // New, Follow-up, Site Visit, Negotiation, Won, Lost
+  enquiryDate          DateTime @default(now())
+  
+  // Relations
+  quotes               Quote[]
+  siteVisits           SiteVisit[]
+  project              Project?
+  
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+}
+
+model Quote {
+  id          String   @id @default(cuid())
+  leadId      String
+  lead        Lead     @relation(fields: [leadId], references: [id])
+  amount      Float
+  status      String   @default("Draft") // Draft, Sent, Accepted, Rejected
+  date        DateTime @default(now())
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model SiteVisit {
+  id          String   @id @default(cuid())
+  leadId      String?
+  lead        Lead?    @relation(fields: [leadId], references: [id])
+  assignedTo  String
+  employee    Employee @relation(fields: [assignedTo], references: [id])
+  visitDate   DateTime
+  notes       String?
+  status      String   @default("Scheduled")
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ---------------------------------------------------------
+// 4. Projects & Tasks
+// ---------------------------------------------------------
+model Project {
+  id               String   @id @default(cuid())
+  name             String
+  customerId       String
+  customer         Customer @relation(fields: [customerId], references: [id])
+  leadId           String?  @unique
+  lead             Lead?    @relation(fields: [leadId], references: [id])
+  managerId        String
+  manager          Employee @relation("ProjectManager", fields: [managerId], references: [id])
+  
+  type             String?
+  status           String   @default("Planning") // Planning, In Progress, On Hold, Completed, Cancelled
+  startDate        DateTime?
+  expectedEndDate  DateTime?
+  progress         Int      @default(0)
+  
+  // Relations
+  tasks            Task[]
+  boqItems         BoqItem[]
+  expenses         Expense[]
+  payments         Payment[]
+  
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+model Task {
+  id          String   @id @default(cuid())
+  title       String
+  description String?
+  projectId   String?
+  project     Project? @relation(fields: [projectId], references: [id])
+  assigneeId  String?
+  assignee    Employee? @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  
+  priority    String   @default("Medium") // Low, Medium, High
+  status      String   @default("Not Started") // Not Started, In Progress, Waiting, Completed
+  dueDate     DateTime?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ---------------------------------------------------------
+// 5. Finance (BOQ, Expenses, Payments, PPR)
+// ---------------------------------------------------------
+model BoqItem {
+  id              String   @id @default(cuid())
+  projectId       String
+  project         Project  @relation(fields: [projectId], references: [id])
+  category        String   // Plumbing, Electrical, Automation, etc.
+  item            String
+  quantity        Float
+  unit            String
+  rate            Float
+  amount          Float
+  completedQty    Float    @default(0)
+  status          String   @default("Pending")
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
+
+model Payment {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id])
+  customerId  String?
+  customer    Customer? @relation(fields: [customerId], references: [id])
+  
+  amount      Float
+  paymentType String   // Inbound (from customer), Outbound (to vendor)
+  status      String   @default("Pending")
+  date        DateTime?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model Expense {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id])
+  amount      Float
+  category    String
+  description String?
+  date        DateTime @default(now())
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ---------------------------------------------------------
+// 6. Rewards, Announcements, Misc
+// ---------------------------------------------------------
+model Reward {
+  id          String   @id @default(cuid())
+  employeeId  String
+  employee    Employee @relation(fields: [employeeId], references: [id])
+  points      Int
+  reason      String
+  date        DateTime @default(now())
+}
+
+model Announcement {
+  id          String   @id @default(cuid())
+  title       String
+  content     String
+  authorId    String
+  publishDate DateTime @default(now())
+  status      String   @default("Published")
+}
+
+model Activity {
+  id          String   @id @default(cuid())
+  employeeId  String
+  employee    Employee @relation(fields: [employeeId], references: [id])
+  action      String
+  module      String
+  recordId    String?
+  createdAt   DateTime @default(now())
+}

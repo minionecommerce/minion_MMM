@@ -1,0 +1,19 @@
+import { prisma } from "@/lib/db";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth";
+
+export default async function TeamPage() {
+  // DB Connection Example for Team
+  // const session = await getServerSession(authOptions);
+  
+  return (
+    <div className="p-8">
+      <h1 className="text-3xl font-bold text-white mb-6">Team Dashboard</h1>
+      <div className="bg-[#1a1a1a] border border-white/5 rounded-2xl p-8">
+        <p className="text-gray-400">
+          This is the dynamic Team module. Content will be connected to the PostgreSQL database here.
+        </p>
+      </div>
+    </div>
+  );
+}
