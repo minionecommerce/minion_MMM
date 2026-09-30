@@ -1,15 +1,66 @@
-import DashboardNavbar from '@/components/DashboardNavbar';
+import { getLeads, getCRMDashboardData, getCRMAnalyticsData } from "@/services/crm";
+import { prisma } from "@/lib/db";
+import CRMClient from "./CRMClient";
 
-export default function CrmPage() {
+export const dynamic = "force-dynamic";
+
+export default async function CRMPage() {
+  const [leads, dashboardData, analytics, employees, followUps, siteVisits, deals, quotes] = await Promise.all([
+    getLeads(),
+    getCRMDashboardData(),
+    getCRMAnalyticsData(),
+    prisma.employee.findMany({
+      include: { user: true },
+      orderBy: { user: { name: 'asc' } }
+    }),
+    prisma.followUp.findMany({
+      include: {
+        customer: true,
+        lead: { select: { id: true, leadNumber: true, status: true } },
+        deal: { select: { id: true, dealNumber: true } },
+        assignedTo: { include: { user: true } },
+      },
+      orderBy: { scheduledDate: 'asc' }
+    }),
+    prisma.siteVisit.findMany({
+      include: {
+        lead: { include: { customer: true } },
+        employee: { include: { user: true } },
+      },
+      orderBy: { visitDate: 'asc' }
+    }),
+    prisma.deal.findMany({
+      include: {
+        customer: true,
+        lead: { select: { id: true, leadNumber: true } },
+        salesExecutive: { include: { user: true } },
+        quotes: { select: { id: true, quoteNumber: true, amount: true, status: true, type: true } },
+        projects: { select: { id: true, name: true, status: true } },
+      },
+      orderBy: { updatedAt: 'desc' }
+    }),
+    prisma.quote.findMany({
+      include: {
+        customer: true,
+        lead: { select: { id: true, leadNumber: true } },
+        deal: { select: { id: true, dealNumber: true } },
+        createdBy: { include: { user: true } },
+        lineItems: true,
+      },
+      orderBy: { createdAt: 'desc' }
+    }),
+  ]);
+
   return (
-    <div className="w-full min-h-screen font-sans selection:bg-yellow-500 selection:text-black flex flex-col">
-      <div className="bg-[#111111] text-white w-full flex-1 flex flex-col">
-        <DashboardNavbar />
-        <main className="w-full max-w-[1600px] mx-auto p-10 flex-1">
-          <h1 className="text-4xl font-bold text-white mb-6">Crm</h1>
-          <p className="text-gray-400">Content for Crm goes here.</p>
-        </main>
-      </div>
-    </div>
+    <CRMClient
+      initialLeads={JSON.parse(JSON.stringify(leads))}
+      dashboardData={JSON.parse(JSON.stringify(dashboardData))}
+      analytics={JSON.parse(JSON.stringify(analytics))}
+      employees={JSON.parse(JSON.stringify(employees))}
+      followUps={JSON.parse(JSON.stringify(followUps))}
+      siteVisits={JSON.parse(JSON.stringify(siteVisits))}
+      deals={JSON.parse(JSON.stringify(deals))}
+      quotes={JSON.parse(JSON.stringify(quotes))}
+    />
   );
 }

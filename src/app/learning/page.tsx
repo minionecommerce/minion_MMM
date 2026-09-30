@@ -1,15 +1,9 @@
-import DashboardNavbar from '@/components/DashboardNavbar';
+import { getLearningData } from "@/services/learning";
+import LearningClient from "./LearningClient";
 
-export default function LearningPage() {
-  return (
-    <div className="w-full min-h-screen font-sans selection:bg-yellow-500 selection:text-black flex flex-col">
-      <div className="bg-[#111111] text-white w-full flex-1 flex flex-col">
-        <DashboardNavbar />
-        <main className="w-full max-w-[1600px] mx-auto p-10 flex-1">
-          <h1 className="text-4xl font-bold text-white mb-6">Learning</h1>
-          <p className="text-gray-400">Content for Learning goes here.</p>
-        </main>
-      </div>
-    </div>
-  );
+export const dynamic = "force-dynamic";
+
+export default async function LearningPage() {
+  const data = await getLearningData();
+  return <LearningClient initialData={JSON.parse(JSON.stringify(data))} />;
 }
