@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Home, Briefcase, Target, LayoutGrid, TreePine, CheckCircle2, Users, UserCog, BookOpen, Gift, Library, Search, Bell, ChevronUp, LogOut, Menu, X, PanelLeftClose, PanelLeftOpen, KeyRound, type LucideIcon } from 'lucide-react';
+import { Home, Briefcase, Target, LayoutGrid, TreePine, CheckCircle2, Users, UserCog, BookOpen, Gift, Library, Search, Bell, ChevronUp, LogOut, Menu, X, PanelLeftClose, PanelLeftOpen, KeyRound, ClipboardList, type LucideIcon } from 'lucide-react';
 import { NAV_ITEMS, snapshotCanViewAny } from '@/lib/rbac/catalog';
 import { useSession, signOut } from 'next-auth/react';
 import { useEffect, useState, useSyncExternalStore } from 'react';
@@ -10,6 +10,7 @@ import { useEffect, useState, useSyncExternalStore } from 'react';
 const NAV_ICONS: Record<string, LucideIcon> = {
   "/": Home,
   "/my-work": Briefcase,
+  "/leads": ClipboardList,
   "/crm": Target,
   "/projects": LayoutGrid,
   "/parks": TreePine,

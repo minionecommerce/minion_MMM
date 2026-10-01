@@ -93,7 +93,7 @@ export async function createFollowUp(formData: FormData) {
       customer = await prisma.customer.create({ data: { name: customerName }});
     }
 
-    let lead = await prisma.lead.findFirst({ where: { customerId: customer.id }});
+    let lead = await prisma.lead.findFirst({ where: { customerId: customer.id, deletedAt: null }});
     if (!lead) {
       lead = await prisma.lead.create({
         data: {

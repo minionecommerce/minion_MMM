@@ -3,6 +3,7 @@
 import { revalidatePath } from 'next/cache';
 import { requireAuth, requirePermission, requireAnyPermission } from '@/lib/auth';
 import { CRM_MODULES } from '@/lib/rbac/catalog';
+import { leadCodeFor, nextLeadSeq } from '@/lib/leads/service';
 import { prisma } from '@/lib/db';
 import { SAFE_USER_SELECT } from "@/lib/safe-select";
 
@@ -26,11 +27,6 @@ async function getCurrentEmployee() {
 // Sales roles only see their own leads/deals
 function isSalesOnlyRole(roleName?: string | null) {
   return ['sales', 'sales executive'].includes((roleName || '').toLowerCase());
-}
-
-function generateLeadNumber(count: number) {
-  const year = new Date().getFullYear();
-  return `MIN-LEAD-${year}-${String(count + 1).padStart(4, '0')}`;
 }
 
 function generateFollowUpNumber(count: number) {
@@ -113,7 +109,7 @@ export async function getCRMStats(dateRange?: { from: Date; to: Date }) {
   
   // Build where clause based on role/permissions
   const isSalesOnly = isSalesOnlyRole(employee?.user?.role?.name);
-  const leadWhere = isSalesOnly && employee ? { salesExecutiveId: employee.id } : {};
+  const leadWhere = { deletedAt: null, ...(isSalesOnly && employee ? { salesExecutiveId: employee.id } : {}) };
 
   const [
     totalLeads,
@@ -187,8 +183,8 @@ export async function getCRMAnalytics(dateRange?: { from: Date; to: Date }) {
     wonDeals,
     activeDealAgg,
   ] = await Promise.all([
-    prisma.lead.count({ where: { createdAt: { gte: from, lte: to } } }),
-    prisma.lead.count({ where: { status: 'Won', createdAt: { gte: from, lte: to } } }),
+    prisma.lead.count({ where: { deletedAt: null, createdAt: { gte: from, lte: to } } }),
+    prisma.lead.count({ where: { deletedAt: null, status: 'Won', createdAt: { gte: from, lte: to } } }),
     prisma.followUp.count({ where: { createdAt: { gte: from, lte: to } } }),
     prisma.followUp.count({ where: { status: 'Completed', createdAt: { gte: from, lte: to } } }),
     prisma.siteVisit.count({ where: { createdAt: { gte: from, lte: to } } }),
@@ -219,6 +215,7 @@ export async function getCRMPipelineStats() {
   await requireAnyPermission(CRM_MODULES);
   // Count leads by status for pipeline display
   const statusGroups = await prisma.lead.groupBy({
+    where: { deletedAt: null },
     by: ['status'],
     _count: { _all: true },
     _sum: { expectedValue: true },
@@ -308,13 +305,16 @@ export async function createLead(formData: {
   }
 
   // 2. Generate lead number
-  const leadCount = await prisma.lead.count();
-  const leadNumber = generateLeadNumber(leadCount);
+  // One shared, atomic counter for every way of creating a lead (never count-based)
+  const leadSeq = await nextLeadSeq(prisma);
+  const leadNumber = leadCodeFor(leadSeq);
 
   // 3. Create lead
   const lead = await prisma.lead.create({
     data: {
       leadNumber,
+      leadSeq,
+      leadCode: leadNumber,
       customerId,
       propertyType: formData.propertyType,
       siteLocation: formData.siteLocation,
@@ -403,7 +403,7 @@ export async function getLeads(params?: {
   const { employee } = await getCurrentEmployee();
   const isSalesOnly = isSalesOnlyRole(employee?.user?.role?.name);
 
-  const where: any = {};
+  const where: any = { deletedAt: null };
   if (isSalesOnly && employee) {
     where.salesExecutiveId = employee.id;
   }
@@ -1200,10 +1200,12 @@ export async function importLeads(rows: Array<{
         customerId = newCust.id;
       }
 
-      const leadCount = await prisma.lead.count();
+      const leadSeq = await nextLeadSeq(prisma);
       await prisma.lead.create({
         data: {
-          leadNumber: generateLeadNumber(leadCount),
+          leadNumber: leadCodeFor(leadSeq),
+          leadSeq,
+          leadCode: leadCodeFor(leadSeq),
           customerId,
           siteLocation: row.location,
           requirement: row.requirement,

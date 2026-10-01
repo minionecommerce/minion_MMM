@@ -226,6 +226,7 @@ model Employee {
 
   // CRM Relations
   leadsAsExec            Lead[]                       @relation("LeadSalesExecutive")
+  leadsAsPerson          Lead[]                       @relation("LeadPerson")
   followUpsAssigned      FollowUp[]
   dealsAsExec            Deal[]                       @relation("DealSalesExecutive")
   quotesCreated          Quote[]                      @relation("QuoteCreatedBy")
@@ -306,9 +307,54 @@ model Lead {
 
   enquiryDate DateTime @default(now())
 
-  // Assignment
+  // Assignment (salesExecutive = "Task Assigned Person" in the Leads module)
   salesExecutiveId String?
   salesExecutive   Employee? @relation("LeadSalesExecutive", fields: [salesExecutiveId], references: [id])
+  leadPersonId     String?
+  leadPerson       Employee? @relation("LeadPerson", fields: [leadPersonId], references: [id])
+
+  // ---- Leads module (/leads) ----
+  leadSeq       Int?    @unique // 1, 2, 3 ... from the Counter table (never reused)
+  leadCode      String? @unique // "ML" + leadSeq
+  // Typed per lead (the Customer record is found/created by phone number)
+  customerName  String?
+  contactNumber String? // normalized: digits with optional leading +
+
+  productOrServiceId String?
+  productOrService   LeadOption? @relation("LeadProductOrService", fields: [productOrServiceId], references: [id])
+  requirementId      String?
+  requirementOption  LeadOption? @relation("LeadRequirement", fields: [requirementId], references: [id])
+  exactRequirement   String?
+  modeOfCustomerId   String?
+  modeOfCustomer     LeadOption? @relation("LeadModeOfCustomer", fields: [modeOfCustomerId], references: [id])
+  sourceId           String?
+  sourceOption       LeadOption? @relation("LeadSource", fields: [sourceId], references: [id])
+
+  location      String?
+  exactLocation String?
+  locationLink  String?
+
+  mainCategoryId String?
+  mainCategory   LeadOption? @relation("LeadMainCategory", fields: [mainCategoryId], references: [id])
+  categoryId     String?
+  category       LeadOption? @relation("LeadCategory", fields: [categoryId], references: [id])
+  subcategoryId  String?
+  subcategory    LeadOption? @relation("LeadSubcategory", fields: [subcategoryId], references: [id])
+
+  leadStatusId String?
+  leadStatus   LeadOption? @relation("LeadLeadStatus", fields: [leadStatusId], references: [id])
+  leadTypeId   String?
+  leadType     LeadOption? @relation("LeadLeadType", fields: [leadTypeId], references: [id])
+
+  amount           Decimal? @db.Decimal(12, 2)
+  conventionalRate Decimal? @db.Decimal(5, 2)
+  dailyTask        Boolean  @default(false)
+
+  createdById String? // User ids; always set by the server
+  updatedById String?
+  deletedAt   DateTime?
+
+  attachments LeadAttachment[]
 
   // Prelim Quote tracking
   prelimQuoteAmount Decimal?  @db.Decimal(12, 2)
@@ -334,6 +380,69 @@ model Lead {
   @@index([leadNumber])
   @@index([createdAt])
   @@index([nextActionDate])
+  @@index([deletedAt, leadSeq])
+  @@index([contactNumber])
+  @@index([leadPersonId])
+  @@index([leadStatusId])
+  @@index([sourceId])
+  @@index([mainCategoryId])
+}
+
+// One table for every Leads dropdown (source, requirement, categories, status, ...).
+// Categories form a tree through parentId: MAIN_CATEGORY -> CATEGORY -> SUBCATEGORY.
+model LeadOption {
+  id        String       @id @default(cuid())
+  type      String // SOURCE, REQUIREMENT, MODE_OF_CUSTOMER, PRODUCT_OR_SERVICE, MAIN_CATEGORY, CATEGORY, SUBCATEGORY, LEAD_STATUS, LEAD_TYPE
+  key       String? // stable machine key used by filters, e.g. "open" (labels can be renamed)
+  label     String
+  parentId  String?
+  parent    LeadOption?  @relation("LeadOptionTree", fields: [parentId], references: [id])
+  children  LeadOption[] @relation("LeadOptionTree")
+  sortOrder Int          @default(0)
+  isActive  Boolean      @default(true)
+
+  asProductOrService Lead[] @relation("LeadProductOrService")
+  asRequirement      Lead[] @relation("LeadRequirement")
+  asModeOfCustomer   Lead[] @relation("LeadModeOfCustomer")
+  asSource           Lead[] @relation("LeadSource")
+  asMainCategory     Lead[] @relation("LeadMainCategory")
+  asCategory         Lead[] @relation("LeadCategory")
+  asSubcategory      Lead[] @relation("LeadSubcategory")
+  asLeadStatus       Lead[] @relation("LeadLeadStatus")
+  asLeadType         Lead[] @relation("LeadLeadType")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([type, isActive, sortOrder])
+  @@index([parentId])
+  @@index([type, key])
+}
+
+// Atomic counters. The Lead ID is taken inside the same transaction that saves the lead.
+model Counter {
+  key       String   @id // e.g. "lead"
+  value     Int      @default(0)
+  updatedAt DateTime @updatedAt
+}
+
+// Files attached to a lead. The bytes live in Supabase Storage (private bucket); only metadata is stored here.
+model LeadAttachment {
+  id           String  @id @default(cuid())
+  leadId       String
+  lead         Lead    @relation(fields: [leadId], references: [id])
+  storagePath  String  @unique // leads/<leadId>/<random>.<ext>
+  fileName     String // original name, display only
+  mimeType     String
+  size         Int
+  status       String  @default("PENDING") // PENDING until the upload is verified, then READY
+  uploadedById String?
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  @@index([leadId, deletedAt])
+  @@index([status, createdAt])
 }
 
 model FollowUp {

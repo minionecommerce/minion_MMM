@@ -69,6 +69,7 @@ export const ROUTE_MODULES: { prefix: string; modules: ModuleKey[] }[] = [
   { prefix: "/users", modules: ["users"] },
   { prefix: "/admin/access", modules: ["users"] },
   { prefix: "/team/roles", modules: ["users"] },
+  { prefix: "/leads", modules: ["leads"] },
   { prefix: "/crm", modules: CRM_MODULES },
   { prefix: "/projects", modules: ["projects", "boq"] },
   { prefix: "/parks", modules: ["parks"] },
@@ -96,6 +97,7 @@ export function modulesForPath(pathname: string): ModuleKey[] | null {
 export const NAV_ITEMS: { label: string; href: string; modules: ModuleKey[] }[] = [
   { label: "HOME", href: "/", modules: ["dashboard"] },
   { label: "MY WORK", href: "/my-work", modules: ["my_work"] },
+  { label: "LEADS", href: "/leads", modules: ["leads"] },
   { label: "CRM", href: "/crm", modules: CRM_MODULES },
   { label: "PROJECTS", href: "/projects", modules: ["projects", "boq"] },
   { label: "PARKS", href: "/parks", modules: ["parks"] },
