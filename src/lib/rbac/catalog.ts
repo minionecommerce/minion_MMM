@@ -68,7 +68,6 @@ export const CRM_MODULES: ModuleKey[] = ["leads", "customers", "requirements", "
 export const ROUTE_MODULES: { prefix: string; modules: ModuleKey[] }[] = [
   { prefix: "/users", modules: ["users"] },
   { prefix: "/admin/access", modules: ["users"] },
-  { prefix: "/team/roles", modules: ["users"] },
   { prefix: "/leads", modules: ["leads"] },
   { prefix: "/crm", modules: CRM_MODULES },
   { prefix: "/projects", modules: ["projects", "boq"] },
