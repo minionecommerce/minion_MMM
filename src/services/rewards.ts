@@ -1,18 +1,19 @@
 import { prisma } from "@/lib/db";
+import { SAFE_USER_SELECT } from "@/lib/safe-select";
 
 export async function getRewardsData() {
   try {
     const [rewards, ledgers, employees, wonDeals] = await Promise.all([
       prisma.reward.findMany({
-        include: { employee: { include: { user: true } } },
+        include: { employee: { include: { user: { select: SAFE_USER_SELECT } } } },
         orderBy: { date: 'desc' }
       }),
       prisma.pointsLedger.findMany({
-        include: { employee: { include: { user: true } } },
+        include: { employee: { include: { user: { select: SAFE_USER_SELECT } } } },
         orderBy: { createdAt: 'desc' }
       }),
       prisma.employee.findMany({
-        include: { user: true, departmentRef: true },
+        include: { user: { select: SAFE_USER_SELECT }, departmentRef: true },
         orderBy: { createdAt: 'desc' }
       }),
       prisma.deal.findMany({

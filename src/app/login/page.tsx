@@ -1,17 +1,48 @@
 "use client";
 
-import { signIn } from "next-auth/react";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { getSession, signIn, signOut } from "next-auth/react";
+import { useRouter, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
+import { landingPath, modulesForPath, snapshotCanViewAny } from "@/lib/rbac/catalog";
+
+const LOGIN_ERROR_MESSAGES: Record<string, string> = {
+  INVALID_CREDENTIALS: "Invalid email or password.",
+  ACCOUNT_LOCKED: "Too many failed attempts. Your account is locked for 15 minutes.",
+  ACCOUNT_INACTIVE: "Your account is not active. Please contact your administrator.",
+  TOO_MANY_ATTEMPTS: "Too many sign-in attempts from this network. Please try again later.",
+};
+
+// Only same-site relative paths are allowed as a post-login destination
+function safeCallback(raw: string | null) {
+  if (!raw || !raw.startsWith("/") || raw.startsWith("//") || raw.startsWith("/\\") || raw.startsWith("/login")) return null;
+  return raw;
+}
 
 export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginForm />
+    </Suspense>
+  );
+}
+
+function LoginForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [remember, setRemember] = useState(false);
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
+  const expired = searchParams.get("expired") === "1";
+  const passwordChanged = searchParams.get("passwordChanged") === "1";
+
+  // Clear a revoked/expired session cookie so the next sign-in starts clean
+  useEffect(() => {
+    if (expired || passwordChanged) signOut({ redirect: false });
+  }, [expired, passwordChanged]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,16 +53,27 @@ export default function LoginPage() {
       const res = await signIn("credentials", {
         email,
         password,
+        remember: remember ? "true" : "false",
         redirect: false,
       });
 
       if (res?.error) {
-        setError("Invalid email or password.");
-      } else {
-        router.push("/my-work");
-        router.refresh(); // Ensure the layout updates with auth state
+        setError(LOGIN_ERROR_MESSAGES[res.error] ?? "Sign-in failed. Please try again.");
+        return;
       }
-    } catch (err) {
+
+      const session = await getSession();
+      if (session?.user?.mustChangePassword) {
+        router.push("/account/change-password");
+      } else {
+        const permissions = session?.user?.permissions ?? [];
+        const callback = safeCallback(searchParams.get("callbackUrl"));
+        const callbackModules = callback ? modulesForPath(callback.split("?")[0]) : null;
+        const allowedCallback = callback && (!callbackModules || snapshotCanViewAny(permissions, callbackModules));
+        router.push(allowedCallback ? callback : landingPath(permissions));
+      }
+      router.refresh();
+    } catch {
       setError("An unexpected error occurred.");
     } finally {
       setIsLoading(false);
@@ -42,7 +84,7 @@ export default function LoginPage() {
     <div className="min-h-screen bg-neutral-950 flex flex-col justify-center py-12 sm:px-6 lg:px-8 text-neutral-200">
       <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
         <h1 className="text-4xl font-extrabold tracking-tight text-white mb-2">
-          MINION
+          MINION CRM
         </h1>
         <p className="text-neutral-400 text-sm tracking-widest uppercase">
           Smart Home Solutions
@@ -62,7 +104,7 @@ export default function LoginPage() {
                 htmlFor="email"
                 className="block text-sm font-medium text-neutral-300"
               >
-                Email address
+                Email / Username
               </label>
               <div className="mt-2">
                 <input
@@ -105,6 +147,8 @@ export default function LoginPage() {
                   id="remember-me"
                   name="remember-me"
                   type="checkbox"
+                  checked={remember}
+                  onChange={(e) => setRemember(e.target.checked)}
                   className="h-4 w-4 text-yellow-500 focus:ring-yellow-500 border-neutral-700 rounded bg-neutral-900"
                 />
                 <label
@@ -124,6 +168,18 @@ export default function LoginPage() {
                 </a>
               </div>
             </div>
+
+            {expired && !error && (
+              <div className="text-yellow-400 text-sm bg-yellow-500/10 border border-yellow-500/20 rounded-lg p-3 text-center">
+                Your session has ended. Please sign in again.
+              </div>
+            )}
+
+            {passwordChanged && !error && (
+              <div className="text-green-400 text-sm bg-green-500/10 border border-green-500/20 rounded-lg p-3 text-center">
+                Password changed. Please sign in with your new password.
+              </div>
+            )}
 
             {error && (
               <div className="text-red-500 text-sm bg-red-500/10 border border-red-500/20 rounded-lg p-3 text-center">

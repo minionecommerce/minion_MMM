@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { SAFE_USER_SELECT } from "@/lib/safe-select";
 
 export async function getTasks() {
   try {
@@ -11,24 +12,24 @@ export async function getTasks() {
         },
         assignee: {
           include: {
-            user: true
+            user: { select: SAFE_USER_SELECT }
           }
         },
         secondaryAssignee: {
-          include: { user: true }
+          include: { user: { select: SAFE_USER_SELECT } }
         },
         assignedBy: {
-          include: { user: true }
+          include: { user: { select: SAFE_USER_SELECT } }
         },
         landscape: true,
         checklists: true,
         comments: {
-          include: { author: { include: { user: true } } },
+          include: { author: { include: { user: { select: SAFE_USER_SELECT } } } },
           orderBy: { createdAt: 'desc' }
         },
         recurringSeries: true,
         auditLogs: {
-          include: { employee: { include: { user: true } } },
+          include: { employee: { include: { user: { select: SAFE_USER_SELECT } } } },
           orderBy: { createdAt: 'desc' }
         },
       },
@@ -48,7 +49,7 @@ export async function getTasksData() {
     const [tasks, employees, projects, landscapes] = await Promise.all([
       getTasks(),
       prisma.employee.findMany({
-        include: { user: true, departmentRef: true },
+        include: { user: { select: SAFE_USER_SELECT }, departmentRef: true },
         orderBy: { createdAt: 'desc' }
       }),
       prisma.project.findMany({

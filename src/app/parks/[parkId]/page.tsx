@@ -1,3 +1,4 @@
+import { requirePageAccess } from "@/lib/auth";
 import { getLandscapeById } from "@/services/parks";
 import { notFound } from "next/navigation";
 import ParkDetailsClient from "./ParkDetailsClient";
@@ -6,6 +7,7 @@ import { mockParks } from "../data/mock";
 export const dynamic = "force-dynamic";
 
 export default async function LandscapePage({ params }: { params: { parkId: string } }) {
+  await requirePageAccess(["parks"]);
   const { parkId } = params;
   let dbLandscape: any = await getLandscapeById(parkId);
 

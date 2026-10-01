@@ -1,59 +1,32 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
-import { getServerSession } from 'next-auth';
-import { authOptions } from '@/lib/auth';
+import { requireAuth, requirePermission, requireAnyPermission } from '@/lib/auth';
+import { CRM_MODULES } from '@/lib/rbac/catalog';
+import { leadCodeFor, nextLeadSeq } from '@/lib/leads/service';
 import { prisma } from '@/lib/db';
+import { SAFE_USER_SELECT } from "@/lib/safe-select";
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────
 
+// Always the signed-in user's own employee record; never a fallback identity
 async function getCurrentEmployee() {
-  let session: any = null;
-  try {
-    session = await getServerSession(authOptions);
-  } catch (e) {}
-
-  let employee = null;
-  if (session?.user?.id) {
-    employee = await prisma.employee.findUnique({
-      where: { userId: session.user.id },
-      include: { user: { include: { role: true } } }
-    });
-  }
-
-  // Fallback for dev / unauthenticated testing mode
+  const ctx = await requireAuth();
+  const employee = ctx.employeeId
+    ? await prisma.employee.findUnique({
+        where: { id: ctx.employeeId },
+        include: { user: { select: { id: true, name: true, email: true, role: { select: { name: true } } } } },
+      })
+    : null;
   if (!employee) {
-    employee = await prisma.employee.findFirst({
-      include: { user: { include: { role: true } } }
-    });
+    throw new Error('Your account is not linked to an employee record. Please contact your administrator.');
   }
-
-  if (!employee) {
-    let user = await prisma.user.findFirst();
-    if (!user) {
-      user = await prisma.user.create({
-        data: {
-          name: "Developer Staff",
-          email: "dev@minion.com",
-        }
-      });
-    }
-    employee = await prisma.employee.create({
-      data: {
-        userId: user.id,
-        designation: "Sales Executive",
-        department: "Sales",
-      },
-      include: { user: { include: { role: true } } }
-    });
-  }
-
-  return { session, employee };
+  return { employee };
 }
 
-function generateLeadNumber(count: number) {
-  const year = new Date().getFullYear();
-  return `MIN-LEAD-${year}-${String(count + 1).padStart(4, '0')}`;
+// Sales roles only see their own leads/deals
+function isSalesOnlyRole(roleName?: string | null) {
+  return ['sales', 'sales executive'].includes((roleName || '').toLowerCase());
 }
 
 function generateFollowUpNumber(count: number) {
@@ -124,6 +97,7 @@ async function sendNotification(employeeId: string, title: string, message: stri
 // ─── CRM DASHBOARD STATS ─────────────────────────────────────────────────────
 
 export async function getCRMStats(dateRange?: { from: Date; to: Date }) {
+  await requireAnyPermission(CRM_MODULES);
   const { employee } = await getCurrentEmployee();
   
   const now = new Date();
@@ -134,9 +108,8 @@ export async function getCRMStats(dateRange?: { from: Date; to: Date }) {
   const to = dateRange?.to || endOfMonth;
   
   // Build where clause based on role/permissions
-  const rolePermissions = (employee?.user?.role?.name || '').toLowerCase();
-  const isSalesOnly = rolePermissions === 'sales';
-  const leadWhere = isSalesOnly && employee ? { salesExecutiveId: employee.id } : {};
+  const isSalesOnly = isSalesOnlyRole(employee?.user?.role?.name);
+  const leadWhere = { deletedAt: null, ...(isSalesOnly && employee ? { salesExecutiveId: employee.id } : {}) };
 
   const [
     totalLeads,
@@ -190,6 +163,7 @@ export async function getCRMStats(dateRange?: { from: Date; to: Date }) {
 }
 
 export async function getCRMAnalytics(dateRange?: { from: Date; to: Date }) {
+  await requireAnyPermission(CRM_MODULES);
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
   const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
@@ -209,8 +183,8 @@ export async function getCRMAnalytics(dateRange?: { from: Date; to: Date }) {
     wonDeals,
     activeDealAgg,
   ] = await Promise.all([
-    prisma.lead.count({ where: { createdAt: { gte: from, lte: to } } }),
-    prisma.lead.count({ where: { status: 'Won', createdAt: { gte: from, lte: to } } }),
+    prisma.lead.count({ where: { deletedAt: null, createdAt: { gte: from, lte: to } } }),
+    prisma.lead.count({ where: { deletedAt: null, status: 'Won', createdAt: { gte: from, lte: to } } }),
     prisma.followUp.count({ where: { createdAt: { gte: from, lte: to } } }),
     prisma.followUp.count({ where: { status: 'Completed', createdAt: { gte: from, lte: to } } }),
     prisma.siteVisit.count({ where: { createdAt: { gte: from, lte: to } } }),
@@ -238,8 +212,10 @@ export async function getCRMAnalytics(dateRange?: { from: Date; to: Date }) {
 }
 
 export async function getCRMPipelineStats() {
+  await requireAnyPermission(CRM_MODULES);
   // Count leads by status for pipeline display
   const statusGroups = await prisma.lead.groupBy({
+    where: { deletedAt: null },
     by: ['status'],
     _count: { _all: true },
     _sum: { expectedValue: true },
@@ -258,6 +234,7 @@ export async function getCRMPipelineStats() {
 // ─── CUSTOMER ACTIONS ─────────────────────────────────────────────────────────
 
 export async function checkDuplicateCustomer(phone?: string, email?: string) {
+  await requireAnyPermission(['leads', 'customers']);
   const where: any = { OR: [] };
   if (phone) where.OR.push({ phone });
   if (email) where.OR.push({ email });
@@ -266,6 +243,7 @@ export async function checkDuplicateCustomer(phone?: string, email?: string) {
 }
 
 export async function getCustomers(search?: string) {
+  await requireAnyPermission(['customers', 'leads']);
   const where = search ? {
     OR: [
       { name: { contains: search, mode: 'insensitive' as const } },
@@ -305,6 +283,7 @@ export async function createLead(formData: {
   expectedValue?: number;
   salesExecutiveId?: string;
 }) {
+  await requirePermission('leads', 'create');
   const { employee } = await getCurrentEmployee();
 
   // 1. Create or reuse customer
@@ -326,13 +305,16 @@ export async function createLead(formData: {
   }
 
   // 2. Generate lead number
-  const leadCount = await prisma.lead.count();
-  const leadNumber = generateLeadNumber(leadCount);
+  // One shared, atomic counter for every way of creating a lead (never count-based)
+  const leadSeq = await nextLeadSeq(prisma);
+  const leadNumber = leadCodeFor(leadSeq);
 
   // 3. Create lead
   const lead = await prisma.lead.create({
     data: {
       leadNumber,
+      leadSeq,
+      leadCode: leadNumber,
       customerId,
       propertyType: formData.propertyType,
       siteLocation: formData.siteLocation,
@@ -349,7 +331,7 @@ export async function createLead(formData: {
       salesExecutiveId: formData.salesExecutiveId || employee?.id,
       enquiryDate: new Date(),
     },
-    include: { customer: true, salesExecutive: { include: { user: true } } }
+    include: { customer: true, salesExecutive: { include: { user: { select: SAFE_USER_SELECT } } } }
   });
 
   // 4. Audit log
@@ -417,11 +399,11 @@ export async function getLeads(params?: {
   page?: number;
   limit?: number;
 }) {
+  await requirePermission('leads', 'view');
   const { employee } = await getCurrentEmployee();
-  const rolePermissions = (employee?.user?.role?.name || '').toLowerCase();
-  const isSalesOnly = rolePermissions === 'sales';
+  const isSalesOnly = isSalesOnlyRole(employee?.user?.role?.name);
 
-  const where: any = {};
+  const where: any = { deletedAt: null };
   if (isSalesOnly && employee) {
     where.salesExecutiveId = employee.id;
   }
@@ -447,7 +429,7 @@ export async function getLeads(params?: {
       where,
       include: {
         customer: true,
-        salesExecutive: { include: { user: true } },
+        salesExecutive: { include: { user: { select: SAFE_USER_SELECT } } },
         deals: { select: { id: true, status: true, value: true } },
         siteVisits: { select: { id: true, status: true, visitDate: true } },
         followUps: { select: { id: true, status: true, scheduledDate: true } },
@@ -464,6 +446,7 @@ export async function getLeads(params?: {
 }
 
 export async function updateLeadStage(leadId: string, newStatus: string) {
+  await requirePermission('leads', 'edit');
   const { employee } = await getCurrentEmployee();
 
   const lead = await prisma.lead.findUnique({
@@ -514,6 +497,7 @@ export async function getFollowUps(params?: {
   status?: string;
   assignedToId?: string;
 }) {
+  await requirePermission('leads', 'view');
   const { employee } = await getCurrentEmployee();
   const where: any = {};
   if (params?.status) where.status = params.status;
@@ -525,7 +509,7 @@ export async function getFollowUps(params?: {
       customer: true,
       lead: { select: { id: true, leadNumber: true, status: true } },
       deal: { select: { id: true, dealNumber: true, status: true } },
-      assignedTo: { include: { user: true } },
+      assignedTo: { include: { user: { select: SAFE_USER_SELECT } } },
     },
     orderBy: { scheduledDate: 'asc' }
   });
@@ -541,6 +525,7 @@ export async function createFollowUp(data: {
   purpose?: string;
   notes?: string;
 }) {
+  await requirePermission('leads', 'edit');
   const { employee } = await getCurrentEmployee();
 
   const count = await prisma.followUp.count();
@@ -557,7 +542,7 @@ export async function createFollowUp(data: {
       notes: data.notes,
       status: 'Pending',
     },
-    include: { customer: true, assignedTo: { include: { user: true } } }
+    include: { customer: true, assignedTo: { include: { user: { select: SAFE_USER_SELECT } } } }
   });
 
   if (data.leadId) {
@@ -589,6 +574,7 @@ export async function createFollowUp(data: {
 }
 
 export async function completeFollowUp(followUpId: string, completionNotes?: string) {
+  await requirePermission('leads', 'edit');
   const { employee } = await getCurrentEmployee();
 
   const fu = await prisma.followUp.update({
@@ -630,6 +616,7 @@ export async function completeFollowUp(followUpId: string, completionNotes?: str
 }
 
 export async function rescheduleFollowUp(followUpId: string, newDate: string, notes?: string) {
+  await requirePermission('leads', 'edit');
   const { employee } = await getCurrentEmployee();
 
   await prisma.followUp.update({
@@ -651,6 +638,7 @@ export async function getSiteVisits(params?: {
   status?: string;
   leadId?: string;
 }) {
+  await requirePermission('site_visits', 'view');
   const where: any = {};
   if (params?.status) where.status = params.status;
   if (params?.leadId) where.leadId = params.leadId;
@@ -659,7 +647,7 @@ export async function getSiteVisits(params?: {
     where,
     include: {
       lead: { include: { customer: true } },
-      employee: { include: { user: true } },
+      employee: { include: { user: { select: SAFE_USER_SELECT } } },
     },
     orderBy: { visitDate: 'asc' }
   });
@@ -673,6 +661,7 @@ export async function scheduleSiteVisit(data: {
   siteLocation?: string;
   notes?: string;
 }) {
+  await requirePermission('site_visits', 'create');
   const { employee } = await getCurrentEmployee();
 
   const count = await prisma.siteVisit.count();
@@ -687,7 +676,7 @@ export async function scheduleSiteVisit(data: {
       notes: data.notes,
       status: 'Scheduled',
     },
-    include: { lead: { include: { customer: true } }, employee: { include: { user: true } } }
+    include: { lead: { include: { customer: true } }, employee: { include: { user: { select: SAFE_USER_SELECT } } } }
   });
 
   // Update lead status
@@ -726,6 +715,7 @@ export async function completeSiteVisit(visitId: string, data: {
   measurements?: string;
   nextAction?: string;
 }) {
+  await requirePermission('site_visits', 'edit');
   const { employee } = await getCurrentEmployee();
 
   const sv = await prisma.siteVisit.update({
@@ -771,9 +761,9 @@ export async function getDeals(params?: {
   stage?: string;
   salesExecutiveId?: string;
 }) {
+  await requirePermission('deals', 'view');
   const { employee } = await getCurrentEmployee();
-  const rolePermissions = (employee?.user?.role?.name || '').toLowerCase();
-  const isSalesOnly = rolePermissions === 'sales';
+  const isSalesOnly = isSalesOnlyRole(employee?.user?.role?.name);
 
   const where: any = {};
   if (isSalesOnly && employee) where.salesExecutiveId = employee.id;
@@ -786,7 +776,7 @@ export async function getDeals(params?: {
     include: {
       customer: true,
       lead: { select: { id: true, leadNumber: true } },
-      salesExecutive: { include: { user: true } },
+      salesExecutive: { include: { user: { select: SAFE_USER_SELECT } } },
       quotes: { select: { id: true, quoteNumber: true, amount: true, status: true, type: true } },
       projects: { select: { id: true, name: true, status: true } },
     },
@@ -802,6 +792,7 @@ export async function createDeal(data: {
   probability?: number;
   salesExecutiveId?: string;
 }) {
+  await requirePermission('deals', 'create');
   const { employee } = await getCurrentEmployee();
 
   const lead = await prisma.lead.findUnique({
@@ -849,6 +840,7 @@ export async function updateDealStage(dealId: string, newStage: string, data?: {
   probability?: number;
   lostReason?: string;
 }) {
+  await requirePermission('deals', 'edit');
   const { employee } = await getCurrentEmployee();
 
   const deal = await prisma.deal.findUnique({ where: { id: dealId } });
@@ -911,6 +903,8 @@ export async function convertDealToProject(dealId: string, projectData: {
   startDate?: string;
   expectedEndDate?: string;
 }) {
+  await requirePermission('deals', 'edit');
+  await requirePermission('projects', 'create');
   const { employee } = await getCurrentEmployee();
 
   const deal = await prisma.deal.findUnique({
@@ -1039,6 +1033,7 @@ export async function convertDealToProject(dealId: string, projectData: {
 // ─── QUOTE ACTIONS ───────────────────────────────────────────────────────────
 
 export async function getQuotes(params?: { status?: string; dealId?: string; leadId?: string }) {
+  await requirePermission('quotes', 'view');
   const where: any = {};
   if (params?.status) where.status = params.status;
   if (params?.dealId) where.dealId = params.dealId;
@@ -1050,7 +1045,7 @@ export async function getQuotes(params?: { status?: string; dealId?: string; lea
       customer: true,
       lead: { select: { id: true, leadNumber: true } },
       deal: { select: { id: true, dealNumber: true } },
-      createdBy: { include: { user: true } },
+      createdBy: { include: { user: { select: SAFE_USER_SELECT } } },
       lineItems: true,
     },
     orderBy: { createdAt: 'desc' }
@@ -1074,6 +1069,7 @@ export async function createQuote(data: {
     amount: number;
   }>;
 }) {
+  await requirePermission('quotes', 'create');
   const { employee } = await getCurrentEmployee();
 
   const count = await prisma.quote.count();
@@ -1120,6 +1116,7 @@ export async function createQuote(data: {
 }
 
 export async function updateQuoteStatus(quoteId: string, status: string) {
+  await requirePermission('quotes', 'edit');
   const { employee } = await getCurrentEmployee();
 
   const quote = await prisma.quote.update({
@@ -1165,6 +1162,7 @@ export async function importLeads(rows: Array<{
   source?: string;
   assignedEmployee?: string;
 }>) {
+  await requirePermission('leads', 'create');
   const { employee } = await getCurrentEmployee();
   const results = { imported: 0, skipped: 0, errors: [] as string[] };
 
@@ -1202,10 +1200,12 @@ export async function importLeads(rows: Array<{
         customerId = newCust.id;
       }
 
-      const leadCount = await prisma.lead.count();
+      const leadSeq = await nextLeadSeq(prisma);
       await prisma.lead.create({
         data: {
-          leadNumber: generateLeadNumber(leadCount),
+          leadNumber: leadCodeFor(leadSeq),
+          leadSeq,
+          leadCode: leadCodeFor(leadSeq),
           customerId,
           siteLocation: row.location,
           requirement: row.requirement,
@@ -1230,17 +1230,19 @@ export async function importLeads(rows: Array<{
 // ─── AUDIT LOG ───────────────────────────────────────────────────────────────
 
 export async function getLeadAuditLog(leadId: string) {
+  await requirePermission('leads', 'view');
   return prisma.cRMAuditLog.findMany({
     where: { leadId },
-    include: { performedBy: { include: { user: true } } },
+    include: { performedBy: { include: { user: { select: SAFE_USER_SELECT } } } },
     orderBy: { createdAt: 'desc' }
   });
 }
 
 export async function getDealAuditLog(dealId: string) {
+  await requirePermission('deals', 'view');
   return prisma.cRMAuditLog.findMany({
     where: { dealId },
-    include: { performedBy: { include: { user: true } } },
+    include: { performedBy: { include: { user: { select: SAFE_USER_SELECT } } } },
     orderBy: { createdAt: 'desc' }
   });
 }
@@ -1248,8 +1250,9 @@ export async function getDealAuditLog(dealId: string) {
 // ─── GET EMPLOYEES (for dropdowns) ───────────────────────────────────────────
 
 export async function getCRMEmployees() {
+  await requireAnyPermission(CRM_MODULES);
   return prisma.employee.findMany({
-    include: { user: true },
+    include: { user: { select: SAFE_USER_SELECT } },
     orderBy: { user: { name: 'asc' } }
   });
 }

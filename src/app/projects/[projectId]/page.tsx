@@ -1,3 +1,4 @@
+import { requirePageAccess } from "@/lib/auth";
 import { getProjectById } from "@/services/projects";
 import { notFound } from "next/navigation";
 import ProjectDetailsClient from "./ProjectDetailsClient";
@@ -6,6 +7,7 @@ import { mockProjects } from "../data/mock";
 export const dynamic = "force-dynamic";
 
 export default async function ProjectDetailsPage({ params }: { params: Promise<{ projectId: string }> | { projectId: string } }) {
+  await requirePageAccess(["projects", "boq"]);
   const resolvedParams = await params;
   const projectId = resolvedParams?.projectId;
   let dbProject: any = projectId ? await getProjectById(projectId) : null;

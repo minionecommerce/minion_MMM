@@ -2,27 +2,19 @@
 
 import { useSession } from "next-auth/react";
 import { ReactNode } from "react";
+import { snapshotAllows } from "@/lib/rbac/catalog";
 
 interface CanProps {
+  // "module.action", e.g. "users.create"
   permission: string;
   children: ReactNode;
   fallback?: ReactNode;
 }
 
+// UX only: hides UI the user cannot use. The server re-checks every request.
 export function Can({ permission, children, fallback = null }: CanProps) {
   const { data: session } = useSession();
-
-  if (!session?.user) return <>{fallback}</>;
-
-  if (session.user.role === "SUPER_ADMIN") {
-    return <>{children}</>;
-  }
-
-  const permissions = session.user.permissions || [];
-  
-  if (permissions.includes(permission)) {
-    return <>{children}</>;
-  }
-
-  return <>{fallback}</>;
+  const [module, action = "view"] = permission.toLowerCase().split(".");
+  if (!session?.user || !snapshotAllows(session.user.permissions, module, action)) return <>{fallback}</>;
+  return <>{children}</>;
 }

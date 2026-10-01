@@ -1,9 +1,11 @@
+import { requirePageAccess } from "@/lib/auth";
 import { getTasksData } from "@/services/tasks";
 import TasksClient from "./TasksClient";
 
 export const dynamic = "force-dynamic";
 
 export default async function TasksPage() {
+  await requirePageAccess(["tasks"]);
   const data = await getTasksData();
   return (
     <TasksClient

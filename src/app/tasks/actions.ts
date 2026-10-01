@@ -1,9 +1,13 @@
 "use server";
+import { authorizeAction } from "@/lib/auth";
 
 import { prisma } from "@/lib/db";
 import { revalidatePath } from "next/cache";
+import { SAFE_USER_SELECT } from "@/lib/safe-select";
 
 export async function createTask(formData: FormData) {
+  const auth = await authorizeAction("tasks", "create");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     const title = formData.get("title") as string;
     const description = formData.get("description") as string;
@@ -36,7 +40,7 @@ export async function createTask(formData: FormData) {
     // Assignee resolution
     let assigneeId = assigneeIdInput;
     if (!assigneeId) {
-      const fallback = await prisma.employee.findFirst();
+      const fallback = (auth.ctx.employeeId ? await prisma.employee.findUnique({ where: { id: auth.ctx.employeeId } }) : null);
       if (fallback) assigneeId = fallback.id;
     }
 
@@ -109,6 +113,8 @@ export async function createTask(formData: FormData) {
 }
 
 export async function updateTaskStatus(taskId: string, status: string) {
+  const auth = await authorizeAction("tasks", "edit");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     const validStatuses = [
       "Not Started", "Assigned", "Accepted", "In Progress",
@@ -137,6 +143,8 @@ export async function updateTaskStatus(taskId: string, status: string) {
 }
 
 export async function updateTaskPriority(taskId: string, priority: string) {
+  const auth = await authorizeAction("tasks", "edit");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     const task = await prisma.task.update({
       where: { id: taskId },
@@ -152,6 +160,8 @@ export async function updateTaskPriority(taskId: string, priority: string) {
 }
 
 export async function assignTask(taskId: string, assigneeId: string) {
+  const auth = await authorizeAction("tasks", "edit");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     const employee = await prisma.employee.findUnique({ where: { id: assigneeId } });
     if (!employee) return { success: false, error: "Target employee not found." };
@@ -174,10 +184,12 @@ export async function assignTask(taskId: string, assigneeId: string) {
 }
 
 export async function bulkAssignTasks(taskIds: string[], assigneeId: string) {
+  const auth = await authorizeAction("tasks", "edit");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     let validAssignee = await prisma.employee.findUnique({ where: { id: assigneeId } });
     if (!validAssignee) {
-      validAssignee = await prisma.employee.findFirst();
+      validAssignee = (auth.ctx.employeeId ? await prisma.employee.findUnique({ where: { id: auth.ctx.employeeId } }) : null);
     }
     if (!validAssignee) {
       return { success: false, error: "No employee found for assignment." };
@@ -201,10 +213,12 @@ export async function bulkAssignTasks(taskIds: string[], assigneeId: string) {
 }
 
 export async function addTaskComment(taskId: string, content: string, authorId?: string) {
+  const auth = await authorizeAction("tasks", "view");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     let resolvedAuthorId = authorId;
     if (!resolvedAuthorId) {
-      let validAssignee = await prisma.employee.findFirst();
+      let validAssignee = (auth.ctx.employeeId ? await prisma.employee.findUnique({ where: { id: auth.ctx.employeeId } }) : null);
       if (validAssignee) resolvedAuthorId = validAssignee.id;
       else throw new Error("No employee found for author");
     }
@@ -215,7 +229,7 @@ export async function addTaskComment(taskId: string, content: string, authorId?:
         content,
         authorId: resolvedAuthorId!,
       },
-      include: { author: { include: { user: true } } }
+      include: { author: { include: { user: { select: SAFE_USER_SELECT } } } }
     });
 
     await prisma.activity.create({
@@ -236,6 +250,8 @@ export async function addTaskComment(taskId: string, content: string, authorId?:
 }
 
 export async function addChecklistItem(taskId: string, content: string, employeeId?: string) {
+  const auth = await authorizeAction("tasks", "edit");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     const item = await prisma.taskChecklistItem.create({
       data: {
@@ -246,7 +262,7 @@ export async function addChecklistItem(taskId: string, content: string, employee
 
     let resolvedEmpId = employeeId;
     if (!resolvedEmpId) {
-      let validAssignee = await prisma.employee.findFirst();
+      let validAssignee = (auth.ctx.employeeId ? await prisma.employee.findUnique({ where: { id: auth.ctx.employeeId } }) : null);
       if (validAssignee) resolvedEmpId = validAssignee.id;
     }
 
@@ -270,6 +286,8 @@ export async function addChecklistItem(taskId: string, content: string, employee
 }
 
 export async function toggleChecklistItem(itemId: string, taskId: string, isCompleted: boolean, employeeId?: string) {
+  const auth = await authorizeAction("tasks", "edit");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     const item = await prisma.taskChecklistItem.update({
       where: { id: itemId },
@@ -278,7 +296,7 @@ export async function toggleChecklistItem(itemId: string, taskId: string, isComp
 
     let resolvedEmpId = employeeId;
     if (!resolvedEmpId) {
-      let validAssignee = await prisma.employee.findFirst();
+      let validAssignee = (auth.ctx.employeeId ? await prisma.employee.findUnique({ where: { id: auth.ctx.employeeId } }) : null);
       if (validAssignee) resolvedEmpId = validAssignee.id;
     }
 
@@ -302,6 +320,8 @@ export async function toggleChecklistItem(itemId: string, taskId: string, isComp
 }
 
 export async function deleteTask(taskId: string) {
+  const auth = await authorizeAction("tasks", "delete");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     const task = await prisma.task.findUnique({ where: { id: taskId }});
     if (!task) return { success: false, error: "Task not found" };
@@ -324,6 +344,8 @@ export async function deleteTask(taskId: string) {
 }
 
 export async function cloneTask(taskId: string, employeeId?: string) {
+  const auth = await authorizeAction("tasks", "create");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     const originalTask = await prisma.task.findUnique({ 
       where: { id: taskId },
@@ -362,7 +384,7 @@ export async function cloneTask(taskId: string, employeeId?: string) {
 
     let resolvedEmpId = employeeId;
     if (!resolvedEmpId) {
-      let validAssignee = await prisma.employee.findFirst();
+      let validAssignee = (auth.ctx.employeeId ? await prisma.employee.findUnique({ where: { id: auth.ctx.employeeId } }) : null);
       if (validAssignee) resolvedEmpId = validAssignee.id;
     }
 
@@ -387,6 +409,8 @@ export async function cloneTask(taskId: string, employeeId?: string) {
 }
 
 export async function updateTaskDetails(taskId: string, formData: FormData) {
+  const auth = await authorizeAction("tasks", "edit");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     const title = formData.get("title") as string;
     const description = formData.get("description") as string;

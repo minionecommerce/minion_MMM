@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { SAFE_USER_SELECT } from "@/lib/safe-select";
 
 export async function getLeads() {
   try {
@@ -11,7 +12,7 @@ export async function getLeads() {
     if (userId) {
       const employee = await prisma.employee.findUnique({
         where: { userId },
-        include: { user: { include: { role: true } } }
+        include: { user: { select: { ...SAFE_USER_SELECT, role: true } } }
       });
       const roleName = (employee?.user?.role?.name || '').toLowerCase();
       if (roleName === 'sales' && employee) {
@@ -19,13 +20,13 @@ export async function getLeads() {
       }
     }
 
-    const where = salesExecutiveId ? { salesExecutiveId } : {};
+    const where = { deletedAt: null, ...(salesExecutiveId ? { salesExecutiveId } : {}) };
 
     const leads = await prisma.lead.findMany({
       where,
       include: {
         customer: true,
-        salesExecutive: { include: { user: true } },
+        salesExecutive: { include: { user: { select: SAFE_USER_SELECT } } },
         deals: { select: { id: true, status: true, value: true } },
         siteVisits: { select: { id: true, status: true, visitDate: true } },
         followUps: { select: { id: true, status: true, scheduledDate: true } },
@@ -60,8 +61,8 @@ export async function getCRMDashboardData() {
       pipelineAgg,
       statusGroups,
     ] = await Promise.all([
-      prisma.lead.count(),
-      prisma.lead.count({ where: { status: 'New' } }),
+      prisma.lead.count({ where: { deletedAt: null } }),
+      prisma.lead.count({ where: { deletedAt: null, status: 'New' } }),
       prisma.followUp.count({ where: { status: 'Pending' } }),
       prisma.followUp.count({
         where: {
@@ -80,6 +81,7 @@ export async function getCRMDashboardData() {
         _sum: { value: true }
       }),
       prisma.lead.groupBy({
+        where: { deletedAt: null },
         by: ['status'],
         _count: { _all: true },
         _sum: { expectedValue: true },
@@ -130,8 +132,8 @@ export async function getCRMAnalyticsData() {
       totalDeals, wonDeals,
       pipelineAgg,
     ] = await Promise.all([
-      prisma.lead.count({ where: { createdAt: { gte: startOfMonth, lte: endOfMonth } } }),
-      prisma.lead.count({ where: { status: 'Won', updatedAt: { gte: startOfMonth, lte: endOfMonth } } }),
+      prisma.lead.count({ where: { deletedAt: null, createdAt: { gte: startOfMonth, lte: endOfMonth } } }),
+      prisma.lead.count({ where: { deletedAt: null, status: 'Won', updatedAt: { gte: startOfMonth, lte: endOfMonth } } }),
       prisma.followUp.count({ where: { createdAt: { gte: startOfMonth, lte: endOfMonth } } }),
       prisma.followUp.count({ where: { status: 'Completed', updatedAt: { gte: startOfMonth, lte: endOfMonth } } }),
       prisma.siteVisit.count({ where: { createdAt: { gte: startOfMonth, lte: endOfMonth } } }),

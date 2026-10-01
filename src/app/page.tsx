@@ -1,3 +1,4 @@
+import { requirePageAccess } from "@/lib/auth";
 import MinionJourneySection from '../features/home/components/MinionJourneySection';
 import Image from "next/image";
 import Link from "next/link";
@@ -5,7 +6,8 @@ import {
   Search, Bell, Home, Briefcase, Users, LayoutDashboard, Target, Activity, FileText, Gift, Library, ArrowRight, ArrowUpRight, Calendar, Clock, Link as LinkIcon, Building2, PaintBucket, TreePine, Crown, CheckCircle2, ChevronRight, PlusSquare, FilePlus, MapPin, FolderPlus, CreditCard, BookOpen, Sprout, Handshake, Settings, Lightbulb, TrendingUp, Heart, BadgeCheck, Leaf, Trophy, Check, MonitorPlay, Laptop, Cake, Medal, UserPlus, Award, BarChart
 } from "lucide-react";
 
-export default function CoordinatorDashboard() {
+export default async function CoordinatorDashboard() {
+  await requirePageAccess(["dashboard"]);
   return (
     <div className="w-full min-h-screen font-sans selection:bg-yellow-500 selection:text-black flex flex-col">
 

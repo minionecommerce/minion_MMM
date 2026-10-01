@@ -1,9 +1,12 @@
 "use server";
+import { authorizeAction } from "@/lib/auth";
 
 import { prisma } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 
 export async function createAchievement(formData: FormData) {
+  const auth = await authorizeAction("rewards", "create");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     const employeeId = formData.get("employeeId") as string;
     const title = formData.get("title") as string;
@@ -22,7 +25,7 @@ export async function createAchievement(formData: FormData) {
       if (!emp) validEmployeeId = "";
     }
     if (!validEmployeeId) {
-      const firstEmp = await prisma.employee.findFirst();
+      const firstEmp = (auth.ctx.employeeId ? await prisma.employee.findUnique({ where: { id: auth.ctx.employeeId } }) : null);
       if (!firstEmp) {
         return { success: false, error: "No employee found in database." };
       }
@@ -72,6 +75,8 @@ export async function createAchievement(formData: FormData) {
 }
 
 export async function giveRecognition(formData: FormData) {
+  const auth = await authorizeAction("rewards", "create");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     const employeeId = formData.get("employeeId") as string;
     const message = formData.get("message") as string;
@@ -87,7 +92,7 @@ export async function giveRecognition(formData: FormData) {
       targetEmp = await prisma.employee.findUnique({ where: { id: employeeId } });
     }
     if (!targetEmp) {
-      targetEmp = await prisma.employee.findFirst();
+      targetEmp = (auth.ctx.employeeId ? await prisma.employee.findUnique({ where: { id: auth.ctx.employeeId } }) : null);
     }
     if (!targetEmp) {
       return { success: false, error: "No target employee found." };
@@ -113,8 +118,10 @@ export async function giveRecognition(formData: FormData) {
 }
 
 export async function claimReward(rewardTitle: string, pointsRequired: number) {
+  const auth = await authorizeAction("rewards", "view");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
-    const firstEmp = await prisma.employee.findFirst();
+    const firstEmp = (auth.ctx.employeeId ? await prisma.employee.findUnique({ where: { id: auth.ctx.employeeId } }) : null);
     if (!firstEmp) return { success: false, error: "No employee found to claim reward." };
 
     // Create negative points transaction to redeem reward
@@ -137,6 +144,8 @@ export async function claimReward(rewardTitle: string, pointsRequired: number) {
 }
 
 export async function submitWellnessClaim(formData: FormData) {
+  const auth = await authorizeAction("rewards", "view");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     const employeeId = formData.get("employeeId") as string;
     const activity = formData.get("activity") as string;
@@ -155,7 +164,7 @@ export async function submitWellnessClaim(formData: FormData) {
       if (!emp) targetEmpId = "";
     }
     if (!targetEmpId) {
-      const firstEmp = await prisma.employee.findFirst();
+      const firstEmp = (auth.ctx.employeeId ? await prisma.employee.findUnique({ where: { id: auth.ctx.employeeId } }) : null);
       if (!firstEmp) return { success: false, error: "No employee found." };
       targetEmpId = firstEmp.id;
     }
@@ -179,6 +188,8 @@ export async function submitWellnessClaim(formData: FormData) {
 }
 
 export async function submitImpactActivity(formData: FormData) {
+  const auth = await authorizeAction("rewards", "view");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     const employeeId = formData.get("employeeId") as string;
     const title = formData.get("title") as string;
@@ -196,7 +207,7 @@ export async function submitImpactActivity(formData: FormData) {
       if (!emp) targetEmpId = "";
     }
     if (!targetEmpId) {
-      const firstEmp = await prisma.employee.findFirst();
+      const firstEmp = (auth.ctx.employeeId ? await prisma.employee.findUnique({ where: { id: auth.ctx.employeeId } }) : null);
       if (!firstEmp) return { success: false, error: "No employee found." };
       targetEmpId = firstEmp.id;
     }

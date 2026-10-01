@@ -1,9 +1,12 @@
 "use server";
+import { authorizeAction } from "@/lib/auth";
 
 import { prisma } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 
 export async function createProject(formData: FormData) {
+  const auth = await authorizeAction("projects", "create");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     const name = formData.get("name") as string;
     const customerName = formData.get("customerName") as string;
@@ -39,17 +42,12 @@ export async function createProject(formData: FormData) {
     if (managerIdInput) {
       validManager = await prisma.employee.findUnique({ where: { id: managerIdInput } });
     }
-    if (!validManager) {
-      validManager = await prisma.employee.findFirst();
+    // Default to the signed-in employee; never invent an account
+    if (!validManager && auth.ctx.employeeId) {
+      validManager = await prisma.employee.findUnique({ where: { id: auth.ctx.employeeId } });
     }
     if (!validManager) {
-      let user = await prisma.user.findFirst() || await prisma.user.create({ data: { name: "Default Manager", email: "manager@minion.com" } });
-      validManager = await prisma.employee.create({
-        data: {
-          userId: user.id,
-          designation: "Project Manager",
-        }
-      });
+      return { success: false, error: "Please select a project manager." };
     }
     const managerId = validManager.id;
 
@@ -76,6 +74,8 @@ export async function createProject(formData: FormData) {
 }
 
 export async function updateProjectStatus(projectId: string, status: string) {
+  const auth = await authorizeAction("projects", "edit");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     const project = await prisma.project.update({
       where: { id: projectId },
@@ -91,6 +91,8 @@ export async function updateProjectStatus(projectId: string, status: string) {
 }
 
 export async function updateProjectProgress(projectId: string, progress: number) {
+  const auth = await authorizeAction("projects", "edit");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     const project = await prisma.project.update({
       where: { id: projectId },
@@ -106,6 +108,8 @@ export async function updateProjectProgress(projectId: string, progress: number)
 }
 
 export async function createProjectTask(formData: FormData) {
+  const auth = await authorizeAction("projects", "edit");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     const projectId = formData.get("projectId") as string;
     const title = formData.get("title") as string;
@@ -137,6 +141,8 @@ export async function createProjectTask(formData: FormData) {
 }
 
 export async function createProjectBOQItem(formData: FormData) {
+  const auth = await authorizeAction("boq", "create");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     const projectId = formData.get("projectId") as string;
     const category = formData.get("category") as string;
@@ -172,6 +178,8 @@ export async function createProjectBOQItem(formData: FormData) {
 }
 
 export async function createProjectPayment(formData: FormData) {
+  const auth = await authorizeAction("payments", "create");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     const projectId = formData.get("projectId") as string;
     const amount = parseFloat((formData.get("amount") as string) || "0");
@@ -205,6 +213,8 @@ export async function createProjectPayment(formData: FormData) {
 }
 
 export async function createProjectExpense(formData: FormData) {
+  const auth = await authorizeAction("projects", "edit");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     const projectId = formData.get("projectId") as string;
     const amount = parseFloat((formData.get("amount") as string) || "0");

@@ -9,32 +9,30 @@ import TeamFilters from './components/TeamFilters';
 import PeopleDirectory from './components/PeopleDirectory';
 import OrganizationChart from './components/OrganizationChart';
 import DepartmentCards from './components/DepartmentCards';
-import AddEmployeeModal from './components/AddEmployeeModal';
 import DepartmentModal from './components/DepartmentModal';
 import AssignTeamModal from './components/AssignTeamModal';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 
 interface TeamClientProps {
   initialEmployees: any[];
   departments?: any[];
   projects?: any[];
-  roles?: any[];
-  allPermissions?: any[];
+  roles?: { id: string; name: string }[];
 }
 
 export default function TeamClient({
   initialEmployees = [],
   departments = [],
   projects = [],
-  roles = [],
-  allPermissions = []
+  roles = []
 }: TeamClientProps) {
+  const router = useRouter();
   const [activeTab, setActiveTab] = useState('Overview');
   const [search, setSearch] = useState('');
   const [filters, setFilters] = useState<Record<string, string>>({});
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
 
-  const [showAddEmployeeModal, setShowAddEmployeeModal] = useState(false);
   const [showDepartmentModal, setShowDepartmentModal] = useState(false);
   const [showAssignTeamModal, setShowAssignTeamModal] = useState(false);
 
@@ -207,7 +205,7 @@ export default function TeamClient({
       
       <main className="flex-1 w-full max-w-[1700px] mx-auto">
         <TeamHeader 
-          onAddEmployee={() => setShowAddEmployeeModal(true)}
+          onAddEmployee={() => router.push('/users/new')}
           onCreateTeam={() => setShowDepartmentModal(true)}
           onOrganization={() => setActiveTab('Organization')}
           onAssignTeam={() => setShowAssignTeamModal(true)}
@@ -367,15 +365,6 @@ export default function TeamClient({
         </div>
       </main>
 
-      {showAddEmployeeModal && (
-        <AddEmployeeModal
-          departments={departments}
-          managers={initialEmployees}
-          roles={roles}
-          allPermissions={allPermissions}
-          onClose={() => setShowAddEmployeeModal(false)}
-        />
-      )}
 
       {showDepartmentModal && (
         <DepartmentModal

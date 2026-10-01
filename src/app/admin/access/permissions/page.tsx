@@ -1,8 +1,11 @@
+import { requirePageAccess } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { Key } from "lucide-react";
 
 export default async function PermissionsPage() {
+  await requirePageAccess(["users"]);
   const permissions = await prisma.permission.findMany({
+    where: { isLegacy: false },
     orderBy: [
       { module: "asc" },
       { action: "asc" }

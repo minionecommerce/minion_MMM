@@ -1,3 +1,4 @@
+import { requirePageAccess } from "@/lib/auth";
 import { getEmployeeById } from "@/services/team";
 import EmployeeClient from "./EmployeeClient";
 import Link from "next/link";
@@ -6,6 +7,7 @@ import { ArrowLeft } from "lucide-react";
 export const dynamic = "force-dynamic";
 
 export default async function EmployeeProfilePage({ params }: { params: Promise<{ employeeId: string }> | { employeeId: string } }) {
+  await requirePageAccess(["employees"]);
   const resolvedParams = await params;
   const employeeId = resolvedParams?.employeeId;
   const dbEmp = employeeId ? await getEmployeeById(employeeId) : null;

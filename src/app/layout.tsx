@@ -43,8 +43,10 @@ export default function RootLayout({
         suppressHydrationWarning
       >
         <Providers>
-          <GlobalNavbar />
-          {children}
+          <div className="min-h-screen lg:flex">
+            <GlobalNavbar />
+            <div className="flex-1 min-w-0">{children}</div>
+          </div>
         </Providers>
       </body>
     </html>

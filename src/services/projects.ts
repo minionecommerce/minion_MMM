@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { SAFE_USER_SELECT } from "@/lib/safe-select";
 
 export async function getProjects() {
   try {
@@ -8,14 +9,14 @@ export async function getProjects() {
         lead: {
           include: {
             salesExecutive: {
-              include: { user: true }
+              include: { user: { select: SAFE_USER_SELECT } }
             }
           }
         },
         deal: true,
         manager: {
           include: {
-            user: true
+            user: { select: SAFE_USER_SELECT }
           }
         },
         expenses: true,
@@ -47,20 +48,20 @@ export async function getProjectById(id: string) {
         lead: {
           include: {
             salesExecutive: {
-              include: { user: true }
+              include: { user: { select: SAFE_USER_SELECT } }
             }
           }
         },
         deal: true,
         manager: {
           include: {
-            user: true
+            user: { select: SAFE_USER_SELECT }
           }
         },
         tasks: {
           include: {
             assignee: {
-              include: { user: true }
+              include: { user: { select: SAFE_USER_SELECT } }
             }
           },
           orderBy: { createdAt: 'desc' }

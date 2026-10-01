@@ -1,158 +1,50 @@
+// Bootstraps the first Super Admin. Safe to re-run: never changes an existing
+// user's password or role. Run scripts/rbac-sync.ts first for the permission catalog.
+//
+//   ADMIN_EMAIL=you@company.com ADMIN_PASSWORD='<strong password>' npx tsx scripts/seed-rbac-v2.ts
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
+import { passwordProblems } from "../src/lib/password-policy";
 
 const prisma = new PrismaClient();
 
-const modules = [
-  "My Work",
-  "CRM",
-  "Projects",
-  "Parks",
-  "Tasks",
-  "Team",
-  "Learning",
-  "Rewards",
-  "Resources",
-  "Finance",
-  "Reports",
-  "Settings"
-];
-
-const actions = [
-  "VIEW",
-  "CREATE",
-  "EDIT",
-  "DELETE",
-  "ASSIGN",
-  "APPROVE",
-  "EXPORT",
-  "UPLOAD",
-  "DOWNLOAD",
-  "SHARE",
-  "MANAGE"
-];
-
 async function main() {
-  console.log("Seeding Custom RBAC Engine...");
+  const superAdminRole =
+    (await prisma.role.findFirst({ where: { OR: [{ key: "super_admin" }, { isSuperAdmin: true }] } })) ??
+    (await prisma.role.create({
+      data: { key: "super_admin", name: "SUPER_ADMIN", description: "Full system access", isActive: true, isSuperAdmin: true, isSystem: true },
+    }));
 
-  // 1. Seed Permissions
-  const permissionIds: string[] = [];
-  for (const mod of modules) {
-    for (const act of actions) {
-      const p = await prisma.permission.upsert({
-        where: {
-          module_action: {
-            module: mod,
-            action: act
-          }
-        },
-        update: {},
-        create: {
-          module: mod,
-          action: act,
-          description: `Can ${act.toLowerCase()} in ${mod}`
-        }
-      });
-      permissionIds.push(p.id);
-    }
+  const adminEmail = process.env.ADMIN_EMAIL?.trim().toLowerCase();
+  if (!adminEmail) {
+    console.log("Super Admin role ready. Set ADMIN_EMAIL and ADMIN_PASSWORD to create the first admin account.");
+    return;
   }
 
-  // 2. Seed Super Admin Role
-  const superAdminRole = await prisma.role.upsert({
-    where: { name: "SUPER_ADMIN" },
-    update: {},
-    create: {
-      name: "SUPER_ADMIN",
-      description: "Full system access",
-      isActive: true
-    }
-  });
-
-  // Assign all permissions to SUPER_ADMIN
-  for (const pId of permissionIds) {
-    await prisma.rolePermission.upsert({
-      where: {
-        roleId_permissionId: {
-          roleId: superAdminRole.id,
-          permissionId: pId
-        }
-      },
-      update: { effect: "ALLOW", scope: "ALL" },
-      create: {
-        roleId: superAdminRole.id,
-        permissionId: pId,
-        effect: "ALLOW",
-        scope: "ALL"
-      }
-    });
+  const existing = await prisma.user.findFirst({ where: { email: { equals: adminEmail, mode: "insensitive" } } });
+  if (existing) {
+    console.log(`${adminEmail} already exists; leaving its password and role unchanged.`);
+    return;
   }
 
-  // 3. Ensure Admin User
-  const adminEmail = process.env.ADMIN_EMAIL || "admin@minion.com";
-  const adminPassword = process.env.ADMIN_PASSWORD || "admin123";
-  const hashedPassword = await bcrypt.hash(adminPassword, 10);
+  const adminPassword = process.env.ADMIN_PASSWORD ?? "";
+  const problems = passwordProblems(adminPassword);
+  if (problems.length) {
+    throw new Error(`ADMIN_PASSWORD does not meet the password policy: ${problems.join(", ")}`);
+  }
 
-  const user = await prisma.user.upsert({
-    where: { email: adminEmail },
-    update: { 
-      password: hashedPassword,
-      roleId: superAdminRole.id
-    },
-    create: {
+  await prisma.user.create({
+    data: {
       email: adminEmail,
-      name: "Dinesh Admin",
-      password: hashedPassword,
-      roleId: superAdminRole.id
-    }
+      name: process.env.ADMIN_NAME || "Administrator",
+      password: await bcrypt.hash(adminPassword, 12),
+      roleId: superAdminRole.id,
+      status: "ACTIVE",
+      passwordChangedAt: new Date(),
+      employee: { create: { designation: "Administrator", department: "Management" } },
+    },
   });
-
-  const employee = await prisma.employee.upsert({
-    where: { userId: user.id },
-    update: {},
-    create: {
-      userId: user.id,
-      designation: "CEO",
-      department: "Management"
-    }
-  });
-
-  // Example: Project Coordinator
-  const pcRole = await prisma.role.upsert({
-    where: { name: "Project Coordinator" },
-    update: {},
-    create: {
-      name: "Project Coordinator",
-      description: "Coordinates CRM requirements, projects, tasks and documentation."
-    }
-  });
-
-  // Example: Assign PC some specific permissions
-  const pcPerms = [
-    { mod: "CRM", act: "VIEW", scope: "ALL" },
-    { mod: "CRM", act: "EDIT", scope: "OWN" },
-    { mod: "Projects", act: "VIEW", scope: "ALL" },
-    { mod: "Projects", act: "EDIT", scope: "ASSIGNED" },
-    { mod: "Tasks", act: "VIEW", scope: "ALL" },
-    { mod: "Tasks", act: "CREATE", scope: "ALL" },
-    { mod: "Tasks", act: "EDIT", scope: "ALL" },
-    { mod: "Tasks", act: "ASSIGN", scope: "ALL" },
-    { mod: "Team", act: "VIEW", scope: "ALL" }
-  ];
-
-  for (const pcP of pcPerms) {
-    const p = await prisma.permission.findUnique({
-      where: { module_action: { module: pcP.mod, action: pcP.act } }
-    });
-    if (p) {
-      await prisma.rolePermission.upsert({
-        where: { roleId_permissionId: { roleId: pcRole.id, permissionId: p.id } },
-        update: { effect: "ALLOW", scope: pcP.scope },
-        create: { roleId: pcRole.id, permissionId: p.id, effect: "ALLOW", scope: pcP.scope }
-      });
-    }
-  }
-
-  console.log("RBAC seeding complete.");
+  console.log(`Created Super Admin ${adminEmail}.`);
 }
 
 main()
