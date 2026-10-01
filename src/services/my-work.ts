@@ -1,17 +1,22 @@
 import { prisma } from "@/lib/db";
 import { MyWorkData } from "@/app/my-work/MyWorkContext";
 import { WorkTask, WorkProject, FollowUp, ScheduleEvent, ActionItem, ActivityItem, PerformanceData, AchievementData, Priority, TaskStatus } from "@/app/my-work/data/mock";
+import { SAFE_USER_SELECT } from "@/lib/safe-select";
+import { getAuthContext } from "@/lib/auth";
 
 export async function getMyWorkData(): Promise<MyWorkData> {
   try {
-    // In a real app, use authenticated user ID
-    // We'll fetch the first employee for demo purposes
-    const employee = await prisma.employee.findFirst({
-      include: { user: true }
-    });
+    // Always the signed-in user's own work
+    const ctx = await getAuthContext();
+    const employee = ctx?.employeeId
+      ? await prisma.employee.findUnique({
+          where: { id: ctx.employeeId },
+          include: { user: { select: SAFE_USER_SELECT } }
+        })
+      : null;
 
     if (!employee) {
-      throw new Error("No employee found in database");
+      throw new Error("Your account is not linked to an employee record. Please contact your administrator.");
     }
 
     // 1. Tasks

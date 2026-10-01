@@ -1,9 +1,12 @@
 "use server";
+import { authorizeAction } from "@/lib/auth";
 
 import { prisma } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 
 export async function createEmployee(formData: FormData) {
+  const auth = await authorizeAction("employees", "create");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     const name = formData.get("name") as string;
     const email = formData.get("email") as string;
@@ -29,6 +32,8 @@ export async function createEmployee(formData: FormData) {
         data: {
           name,
           email: generatedEmail,
+          status: "PENDING", // no login until credentials are created in Users
+          createdById: auth.ctx.userId,
         }
       });
     }
@@ -83,6 +88,8 @@ export async function createEmployee(formData: FormData) {
 }
 
 export async function createDepartment(formData: FormData) {
+  const auth = await authorizeAction("employees", "create");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     const name = formData.get("name") as string;
     if (!name) return { success: false, error: "Department name is required." };
@@ -103,6 +110,8 @@ export async function createDepartment(formData: FormData) {
 }
 
 export async function updateEmployee(employeeId: string, formData: FormData) {
+  const auth = await authorizeAction("employees", "edit");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     const designation = formData.get("designation") as string;
     const departmentName = formData.get("department") as string;
@@ -139,6 +148,8 @@ export async function updateEmployee(employeeId: string, formData: FormData) {
 }
 
 export async function assignTeamToProject(formData: FormData) {
+  const auth = await authorizeAction("projects", "edit");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     const projectId = formData.get("projectId") as string;
     const employeeId = formData.get("employeeId") as string;

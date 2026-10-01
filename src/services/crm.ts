@@ -1,6 +1,7 @@
 import { prisma } from "@/lib/db";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
+import { SAFE_USER_SELECT } from "@/lib/safe-select";
 
 export async function getLeads() {
   try {
@@ -11,7 +12,7 @@ export async function getLeads() {
     if (userId) {
       const employee = await prisma.employee.findUnique({
         where: { userId },
-        include: { user: { include: { role: true } } }
+        include: { user: { select: { ...SAFE_USER_SELECT, role: true } } }
       });
       const roleName = (employee?.user?.role?.name || '').toLowerCase();
       if (roleName === 'sales' && employee) {
@@ -25,7 +26,7 @@ export async function getLeads() {
       where,
       include: {
         customer: true,
-        salesExecutive: { include: { user: true } },
+        salesExecutive: { include: { user: { select: SAFE_USER_SELECT } } },
         deals: { select: { id: true, status: true, value: true } },
         siteVisits: { select: { id: true, status: true, visitDate: true } },
         followUps: { select: { id: true, status: true, scheduledDate: true } },

@@ -21,28 +21,49 @@ model User {
   roleId        String?
   role          Role?     @relation(fields: [roleId], references: [id])
   employee      Employee?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+
+  // Account lifecycle & security
+  status             String    @default("ACTIVE") // ACTIVE, INACTIVE, SUSPENDED, PENDING
+  isAdmin            Boolean   @default(false) // Full Administrator Access (granted only by a Super Admin)
+  mustChangePassword Boolean   @default(false)
+  sessionVersion     Int       @default(0) // bump to invalidate every session of this user
+  lastLoginAt        DateTime?
+  failedLoginCount   Int       @default(0)
+  lockedUntil        DateTime?
+  passwordChangedAt  DateTime?
+  createdById        String?
+  deletedAt          DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([roleId])
 }
 
 model Role {
-  id          String  @id @default(cuid())
-  name        String  @unique // e.g., "Super Admin", "CEO / Founder", "Sales"
-  description String?
-  isActive    Boolean @default(true)
+  id           String  @id @default(cuid())
+  key          String? @unique // stable slug, e.g. "super_admin", "project_manager"
+  name         String  @unique // e.g., "Super Admin", "CEO / Founder", "Sales"
+  description  String?
+  isActive     Boolean @default(true)
+  isSuperAdmin Boolean @default(false) // grants every permission; only Super Admins can assign it
+  isSystem     Boolean @default(false) // cannot be renamed or deleted
 
   permissions RolePermission[]
   users       User[]
 
   createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt @default(now())
+  updatedAt DateTime @default(now()) @updatedAt
 }
 
 model Permission {
   id          String  @id @default(cuid())
-  module      String
-  action      String
+  module      String // catalog key, e.g. "leads" (legacy rows use "CRM", "My Work", ...)
+  action      String // view, create, edit, delete, approve, export (legacy rows are upper case)
   description String?
+  sortOrder   Int     @default(0)
+  isLegacy    Boolean @default(false) // pre-catalog permission, kept for history only
 
   rolePermissions      RolePermission[]
   employeeOverrides    EmployeePermissionOverride[]
@@ -147,11 +168,29 @@ model Department {
   updatedAt DateTime   @updatedAt
 }
 
+model SecurityAuditLog {
+  id           String   @id @default(cuid())
+  actorUserId  String? // who performed the action (null for anonymous, e.g. failed login)
+  action       String // USER_CREATED, LOGIN, FAILED_LOGIN, PERMISSIONS_CHANGED, ...
+  targetUserId String? // whose account was affected
+  ip           String?
+  userAgent    String?
+  oldValue     Json?
+  newValue     Json?
+  metadata     Json?
+  createdAt    DateTime @default(now())
+
+  @@index([targetUserId, createdAt])
+  @@index([actorUserId, createdAt])
+  @@index([action, createdAt])
+}
+
 // ---------------------------------------------------------
 // 2. HR / Team / Employees
 // ---------------------------------------------------------
 model Employee {
   id            String      @id @default(cuid())
+  employeeCode  String?     @unique // Employee ID, e.g. "MIN-0001"
   userId        String      @unique
   user          User        @relation(fields: [userId], references: [id])
   designation   String?
@@ -165,25 +204,25 @@ model Employee {
   subordinates  Employee[]  @relation("ManagerToEmployee")
 
   // Relations
-  tasksAssigned     Task[]          @relation("TaskAssignee")
-  tasksAssignedBy   Task[]          @relation("TaskAssignedBy")
-  tasksSecondary    Task[]          @relation("TaskSecondaryAssignee")
-  tasksVerified     Task[]          @relation("TaskVerifiedBy")
-  recurringTasksAssigned TaskRecurringSeries[] @relation("RecurringTaskAssignee")
+  tasksAssigned           Task[]                @relation("TaskAssignee")
+  tasksAssignedBy         Task[]                @relation("TaskAssignedBy")
+  tasksSecondary          Task[]                @relation("TaskSecondaryAssignee")
+  tasksVerified           Task[]                @relation("TaskVerifiedBy")
+  recurringTasksAssigned  TaskRecurringSeries[] @relation("RecurringTaskAssignee")
   recurringTasksSecondary TaskRecurringSeries[] @relation("RecurringTaskSecondary")
-  recurringTasksCreated TaskRecurringSeries[] @relation("RecurringCreatedBy")
-  taskComments      TaskComment[]
-  taskAuditLogs     TaskAuditLog[]
-  projectsManaged   Project[]       @relation("ProjectManager")
-  siteVisits        SiteVisit[]
-  rewards           Reward[]
-  pointTransactions PointsLedger[]
-  activities        Activity[]
-  notifications     Notification[]
-  enrollments       Enrollment[]
-  certifications    Certification[]
-  skills            EmployeeSkill[]
-  resourcesOwned    Resource[]      @relation("ResourceOwner")
+  recurringTasksCreated   TaskRecurringSeries[] @relation("RecurringCreatedBy")
+  taskComments            TaskComment[]
+  taskAuditLogs           TaskAuditLog[]
+  projectsManaged         Project[]             @relation("ProjectManager")
+  siteVisits              SiteVisit[]
+  rewards                 Reward[]
+  pointTransactions       PointsLedger[]
+  activities              Activity[]
+  notifications           Notification[]
+  enrollments             Enrollment[]
+  certifications          Certification[]
+  skills                  EmployeeSkill[]
+  resourcesOwned          Resource[]            @relation("ResourceOwner")
 
   // CRM Relations
   leadsAsExec            Lead[]                       @relation("LeadSalesExecutive")
@@ -520,24 +559,24 @@ model Project {
   value           Decimal?  @db.Decimal(12, 2)
 
   // Relations
-  tasks      Task[]
+  tasks          Task[]
   recurringTasks TaskRecurringSeries[]
-  boqItems   BoqItem[]
-  expenses   Expense[]
-  payments   Payment[]
-  resources  Resource[]
-  landscapes Landscape[]
+  boqItems       BoqItem[]
+  expenses       Expense[]
+  payments       Payment[]
+  resources      Resource[]
+  landscapes     Landscape[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 }
 
 model Task {
-  id          String    @id @default(cuid())
+  id          String   @id @default(cuid())
   title       String
   description String?
   projectId   String?
-  project     Project?  @relation(fields: [projectId], references: [id])
+  project     Project? @relation(fields: [projectId], references: [id])
 
   // CRM & Parks references
   leadId      String?
@@ -546,29 +585,29 @@ model Task {
   landscapeId String?
   landscape   Landscape? @relation(fields: [landscapeId], references: [id])
 
-  priority String    @default("Medium") // Low, Medium, High
-  status   String    @default("Not Started") // Not Started, In Progress, Blocked, Waiting, Completed, Verified, Closed
-  dueDate  DateTime?
+  priority  String    @default("Medium") // Low, Medium, High
+  status    String    @default("Not Started") // Not Started, In Progress, Blocked, Waiting, Completed, Verified, Closed
+  dueDate   DateTime?
   startDate DateTime?
 
   // Assignments
-  assigneeId  String?
-  assignee    Employee? @relation("TaskAssignee", fields: [assigneeId], references: [id])
+  assigneeId           String?
+  assignee             Employee? @relation("TaskAssignee", fields: [assigneeId], references: [id])
   assignedByEmployeeId String?
   assignedBy           Employee? @relation("TaskAssignedBy", fields: [assignedByEmployeeId], references: [id])
   secondaryAssigneeId  String?
   secondaryAssignee    Employee? @relation("TaskSecondaryAssignee", fields: [secondaryAssigneeId], references: [id])
 
   // Completion & Verification
-  requiresCompletionProof Boolean @default(false)
-  requiresVerification    Boolean @default(false)
+  requiresCompletionProof Boolean   @default(false)
+  requiresVerification    Boolean   @default(false)
   verifiedById            String?
   verifiedBy              Employee? @relation("TaskVerifiedBy", fields: [verifiedById], references: [id])
   completionNotes         String?
   completedAt             DateTime?
 
   // Recurring Instance
-  isRecurringInstance Boolean @default(false)
+  isRecurringInstance Boolean              @default(false)
   recurringSeriesId   String?
   recurringSeries     TaskRecurringSeries? @relation(fields: [recurringSeriesId], references: [id], onDelete: SetNull)
 
@@ -583,18 +622,18 @@ model Task {
 }
 
 model TaskRecurringSeries {
-  id          String    @id @default(cuid())
+  id          String  @id @default(cuid())
   title       String
   description String?
-  
-  repeatInterval Int      @default(1) 
-  repeatUnit     String   @default("Day") // Day, Week, Month, Year
+
+  repeatInterval Int       @default(1)
+  repeatUnit     String    @default("Day") // Day, Week, Month, Year
   repeatUntil    DateTime?
-  
-  projectId   String?
-  project     Project?  @relation(fields: [projectId], references: [id])
-  assigneeId  String?
-  assignee    Employee? @relation("RecurringTaskAssignee", fields: [assigneeId], references: [id])
+
+  projectId           String?
+  project             Project?  @relation(fields: [projectId], references: [id])
+  assigneeId          String?
+  assignee            Employee? @relation("RecurringTaskAssignee", fields: [assigneeId], references: [id])
   secondaryAssigneeId String?
   secondaryAssignee   Employee? @relation("RecurringTaskSecondary", fields: [secondaryAssigneeId], references: [id])
 
@@ -621,13 +660,13 @@ model TaskChecklistItem {
 }
 
 model TaskComment {
-  id          String   @id @default(cuid())
-  taskId      String
-  task        Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
-  content     String
-  authorId    String
-  author      Employee @relation(fields: [authorId], references: [id])
-  createdAt   DateTime @default(now())
+  id        String   @id @default(cuid())
+  taskId    String
+  task      Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  content   String
+  authorId  String
+  author    Employee @relation(fields: [authorId], references: [id])
+  createdAt DateTime @default(now())
 }
 
 model TaskAuditLog {

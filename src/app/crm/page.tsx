@@ -1,16 +1,20 @@
+import { requirePageAccess } from "@/lib/auth";
+import { CRM_MODULES } from "@/lib/rbac/catalog";
 import { getLeads, getCRMDashboardData, getCRMAnalyticsData } from "@/services/crm";
 import { prisma } from "@/lib/db";
 import CRMClient from "./CRMClient";
+import { SAFE_USER_SELECT } from "@/lib/safe-select";
 
 export const dynamic = "force-dynamic";
 
 export default async function CRMPage() {
+  await requirePageAccess(CRM_MODULES);
   const [leads, dashboardData, analytics, employees, followUps, siteVisits, deals, quotes] = await Promise.all([
     getLeads(),
     getCRMDashboardData(),
     getCRMAnalyticsData(),
     prisma.employee.findMany({
-      include: { user: true },
+      include: { user: { select: SAFE_USER_SELECT } },
       orderBy: { user: { name: 'asc' } }
     }),
     prisma.followUp.findMany({
@@ -18,14 +22,14 @@ export default async function CRMPage() {
         customer: true,
         lead: { select: { id: true, leadNumber: true, status: true } },
         deal: { select: { id: true, dealNumber: true } },
-        assignedTo: { include: { user: true } },
+        assignedTo: { include: { user: { select: SAFE_USER_SELECT } } },
       },
       orderBy: { scheduledDate: 'asc' }
     }),
     prisma.siteVisit.findMany({
       include: {
         lead: { include: { customer: true } },
-        employee: { include: { user: true } },
+        employee: { include: { user: { select: SAFE_USER_SELECT } } },
       },
       orderBy: { visitDate: 'asc' }
     }),
@@ -33,7 +37,7 @@ export default async function CRMPage() {
       include: {
         customer: true,
         lead: { select: { id: true, leadNumber: true } },
-        salesExecutive: { include: { user: true } },
+        salesExecutive: { include: { user: { select: SAFE_USER_SELECT } } },
         quotes: { select: { id: true, quoteNumber: true, amount: true, status: true, type: true } },
         projects: { select: { id: true, name: true, status: true } },
       },
@@ -44,7 +48,7 @@ export default async function CRMPage() {
         customer: true,
         lead: { select: { id: true, leadNumber: true } },
         deal: { select: { id: true, dealNumber: true } },
-        createdBy: { include: { user: true } },
+        createdBy: { include: { user: { select: SAFE_USER_SELECT } } },
         lineItems: true,
       },
       orderBy: { createdAt: 'desc' }

@@ -1,9 +1,12 @@
 "use server";
+import { authorizeAction } from "@/lib/auth";
 
 import { prisma } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 
 export async function createTask(formData: FormData) {
+  const auth = await authorizeAction("my_work", "create");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     const title = formData.get("title") as string;
     const description = formData.get("description") as string;
@@ -12,8 +15,8 @@ export async function createTask(formData: FormData) {
     const priority = formData.get("priority") as string;
     const projectId = formData.get("projectId") as string;
 
-    // Default to the first employee
-    const defaultAssignee = await prisma.employee.findFirst();
+    // Default to the signed-in employee
+    const defaultAssignee = (auth.ctx.employeeId ? await prisma.employee.findUnique({ where: { id: auth.ctx.employeeId } }) : null);
     if (!defaultAssignee) throw new Error("No employee found");
 
     let finalDueDate = null;
@@ -42,6 +45,8 @@ export async function createTask(formData: FormData) {
 }
 
 export async function completeTask(taskId: string) {
+  const auth = await authorizeAction("my_work", "edit");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     await prisma.task.update({
       where: { id: taskId },
@@ -70,6 +75,8 @@ export async function completeTask(taskId: string) {
 }
 
 export async function createFollowUp(formData: FormData) {
+  const auth = await authorizeAction("leads", "edit");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     const customerName = formData.get("customerName") as string;
     const projectType = formData.get("projectType") as string;
@@ -77,7 +84,7 @@ export async function createFollowUp(formData: FormData) {
     const timeStr = formData.get("time") as string;
     const note = formData.get("note") as string;
 
-    const defaultAssignee = await prisma.employee.findFirst();
+    const defaultAssignee = (auth.ctx.employeeId ? await prisma.employee.findUnique({ where: { id: auth.ctx.employeeId } }) : null);
     if (!defaultAssignee) throw new Error("No employee found");
 
     // Mock customer creation / finding
@@ -121,6 +128,8 @@ export async function createFollowUp(formData: FormData) {
 }
 
 export async function completeFollowUp(id: string) {
+  const auth = await authorizeAction("leads", "edit");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     const sv = await prisma.siteVisit.update({
       where: { id },

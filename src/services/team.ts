@@ -1,13 +1,14 @@
 import { prisma } from "@/lib/db";
+import { SAFE_USER_SELECT } from "@/lib/safe-select";
 
 export async function getTeam() {
   try {
     const team = await prisma.employee.findMany({
       include: {
-        user: true,
+        user: { select: SAFE_USER_SELECT },
         departmentRef: true,
         manager: {
-          include: { user: true }
+          include: { user: { select: SAFE_USER_SELECT } }
         },
         tasksAssigned: {
           include: { project: true }
@@ -38,7 +39,7 @@ export async function getTeamData() {
       prisma.department.findMany({
         include: {
           employees: {
-            include: { user: true }
+            include: { user: { select: SAFE_USER_SELECT } }
           }
         },
         orderBy: { name: 'asc' }
@@ -62,13 +63,13 @@ export async function getEmployeeById(id: string) {
     const employee = await prisma.employee.findUnique({
       where: { id },
       include: {
-        user: { include: { role: true } },
+        user: { select: { ...SAFE_USER_SELECT, role: true } },
         departmentRef: true,
         manager: {
-          include: { user: true }
+          include: { user: { select: SAFE_USER_SELECT } }
         },
         subordinates: {
-          include: { user: true }
+          include: { user: { select: SAFE_USER_SELECT } }
         },
         tasksAssigned: {
           include: {

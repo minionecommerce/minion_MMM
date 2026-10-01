@@ -62,7 +62,7 @@ export default function TeamHeader({
         <div className="w-px h-6 bg-[#292B30] mx-1 hidden lg:block" />
 
         <Link 
-          href="/team/roles"
+          href="/users/roles"
           className="flex items-center gap-1.5 px-3 py-2.5 rounded-lg bg-[#0D0D0F] border border-[#292B30] hover:border-purple-400/50 text-[12px] font-semibold text-gray-300 hover:text-purple-400 transition-all"
         >
           <Shield className="w-3.5 h-3.5" />

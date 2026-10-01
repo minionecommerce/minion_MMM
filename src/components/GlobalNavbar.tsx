@@ -2,22 +2,24 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Home, Briefcase, Target, LayoutGrid, TreePine, CheckCircle2, Users, BookOpen, Gift, Library, Search, Bell, ChevronUp, LogOut, Menu, X, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Home, Briefcase, Target, LayoutGrid, TreePine, CheckCircle2, Users, UserCog, BookOpen, Gift, Library, Search, Bell, ChevronUp, LogOut, Menu, X, PanelLeftClose, PanelLeftOpen, KeyRound, type LucideIcon } from 'lucide-react';
+import { NAV_ITEMS, snapshotCanViewAny } from '@/lib/rbac/catalog';
 import { useSession, signOut } from 'next-auth/react';
-import { useState, useSyncExternalStore } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 
-const allNavItems = [
-  { label: 'HOME', icon: Home, href: '/' },
-  { label: 'MY WORK', icon: Briefcase, href: '/my-work' },
-  { label: 'CRM', icon: Target, href: '/crm', requiredPermission: 'crm.view' },
-  { label: 'PROJECTS', icon: LayoutGrid, href: '/projects', requiredPermission: 'projects.view' },
-  { label: 'PARKS', icon: TreePine, href: '/parks', requiredPermission: 'parks.view' },
-  { label: 'TASKS', icon: CheckCircle2, href: '/tasks', requiredPermission: 'tasks.view' },
-  { label: 'TEAM', icon: Users, href: '/team', requiredPermission: 'team.view' },
-  { label: 'LEARNING', icon: BookOpen, href: '/learning', requiredPermission: 'learning.view' },
-  { label: 'REWARDS', icon: Gift, href: '/rewards', requiredPermission: 'rewards.view' },
-  { label: 'RESOURCES', icon: Library, href: '/resources', requiredPermission: 'resources.view' },
-];
+const NAV_ICONS: Record<string, LucideIcon> = {
+  "/": Home,
+  "/my-work": Briefcase,
+  "/crm": Target,
+  "/projects": LayoutGrid,
+  "/parks": TreePine,
+  "/tasks": CheckCircle2,
+  "/team": Users,
+  "/users": UserCog,
+  "/learning": BookOpen,
+  "/rewards": Gift,
+  "/resources": Library,
+};
 
 // Desktop collapsed/expanded preference, kept in localStorage.
 // Falls back to memory when storage is unavailable (private mode, blocked site data).
@@ -91,20 +93,26 @@ export default function GlobalNavbar() {
   const toggleCollapsed = () => setCollapsedPreference(!collapsed);
 
   const permissions = session?.user?.permissions || [];
-  const isSuperAdmin = session?.user?.role === 'SUPER_ADMIN';
 
-  const visibleNavItems = allNavItems.filter(item => {
-    if (!item.requiredPermission) return true;
-    if (isSuperAdmin) return true;
-    return permissions.includes(item.requiredPermission);
-  });
+  // UX only: the server enforces the same rules on every request
+  const visibleNavItems = NAV_ITEMS
+    .filter(item => snapshotCanViewAny(permissions, item.modules))
+    .map(item => ({ ...item, icon: NAV_ICONS[item.href] ?? Home }));
 
   const handleLogout = async () => {
     await signOut({ redirect: false });
     router.push('/login');
   };
 
-  if (pathname === '/login' || pathname === '/unauthorized') {
+  // Session revoked on the server (deactivated, password reset, expired): sign out locally
+  const sessionInvalid = !!session?.user?.invalid;
+  useEffect(() => {
+    if (sessionInvalid) {
+      signOut({ redirect: false }).then(() => router.push('/login?expired=1'));
+    }
+  }, [sessionInvalid, router]);
+
+  if (pathname === '/login' || pathname === '/unauthorized' || pathname === '/forgot-password' || pathname === '/account/change-password') {
     return null;
   }
 
@@ -199,8 +207,12 @@ export default function GlobalNavbar() {
             </button>
             {dropdownOpen && (
               <div className={`absolute bottom-full mb-2 w-48 bg-[#1a1b1e] border border-[#292B30] rounded-lg shadow-lg py-1 z-50 ${isCompact ? 'left-0' : 'left-0 right-0 w-auto'}`}>
-                <Link href="/profile" className="block px-4 py-2 text-sm text-gray-300 hover:bg-[#292B30] hover:text-white">
+                <Link href="/account" className="block px-4 py-2 text-sm text-gray-300 hover:bg-[#292B30] hover:text-white">
                   My Profile
+                </Link>
+                <Link href="/account/change-password" className="flex items-center gap-2 px-4 py-2 text-sm text-gray-300 hover:bg-[#292B30] hover:text-white">
+                  <KeyRound className="w-4 h-4" />
+                  Change Password
                 </Link>
                 <button
                   onClick={handleLogout}

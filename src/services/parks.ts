@@ -1,4 +1,5 @@
 import { prisma } from "@/lib/db";
+import { SAFE_USER_SELECT } from "@/lib/safe-select";
 
 export async function getLandscapes() {
   try {
@@ -9,7 +10,7 @@ export async function getLandscapes() {
         lead: true,
         manager: {
           include: {
-            user: true
+            user: { select: SAFE_USER_SELECT }
           }
         },
         plants: true,
@@ -17,7 +18,7 @@ export async function getLandscapes() {
         maintenances: {
           include: {
             assignedTo: {
-              include: { user: true }
+              include: { user: { select: SAFE_USER_SELECT } }
             }
           },
           orderBy: { dueDate: 'asc' }
@@ -25,7 +26,7 @@ export async function getLandscapes() {
         inspections: {
           include: {
             inspector: {
-              include: { user: true }
+              include: { user: { select: SAFE_USER_SELECT } }
             }
           },
           orderBy: { date: 'desc' }
@@ -58,7 +59,7 @@ export async function getLandscapeById(id: string) {
         lead: true,
         manager: {
           include: {
-            user: true
+            user: { select: SAFE_USER_SELECT }
           }
         },
         plants: {
@@ -70,7 +71,7 @@ export async function getLandscapeById(id: string) {
         maintenances: {
           include: {
             assignedTo: {
-              include: { user: true }
+              include: { user: { select: SAFE_USER_SELECT } }
             }
           },
           orderBy: { dueDate: 'asc' }
@@ -78,21 +79,21 @@ export async function getLandscapeById(id: string) {
         inspections: {
           include: {
             inspector: {
-              include: { user: true }
+              include: { user: { select: SAFE_USER_SELECT } }
             }
           },
           orderBy: { date: 'desc' }
         },
         issues: {
           include: {
-            reportedBy: { include: { user: true } },
-            assignedTo: { include: { user: true } }
+            reportedBy: { include: { user: { select: SAFE_USER_SELECT } } },
+            assignedTo: { include: { user: { select: SAFE_USER_SELECT } } }
           },
           orderBy: { createdAt: 'desc' }
         },
         tasks: {
           include: {
-            assignee: { include: { user: true } }
+            assignee: { include: { user: { select: SAFE_USER_SELECT } } }
           },
           orderBy: { createdAt: 'desc' }
         },
@@ -116,7 +117,7 @@ export async function getLandscapeMaintenances() {
           include: { customer: true }
         },
         assignedTo: {
-          include: { user: true }
+          include: { user: { select: SAFE_USER_SELECT } }
         }
       },
       orderBy: { dueDate: 'asc' }
@@ -170,7 +171,7 @@ export async function getLandscapeInspections() {
           include: { customer: true }
         },
         inspector: {
-          include: { user: true }
+          include: { user: { select: SAFE_USER_SELECT } }
         }
       },
       orderBy: { date: 'desc' }

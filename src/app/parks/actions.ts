@@ -1,9 +1,12 @@
 "use server";
+import { authorizeAction } from "@/lib/auth";
 
 import { prisma } from "@/lib/db";
 import { revalidatePath } from "next/cache";
 
 export async function createLandscape(formData: FormData) {
+  const auth = await authorizeAction("parks", "create");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     const name = formData.get("name") as string;
     const customerName = formData.get("customerName") as string;
@@ -44,7 +47,7 @@ export async function createLandscape(formData: FormData) {
       validManager = await prisma.employee.findUnique({ where: { id: managerIdInput } });
     }
     if (!validManager) {
-      validManager = await prisma.employee.findFirst();
+      validManager = (auth.ctx.employeeId ? await prisma.employee.findUnique({ where: { id: auth.ctx.employeeId } }) : null);
     }
     const managerId = validManager?.id || null;
 
@@ -96,6 +99,8 @@ export async function createLandscape(formData: FormData) {
 }
 
 export async function updateLandscapeStage(landscapeId: string, stage: string) {
+  const auth = await authorizeAction("parks", "edit");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     const validStages = [
       "Enquiry", "Design", "Site Preparation", "Plantation",
@@ -125,6 +130,8 @@ export async function updateLandscapeStage(landscapeId: string, stage: string) {
 }
 
 export async function scheduleMaintenance(formData: FormData) {
+  const auth = await authorizeAction("parks", "create");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     const landscapeId = formData.get("landscapeId") as string;
     const type = formData.get("type") as string;
@@ -171,6 +178,8 @@ export async function scheduleMaintenance(formData: FormData) {
 }
 
 export async function createSiteInspection(formData: FormData) {
+  const auth = await authorizeAction("parks", "create");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     const landscapeId = formData.get("landscapeId") as string;
     const inspectorId = formData.get("inspectorId") as string;
@@ -228,6 +237,8 @@ export async function createSiteInspection(formData: FormData) {
 }
 
 export async function createIrrigationZone(formData: FormData) {
+  const auth = await authorizeAction("parks", "create");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     const landscapeId = formData.get("landscapeId") as string;
     const zoneName = formData.get("zoneName") as string;
@@ -264,6 +275,8 @@ export async function createIrrigationZone(formData: FormData) {
 }
 
 export async function createPlantAllocation(formData: FormData) {
+  const auth = await authorizeAction("parks", "create");
+  if (!auth.ok) return { success: false, error: auth.error };
   try {
     const landscapeId = formData.get("landscapeId") as string;
     const species = formData.get("species") as string;

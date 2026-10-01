@@ -1,11 +1,14 @@
+import { requirePageAccess } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { Activity } from "lucide-react";
+import { SAFE_USER_SELECT } from "@/lib/safe-select";
 
 export default async function AuditLogPage() {
+  await requirePageAccess(["users"]);
   const logs = await prisma.accessAuditLog.findMany({
     include: {
-      employee: { include: { user: true } },
-      changedBy: { include: { user: true } }
+      employee: { include: { user: { select: SAFE_USER_SELECT } } },
+      changedBy: { include: { user: { select: SAFE_USER_SELECT } } }
     },
     orderBy: { createdAt: "desc" },
     take: 100 // Limit for now

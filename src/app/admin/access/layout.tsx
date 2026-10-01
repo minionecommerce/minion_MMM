@@ -1,17 +1,17 @@
 import Link from "next/link";
 import { Shield, Users, Key, FileText, Activity } from "lucide-react";
-import { requirePermission } from "@/lib/auth";
+import { requirePageAccess } from "@/lib/auth";
 
 export default async function AccessLayout({ children }: { children: React.ReactNode }) {
   // Only highly authorized users
-  await requirePermission("settings.manage");
+  await requirePageAccess(["users"]);
 
   const tabs = [
-    { name: "Roles", href: "/admin/access/roles", icon: Shield },
-    { name: "Employees", href: "/admin/access/employees", icon: Users },
+    { name: "Users", href: "/users", icon: Users },
+    { name: "Roles", href: "/users/roles", icon: Shield },
     { name: "Permissions", href: "/admin/access/permissions", icon: Key },
     { name: "Access Requests", href: "/admin/access/requests", icon: FileText },
-    { name: "Audit Log", href: "/admin/access/audit", icon: Activity },
+    { name: "Legacy Audit Log", href: "/admin/access/audit", icon: Activity },
   ];
 
   return (

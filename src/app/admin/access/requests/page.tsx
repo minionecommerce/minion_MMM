@@ -1,11 +1,14 @@
+import { requirePageAccess } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { FileText } from "lucide-react";
+import { SAFE_USER_SELECT } from "@/lib/safe-select";
 
 export default async function AccessRequestsPage() {
+  await requirePageAccess(["users"]);
   const requests = await prisma.accessRequest.findMany({
     include: {
-      employee: { include: { user: true } },
-      reviewedBy: { include: { user: true } }
+      employee: { include: { user: { select: SAFE_USER_SELECT } } },
+      reviewedBy: { include: { user: { select: SAFE_USER_SELECT } } }
     },
     orderBy: { createdAt: "desc" }
   });
