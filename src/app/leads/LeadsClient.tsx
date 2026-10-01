@@ -84,7 +84,7 @@ export default function LeadsClient({ data, params, options, currentEmployeeId, 
   const resetAll = () => { setQ(''); startTransition(() => router.push('/leads')); };
 
   return (
-    <div className="w-full min-h-screen bg-white text-[#333] font-sans">
+    <div data-light-native className="w-full min-h-screen bg-white text-[#333] font-sans">
       <div className="px-4 sm:px-5 pt-6 pb-10 max-w-[2000px] mx-auto">
         <LeadHeader
           options={options}

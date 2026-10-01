@@ -248,7 +248,7 @@ export default function GlobalNavbar() {
   return (
     <>
       {/* Mobile top bar */}
-      <header className="lg:hidden sticky top-0 z-30 h-16 bg-[#111113] border-b border-[#292B30] px-4 flex items-center justify-between">
+      <header data-sidebar className="lg:hidden sticky top-0 z-30 h-16 bg-[#111113] border-b border-[#292B30] px-4 flex items-center justify-between">
         <button
           onClick={() => setMobileOpen(true)}
           className="text-gray-300 hover:text-white transition-colors p-1 -ml-1"
@@ -267,7 +267,7 @@ export default function GlobalNavbar() {
 
       {/* Mobile drawer */}
       {mobileOpen && (
-        <div className="lg:hidden fixed inset-0 z-[60]">
+        <div data-sidebar className="lg:hidden fixed inset-0 z-[60]">
           <div className="absolute inset-0 bg-black/70 backdrop-blur-sm" onClick={() => setMobileOpen(false)} />
           <aside className="absolute left-0 top-0 bottom-0 w-72 max-w-[85vw] bg-[#111113] border-r border-[#292B30] shadow-2xl">
             {renderSidebarContent(false)}
@@ -277,6 +277,7 @@ export default function GlobalNavbar() {
 
       {/* Desktop sidebar */}
       <aside
+        data-sidebar
         className={`hidden lg:block sticky top-0 h-screen shrink-0 z-30 bg-[#111113] border-r border-[#292B30] transition-[width] duration-200 ${
           collapsed ? 'w-[76px]' : 'w-60'
         }`}

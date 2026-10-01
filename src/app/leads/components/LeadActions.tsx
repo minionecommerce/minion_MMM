@@ -43,7 +43,7 @@ export default function LeadActions({ canEdit, canCreate, canDelete, handlers }:
       {pos && createPortal(
         <>
           <div className="fixed inset-0 z-[70]" onClick={close} />
-          <div role="menu" style={{ top: pos.top, right: pos.right }} className="fixed z-[71] w-44 bg-white border border-gray-200 rounded-lg shadow-xl py-1">
+          <div role="menu" data-light-native style={{ top: pos.top, right: pos.right }} className="fixed z-[71] w-44 bg-white border border-gray-200 rounded-lg shadow-xl py-1">
             <button role="menuitem" className={item} onClick={run(handlers.onView)}><Eye className="w-4 h-4" /> View</button>
             {canEdit && <button role="menuitem" className={item} onClick={run(handlers.onEdit)}><Pencil className="w-4 h-4" /> Edit</button>}
             {canCreate && <button role="menuitem" className={item} onClick={run(handlers.onDuplicate)}><Copy className="w-4 h-4" /> Duplicate</button>}
