@@ -28,6 +28,9 @@ export const metadata: Metadata = {
   description: "Minion provides architecture, construction, interior design, smart home automation, landscaping and building product solutions.",
 };
 
+import GlobalNavbar from "@/components/GlobalNavbar";
+import { Providers } from "@/components/Providers";
+
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -39,7 +42,10 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} ${archivoBlack.variable} ${caveat.variable} antialiased`}
         suppressHydrationWarning
       >
-        {children}
+        <Providers>
+          <GlobalNavbar />
+          {children}
+        </Providers>
       </body>
     </html>
   );
