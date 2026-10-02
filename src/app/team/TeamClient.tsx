@@ -18,14 +18,12 @@ interface TeamClientProps {
   initialEmployees: any[];
   departments?: any[];
   projects?: any[];
-  roles?: { id: string; name: string }[];
 }
 
 export default function TeamClient({
   initialEmployees = [],
   departments = [],
   projects = [],
-  roles = []
 }: TeamClientProps) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState('Overview');
@@ -219,7 +217,6 @@ export default function TeamClient({
         {(activeTab === 'Overview' || activeTab === 'People') && (
           <TeamSummaryCards 
             employees={initialEmployees}
-            roles={roles}
             onCardClick={handleCardClick}
           />
         )}

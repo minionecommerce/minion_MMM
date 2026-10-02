@@ -1,18 +1,16 @@
 'use client';
 
-import { Users, Clock, FolderKanban, CheckSquare, Shield, Key } from 'lucide-react';
+import { Users, Clock, FolderKanban, CheckSquare, Key } from 'lucide-react';
 
 interface TeamSummaryCardsProps {
   employees?: any[];
-  roles?: any[];
   onCardClick?: (title: string) => void;
 }
 
-export default function TeamSummaryCards({ employees = [], roles = [], onCardClick }: TeamSummaryCardsProps) {
+export default function TeamSummaryCards({ employees = [], onCardClick }: TeamSummaryCardsProps) {
   const totalEmployees = employees.length;
   const activeCount = employees.filter(e => e.user?.isActive !== false).length; // ACTIVE TODAY
   const loginAccounts = employees.filter(e => e.user).length;
-  const customRoles = roles.length;
   
   // Fake pending access requests for now since we haven't built the access request model yet
   const pendingRequests = 3;
@@ -52,15 +50,6 @@ export default function TeamSummaryCards({ employees = [], roles = [], onCardCli
       bg: 'bg-green-400/10 border-green-400/20'
     },
     {
-      title: 'CUSTOM ROLES',
-      value: String(customRoles).padStart(2, '0'),
-      sub1: 'Configured Roles',
-      sub2: '',
-      icon: Shield,
-      color: 'text-purple-400',
-      bg: 'bg-purple-400/10 border-purple-400/20'
-    },
-    {
       title: 'LOGIN ACCOUNTS',
       value: String(loginAccounts),
       sub1: 'System Access',
@@ -91,7 +80,7 @@ export default function TeamSummaryCards({ employees = [], roles = [], onCardCli
 
   return (
     <div className="px-6 pb-6">
-      <div className="grid grid-cols-2 lg:grid-cols-6 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         {cards.map(card => {
           const Icon = card.icon;
           return (
