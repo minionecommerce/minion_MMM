@@ -1,6 +1,7 @@
 'use server';
 
-import { revalidatePath } from 'next/cache';
+import { revalidatePath, revalidateTag } from 'next/cache';
+import { CRM_STATS_TAG } from '@/services/crm';
 import { requireAuth, requirePermission, requireAnyPermission } from '@/lib/auth';
 import { CRM_MODULES } from '@/lib/rbac/catalog';
 import { leadCodeFor, nextLeadSeq } from '@/lib/leads/service';
@@ -386,6 +387,8 @@ export async function createLead(formData: {
   }
 
   revalidatePath('/crm');
+
+  revalidateTag(CRM_STATS_TAG, { expire: 0 });
   revalidatePath('/my-work');
 
   return { success: true, lead };
@@ -488,6 +491,8 @@ export async function updateLeadStage(leadId: string, newStatus: string) {
   }
 
   revalidatePath('/crm');
+
+  revalidateTag(CRM_STATS_TAG, { expire: 0 });
   return updated;
 }
 
@@ -568,6 +573,8 @@ export async function createFollowUp(data: {
   }
 
   revalidatePath('/crm');
+
+  revalidateTag(CRM_STATS_TAG, { expire: 0 });
   revalidatePath('/my-work');
 
   return { success: true, followUp };
@@ -610,6 +617,8 @@ export async function completeFollowUp(followUpId: string, completionNotes?: str
   }
 
   revalidatePath('/crm');
+
+  revalidateTag(CRM_STATS_TAG, { expire: 0 });
   revalidatePath('/my-work');
 
   return { success: true };
@@ -629,6 +638,8 @@ export async function rescheduleFollowUp(followUpId: string, newDate: string, no
   });
 
   revalidatePath('/crm');
+
+  revalidateTag(CRM_STATS_TAG, { expire: 0 });
   return { success: true };
 }
 
@@ -706,6 +717,8 @@ export async function scheduleSiteVisit(data: {
   }
 
   revalidatePath('/crm');
+
+  revalidateTag(CRM_STATS_TAG, { expire: 0 });
   return { success: true, siteVisit };
 }
 
@@ -751,6 +764,8 @@ export async function completeSiteVisit(visitId: string, data: {
   });
 
   revalidatePath('/crm');
+
+  revalidateTag(CRM_STATS_TAG, { expire: 0 });
   return { success: true };
 }
 
@@ -833,6 +848,8 @@ export async function createDeal(data: {
   });
 
   revalidatePath('/crm');
+
+  revalidateTag(CRM_STATS_TAG, { expire: 0 });
   return { success: true, deal };
 }
 
@@ -894,6 +911,8 @@ export async function updateDealStage(dealId: string, newStage: string, data?: {
   }
 
   revalidatePath('/crm');
+
+  revalidateTag(CRM_STATS_TAG, { expire: 0 });
   return { success: true, deal: updated };
 }
 
@@ -1024,6 +1043,8 @@ export async function convertDealToProject(dealId: string, projectData: {
   }
 
   revalidatePath('/crm');
+
+  revalidateTag(CRM_STATS_TAG, { expire: 0 });
   revalidatePath('/projects');
   revalidatePath('/my-work');
 
@@ -1112,6 +1133,8 @@ export async function createQuote(data: {
   }
 
   revalidatePath('/crm');
+
+  revalidateTag(CRM_STATS_TAG, { expire: 0 });
   return { success: true, quote };
 }
 
@@ -1146,6 +1169,8 @@ export async function updateQuoteStatus(quoteId: string, status: string) {
   });
 
   revalidatePath('/crm');
+
+  revalidateTag(CRM_STATS_TAG, { expire: 0 });
   return { success: true };
 }
 
@@ -1224,6 +1249,8 @@ export async function importLeads(rows: Array<{
   }
 
   revalidatePath('/crm');
+
+  revalidateTag(CRM_STATS_TAG, { expire: 0 });
   return results;
 }
 
