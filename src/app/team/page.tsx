@@ -7,9 +7,10 @@ export const dynamic = "force-dynamic";
 
 export default async function TeamPage() {
   await requirePageAccess(["employees"]);
-  const data = await getTeamData();
-  const roles = await prisma.role.findMany({ where: { isActive: true }, select: { id: true, name: true } });
-  
+  const [data, roles] = await Promise.all([
+    getTeamData(),
+    prisma.role.findMany({ where: { isActive: true }, select: { id: true, name: true } }),
+  ]);
 
   return (
     <TeamClient
