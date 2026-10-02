@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Calendar, Check, ChevronDown, Download, FileInput, Filter, LayoutList, Plus, RefreshCw } from 'lucide-react';
+import { Calendar, Check, Download, FileInput, Filter, LayoutTemplate, Plus, RefreshCw } from 'lucide-react';
 import type { LeadFormOptions } from '@/lib/leads/constants';
 import type { LeadListParams } from '@/lib/leads/queries';
 
@@ -21,8 +21,8 @@ export default function LeadHeader({ options, params, canCreate, canExport, canE
   onParams: (u: Record<string, string | undefined>) => void;
   exportHref: string;
 }) {
-  const [panel, setPanel] = useState<'filter' | 'date' | 'add' | null>(null);
-  const toggle = (p: 'filter' | 'date' | 'add') => setPanel(cur => (cur === p ? null : p));
+  const [panel, setPanel] = useState<'filter' | 'date' | null>(null);
+  const toggle = (p: 'filter' | 'date') => setPanel(cur => (cur === p ? null : p));
   const activeFilters = [params.statusId, params.sourceId, params.assigneeId].filter(Boolean).length;
   const activeDates = [params.from, params.to].filter(Boolean).length;
 
@@ -40,23 +40,9 @@ export default function LeadHeader({ options, params, canCreate, canExport, canE
           </button>
         )}
         {canEditLayout && (
-          <>
-            <button onClick={() => toggle('add')} title="More lead options" aria-label="More lead options" aria-haspopup="menu" aria-expanded={panel === 'add'} className="-ml-1 w-7 h-10 flex items-center justify-center border-2 border-[#f5b800] rounded-[3px] text-[#f5b800] hover:bg-[#fff8dc] transition-colors">
-              <ChevronDown className="w-4 h-4" strokeWidth={3} />
-            </button>
-            {panel === 'add' && (
-              <div role="menu" className="absolute left-0 top-12 z-30 w-56 bg-white border border-gray-200 rounded-lg shadow-xl py-1">
-                {canCreate && (
-                  <button role="menuitem" onClick={() => { setPanel(null); onAdd(); }} className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left text-[14px] text-gray-800 hover:bg-gray-50">
-                    <Plus className="w-4 h-4" /> Add New Lead
-                  </button>
-                )}
-                <button role="menuitem" onClick={() => { setPanel(null); onEditLayout(); }} className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left text-[14px] text-gray-800 hover:bg-gray-50">
-                  <LayoutList className="w-4 h-4" /> Edit Page Layout
-                </button>
-              </div>
-            )}
-          </>
+          <button onClick={onEditLayout} title="Edit Page Layout" aria-label="Edit Page Layout" className={iconBtn}>
+            <LayoutTemplate className="w-5 h-5" />
+          </button>
         )}
         <button onClick={onRefresh} title="Refresh" aria-label="Refresh" className={iconBtn}><RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} /></button>
         <button onClick={() => toggle('filter')} title="Filter" aria-label="Filter" className={`${iconBtn} relative`}>
@@ -73,7 +59,6 @@ export default function LeadHeader({ options, params, canCreate, canExport, canE
           <span className={`${iconBtn} opacity-30 cursor-not-allowed`} title="You do not have permission to export"><Download className="w-5 h-5" /></span>
         )}
         <span className={`${iconBtn} opacity-30 cursor-not-allowed`} title="Import: coming soon" aria-disabled="true"><FileInput className="w-5 h-5" /></span>
-        <span className={`${iconBtn} opacity-30 cursor-not-allowed`} title="Add Quote: coming soon" aria-disabled="true"><Plus className="w-5 h-5" /></span>
 
         {panel === 'filter' && (
           <div className="absolute right-0 top-12 z-30 w-72 bg-white border border-gray-200 rounded-lg shadow-xl p-4 space-y-3">
