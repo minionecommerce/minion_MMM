@@ -2,10 +2,10 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Home, Briefcase, Target, LayoutGrid, TreePine, CheckCircle2, Users, UserCog, BookOpen, Gift, Library, Search, Bell, ChevronUp, LogOut, Menu, X, KeyRound, ClipboardList, type LucideIcon } from 'lucide-react';
+import { Home, Briefcase, Target, LayoutGrid, TreePine, CheckCircle2, Users, UserCog, BookOpen, Gift, Library, Search, Bell, ChevronUp, LogOut, Menu, X, PanelLeftClose, KeyRound, ClipboardList, type LucideIcon } from 'lucide-react';
 import { NAV_ITEMS, snapshotCanViewAny } from '@/lib/rbac/catalog';
 import { useSession, signOut } from 'next-auth/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useSyncExternalStore } from 'react';
 
 const NAV_ICONS: Record<string, LucideIcon> = {
   "/": Home,
@@ -21,6 +21,35 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/rewards": Gift,
   "/resources": Library,
 };
+
+// "Hide menu": the whole navigator can be put away; the choice is remembered in this browser.
+const HIDDEN_KEY = 'minion.sidebar.hidden';
+const hiddenListeners = new Set<() => void>();
+let hiddenMemory: boolean | null = null;
+
+function getHidden() {
+  if (hiddenMemory !== null) return hiddenMemory;
+  try {
+    return localStorage.getItem(HIDDEN_KEY) === '1';
+  } catch {
+    return false;
+  }
+}
+
+function setHiddenPreference(value: boolean) {
+  hiddenMemory = value;
+  try {
+    localStorage.setItem(HIDDEN_KEY, value ? '1' : '0');
+  } catch {}
+  hiddenListeners.forEach(listener => listener());
+}
+
+function subscribeHidden(listener: () => void) {
+  hiddenListeners.add(listener);
+  return () => {
+    hiddenListeners.delete(listener);
+  };
+}
 
 function Logo({ compact = false }: { compact?: boolean }) {
   return (
@@ -53,6 +82,9 @@ export default function GlobalNavbar() {
   const [mobileOpen, setMobileOpen] = useState(false);
   // Desktop: the sidebar rests as a slim icon strip and opens while the pointer (or keyboard focus) is on it
   const [expanded, setExpanded] = useState(false);
+  // Right after "Show menu" the pointer is still where the strip appears; keep it closed until the pointer really moves
+  const [holdClosed, setHoldClosed] = useState<{ x: number; y: number } | null>(null);
+  const hidden = useSyncExternalStore(subscribeHidden, getHidden, () => false);
   const [lastPathname, setLastPathname] = useState(pathname);
 
   // Close the mobile drawer and profile menu after navigating
@@ -87,7 +119,7 @@ export default function GlobalNavbar() {
   }
 
   // The mobile drawer always shows labels; the desktop sidebar can collapse to icons
-  const renderSidebarContent = (isCompact: boolean) => (
+  const renderSidebarContent = (isCompact: boolean, desktop = false) => (
     <div className="flex flex-col h-full">
       {/* Logo + collapse toggle */}
       <div className={`h-20 flex items-center border-b border-[#292B30] shrink-0 ${isCompact ? 'justify-center px-2' : 'justify-between px-5'}`}>
@@ -146,6 +178,21 @@ export default function GlobalNavbar() {
           );
         })}
       </nav>
+
+      {/* Hide menu (desktop): puts the whole navigator away; the menu icon brings it back */}
+      {desktop && (
+        <div className="px-3 pb-2 shrink-0">
+          <button
+            onClick={() => { setExpanded(false); setDropdownOpen(false); setHiddenPreference(true); }}
+            aria-label="Hide menu"
+            title="Hide menu"
+            className={`w-full flex items-center gap-3 rounded-lg p-2 text-gray-500 hover:text-white hover:bg-[#1a1b1e] transition-colors ${isCompact ? 'justify-center' : ''}`}
+          >
+            <PanelLeftClose className="w-4 h-4 shrink-0" />
+            {!isCompact && <span className="text-[11px] font-semibold tracking-wider">HIDE MENU</span>}
+          </button>
+        </div>
+      )}
 
       {/* Profile */}
       <div className="border-t border-[#292B30] p-3 shrink-0">
@@ -233,21 +280,38 @@ export default function GlobalNavbar() {
         </div>
       )}
 
+      {/* Desktop, hidden: only a small menu icon is left; clicking it brings the icon strip back */}
+      {hidden && (
+        <div data-sidebar className="hidden lg:block sticky top-0 h-screen w-14 shrink-0 z-40 bg-[#111113] border-r border-[#292B30]">
+          <button
+            onClick={e => { setHoldClosed({ x: e.clientX, y: e.clientY }); setHiddenPreference(false); }}
+            aria-label="Show menu"
+            title="Show menu"
+            className="mt-4 mx-auto w-10 h-10 flex items-center justify-center rounded-lg text-gray-300 hover:text-white hover:bg-[#1a1b1e] transition-colors"
+          >
+            <Menu className="w-6 h-6" />
+          </button>
+        </div>
+      )}
+
       {/* Desktop sidebar: a fixed 76px strip keeps the page from shifting; the panel opens over it on hover or focus */}
-      <div className="hidden lg:block sticky top-0 h-screen w-[76px] shrink-0 z-40">
-        <aside
-          data-sidebar
-          onMouseEnter={() => setExpanded(true)}
-          onMouseLeave={() => { setExpanded(false); setDropdownOpen(false); }}
-          onFocus={() => setExpanded(true)}
-          onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) { setExpanded(false); setDropdownOpen(false); } }}
-          className={`absolute left-0 top-0 h-screen bg-[#111113] border-r border-[#292B30] transition-[width,box-shadow] duration-200 ${
-            expanded ? 'w-60 shadow-2xl shadow-black/40' : 'w-[76px]'
-          }`}
-        >
-          {renderSidebarContent(!expanded)}
-        </aside>
-      </div>
+      {!hidden && (
+        <div className="hidden lg:block sticky top-0 h-screen w-[76px] shrink-0 z-40">
+          <aside
+            data-sidebar
+            onMouseEnter={() => { if (!holdClosed) setExpanded(true); }}
+            onMouseMove={e => { if (holdClosed && Math.hypot(e.clientX - holdClosed.x, e.clientY - holdClosed.y) > 6) { setHoldClosed(null); setExpanded(true); } }}
+            onMouseLeave={() => { setExpanded(false); setDropdownOpen(false); setHoldClosed(null); }}
+            onFocus={() => setExpanded(true)}
+            onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) { setExpanded(false); setDropdownOpen(false); } }}
+            className={`absolute left-0 top-0 h-screen bg-[#111113] border-r border-[#292B30] transition-[width,box-shadow] duration-200 ${
+              expanded ? 'w-60 shadow-2xl shadow-black/40' : 'w-[76px]'
+            }`}
+          >
+            {renderSidebarContent(!expanded, true)}
+          </aside>
+        </div>
+      )}
     </>
   );
 }
