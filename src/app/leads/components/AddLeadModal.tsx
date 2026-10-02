@@ -8,6 +8,7 @@ import type { LeadRow } from '@/lib/leads/queries';
 import { ApiError, callApi } from '@/lib/leads/client';
 import { useToast } from '@/components/ui/Toast';
 import FileUpload, { type ExistingFile } from './FileUpload';
+import type { LeadFieldDto } from '@/lib/leads/layout-shared';
 
 type Values = {
   customerName: string; contactNumber: string; taskAssignedPersonId: string; productOrServiceId: string;
@@ -19,23 +20,41 @@ type Values = {
 };
 type Errors = Partial<Record<keyof Values, string>>;
 
-const REQUIRED: [keyof Values, string][] = [
-  ['customerName', 'Customer Name'], ['contactNumber', 'Contact Number'], ['taskAssignedPersonId', 'Task Assigned Person'],
-  ['productOrServiceId', 'Product or Service'], ['requirementId', 'Requirements'], ['modeOfCustomerId', 'Mode of Customer'],
-  ['location', 'Location'], ['mainCategoryId', 'Main Category'], ['categoryId', 'Category'], ['subcategoryId', 'Subcategory'],
-  ['leadStatusId', 'Lead Status'],
-];
+// Which fields are required, their labels and defaults come from Edit Page Layout (options.fields)
+type CustomValues = Record<string, string | boolean>;
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 const input = 'w-full border-2 rounded-md px-3 h-[42px] text-[14px] text-gray-900 bg-white placeholder-gray-400 focus:outline-none focus:border-[#f5b800] disabled:bg-gray-100';
 const area = 'w-full border-2 rounded-md px-3 py-2 text-[14px] text-gray-900 bg-white placeholder-gray-400 focus:outline-none focus:border-[#f5b800] resize-y';
 const ok = 'border-gray-200';
 const bad = 'border-[#d9232b]';
 
+function withDefaults(base: Values, fields: LeadFieldDto[]): Values {
+  const out: Values = { ...base };
+  for (const f of fields) {
+    if (!f.isSystem || !f.defaultable || f.defaultValue === null || !(f.key in out)) continue;
+    if (f.key === 'dailyTask') out.dailyTask = f.defaultValue === 'true';
+    else (out as Record<string, string | boolean>)[f.key] = f.defaultValue;
+  }
+  return out;
+}
+
+function initialCustom(lead: LeadRow | null, fields: LeadFieldDto[]): CustomValues {
+  const out: CustomValues = {};
+  for (const f of fields) {
+    if (f.isSystem) continue;
+    const stored = lead?.customFields?.[f.key];
+    if (f.type === 'CHECKBOX') out[f.key] = lead ? stored === true : f.defaultValue === 'true';
+    else out[f.key] = lead ? (stored === undefined || stored === null ? '' : String(stored)) : (f.defaultValue ?? '');
+  }
+  return out;
+}
+
 function initialValues(lead: LeadRow | null, options: LeadFormOptions, employeeId: string | null): Values {
   const me = employeeId && options.employees.some(e => e.id === employeeId) ? employeeId : '';
   const standard = options.leadTypes.find(t => t.label.toLowerCase() === 'standard')?.id ?? options.leadTypes[0]?.id ?? '';
   if (!lead) {
-    return { customerName: '', contactNumber: '', taskAssignedPersonId: me, productOrServiceId: '', requirementId: '', exactRequirement: '', modeOfCustomerId: '', sourceId: '', location: '', exactLocation: '', locationLink: '', mainCategoryId: '', categoryId: '', subcategoryId: '', leadPersonId: me, leadStatusId: '', amount: '', conventionalRate: '0', notes: '', leadTypeId: standard, dailyTask: false };
+    return withDefaults({ customerName: '', contactNumber: '', taskAssignedPersonId: me, productOrServiceId: '', requirementId: '', exactRequirement: '', modeOfCustomerId: '', sourceId: '', location: '', exactLocation: '', locationLink: '', mainCategoryId: '', categoryId: '', subcategoryId: '', leadPersonId: me, leadStatusId: '', amount: '', conventionalRate: '0', notes: '', leadTypeId: standard, dailyTask: false }, options.fields);
   }
   return {
     customerName: lead.customerName === '—' ? '' : lead.customerName, contactNumber: lead.contactNumber, taskAssignedPersonId: lead.ids.taskAssignedPersonId ?? '',
@@ -57,6 +76,43 @@ function Field({ label, required, error, children, className = '' }: { label: st
   );
 }
 
+// One custom field (added in Edit Page Layout)
+function CustomField({ field, value, error, options, onChange }: {
+  field: LeadFieldDto; value: string | boolean; error?: string; options: { id: string; label: string }[]; onChange: (v: string | boolean) => void;
+}) {
+  const cls = `${input} ${error ? bad : ok}`;
+  const common = { 'aria-invalid': error ? true : undefined, 'aria-label': field.label } as const;
+  const text = typeof value === 'string' ? value : '';
+  if (field.type === 'CHECKBOX') {
+    return (
+      <div className="sm:col-span-2">
+        <label className="flex items-center gap-2.5 text-[16px] text-[#555] cursor-pointer select-none">
+          <input type="checkbox" checked={value === true} onChange={e => onChange(e.target.checked)} className="w-[18px] h-[18px] accent-black" />
+          {field.label}{field.required && ' *'}
+        </label>
+        {error && <p role="alert" className="text-[12px] text-[#d9232b] mt-1">{error}</p>}
+      </div>
+    );
+  }
+  return (
+    <Field label={field.label} required={field.required} error={error} className={field.type === 'TEXTAREA' ? 'sm:col-span-2' : ''}>
+      {field.type === 'TEXTAREA' ? (
+        <textarea className={`${area} ${error ? bad : ok}`} rows={3} value={text} onChange={e => onChange(e.target.value)} maxLength={5000} {...common} />
+      ) : field.type === 'DROPDOWN' ? (
+        <select className={cls} value={text} onChange={e => onChange(e.target.value)} {...common}>
+          <option value="">Select {field.label}</option>
+          {options.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+        </select>
+      ) : (
+        <input className={cls} value={text} onChange={e => onChange(e.target.value)} maxLength={500} {...common}
+          type={field.type === 'NUMBER' ? 'number' : field.type === 'DATE' ? 'date' : field.type === 'EMAIL' ? 'email' : 'text'}
+          step={field.type === 'NUMBER' ? 'any' : undefined}
+          inputMode={field.type === 'PHONE' ? 'tel' : field.type === 'URL' ? 'url' : field.type === 'NUMBER' ? 'decimal' : undefined} />
+      )}
+    </Field>
+  );
+}
+
 export default function AddLeadModal({ mode, lead, options: initialOptions, currentEmployeeId, storageReady, onClose, onSaved }: {
   mode: 'create' | 'edit';
   lead: LeadRow | null;
@@ -70,6 +126,9 @@ export default function AddLeadModal({ mode, lead, options: initialOptions, curr
   const [options, setOptions] = useState(initialOptions);
   const start = useMemo(() => initialValues(lead, initialOptions, currentEmployeeId), [lead, initialOptions, currentEmployeeId]);
   const [v, setV] = useState<Values>(start);
+  const startCustom = useMemo(() => initialCustom(lead, initialOptions.fields), [lead, initialOptions]);
+  const [custom, setCustom] = useState<CustomValues>(startCustom);
+  const [customErrors, setCustomErrors] = useState<Record<string, string>>({});
   const [errors, setErrors] = useState<Errors>({});
   const [formError, setFormError] = useState('');
   const [files, setFiles] = useState<File[]>([]);
@@ -80,6 +139,11 @@ export default function AddLeadModal({ mode, lead, options: initialOptions, curr
   const [refreshing, setRefreshing] = useState(false);
   const [confirmDiscard, setConfirmDiscard] = useState(false);
   const body = useRef<HTMLDivElement>(null);
+
+  const fieldMap = useMemo(() => new Map(options.fields.map(f => [f.key, f])), [options.fields]);
+  const L = (key: string, fallback: string) => fieldMap.get(key)?.label ?? fallback;
+  const R = (key: string) => !!fieldMap.get(key)?.required;
+  const customFields = useMemo(() => options.fields.filter(f => !f.isSystem), [options.fields]);
 
   const set = <K extends keyof Values>(k: K, value: Values[K]) => {
     setV(cur => ({ ...cur, [k]: value }));
@@ -94,7 +158,7 @@ export default function AddLeadModal({ mode, lead, options: initialOptions, curr
     return () => { live = false; };
   }, [mode, lead]);
 
-  const dirty = JSON.stringify(v) !== JSON.stringify(start) || files.length > 0 || removed.length > 0;
+  const dirty = JSON.stringify(v) !== JSON.stringify(start) || JSON.stringify(custom) !== JSON.stringify(startCustom) || files.length > 0 || removed.length > 0;
   const tryClose = () => { if (saving) return; if (dirty) setConfirmDiscard(true); else onClose(); };
 
   // Esc closes; Ctrl/Cmd+V pastes images
@@ -122,24 +186,48 @@ export default function AddLeadModal({ mode, lead, options: initialOptions, curr
 
   const validate = (): Errors => {
     const e: Errors = {};
-    for (const [k, label] of REQUIRED) if (!String(v[k]).trim()) e[k] = `${label} is required`;
+    for (const f of options.fields) {
+      if (!f.isSystem || !f.required || f.key === 'dailyTask' || f.key === 'conventionalRate' || !(f.key in v)) continue;
+      if (!String(v[f.key as keyof Values]).trim()) e[f.key as keyof Values] = `${f.label} is required`;
+    }
     if (!e.contactNumber && !normalizePhone(v.contactNumber)) e.contactNumber = 'Enter a valid contact number (7–15 digits)';
-    if (!e.customerName && v.customerName.trim().length < 2) e.customerName = 'Customer Name is required';
+    if (!e.customerName && v.customerName.trim().length < 2) e.customerName = `${L('customerName', 'Customer Name')} is required`;
     if (v.locationLink.trim() && !isHttpUrl(v.locationLink.trim())) e.locationLink = 'Enter a valid http(s) link';
-    if (v.amount.trim() && (!Number.isFinite(Number(v.amount)) || Number(v.amount) < 0)) e.amount = 'Amount must be a positive number';
+    if (v.amount.trim() && (!Number.isFinite(Number(v.amount)) || Number(v.amount) < 0)) e.amount = `${L('amount', 'Amount')} must be a positive number`;
+    return e;
+  };
+
+  const validateCustom = (): Record<string, string> => {
+    const e: Record<string, string> = {};
+    for (const f of customFields) {
+      const val = custom[f.key];
+      const text = typeof val === 'string' ? val.trim() : '';
+      if (f.type === 'CHECKBOX') { if (f.required && val !== true) e[f.key] = `${f.label} is required`; continue; }
+      if (!text) { if (f.required) e[f.key] = `${f.label} is required`; continue; }
+      if (f.type === 'NUMBER' && !Number.isFinite(Number(text))) e[f.key] = `${f.label} must be a number`;
+      else if (f.type === 'EMAIL' && !EMAIL_RE.test(text)) e[f.key] = `${f.label} must be a valid email address`;
+      else if (f.type === 'URL' && !isHttpUrl(text)) e[f.key] = 'Enter a valid http(s) link';
+      else if (f.type === 'PHONE' && !normalizePhone(text)) e[f.key] = 'Enter a valid phone number (7–15 digits)';
+    }
     return e;
   };
 
   const payload = () => ({
     customerName: v.customerName.trim(), contactNumber: v.contactNumber.trim(),
-    taskAssignedPersonId: v.taskAssignedPersonId, productOrServiceId: v.productOrServiceId,
-    requirementId: v.requirementId, exactRequirement: v.exactRequirement.trim() || null,
-    modeOfCustomerId: v.modeOfCustomerId, sourceId: v.sourceId || null,
-    location: v.location.trim(), exactLocation: v.exactLocation.trim() || null, locationLink: v.locationLink.trim() || null,
-    mainCategoryId: v.mainCategoryId, categoryId: v.categoryId, subcategoryId: v.subcategoryId,
-    leadPersonId: v.leadPersonId || null, leadStatusId: v.leadStatusId,
+    taskAssignedPersonId: v.taskAssignedPersonId || null, productOrServiceId: v.productOrServiceId || null,
+    requirementId: v.requirementId || null, exactRequirement: v.exactRequirement.trim() || null,
+    modeOfCustomerId: v.modeOfCustomerId || null, sourceId: v.sourceId || null,
+    location: v.location.trim() || null, exactLocation: v.exactLocation.trim() || null, locationLink: v.locationLink.trim() || null,
+    mainCategoryId: v.mainCategoryId || null, categoryId: v.categoryId || null, subcategoryId: v.subcategoryId || null,
+    leadPersonId: v.leadPersonId || null, leadStatusId: v.leadStatusId || null,
     amount: v.amount.trim() ? Number(v.amount) : null, conventionalRate: Number(v.conventionalRate || 0),
     notes: v.notes.trim() || null, leadTypeId: v.leadTypeId || null, dailyTask: v.dailyTask,
+    customFields: Object.fromEntries(customFields.map(f => {
+      const val = custom[f.key];
+      if (f.type === 'CHECKBOX') return [f.key, val === true];
+      const text = typeof val === 'string' ? val.trim() : '';
+      return [f.key, !text ? null : f.type === 'NUMBER' ? Number(text) : text];
+    })),
   });
 
   const uploadFiles = async (leadId: string) => {
@@ -163,8 +251,10 @@ export default function AddLeadModal({ mode, lead, options: initialOptions, curr
     e.preventDefault();
     setFormError('');
     const found = validate();
+    const foundCustom = validateCustom();
     setErrors(found);
-    if (Object.keys(found).length) {
+    setCustomErrors(foundCustom);
+    if (Object.keys(found).length || Object.keys(foundCustom).length) {
       body.current?.querySelector('[aria-invalid="true"]')?.scrollIntoView({ block: 'center', behavior: 'smooth' });
       return;
     }
@@ -184,8 +274,13 @@ export default function AddLeadModal({ mode, lead, options: initialOptions, curr
     } catch (err) {
       if (err instanceof ApiError && err.details?.length) {
         const fieldErrors: Errors = {};
-        for (const d of err.details) if (d.path) fieldErrors[d.path as keyof Values] = d.message;
+        const customFieldErrors: Record<string, string> = {};
+        for (const d of err.details) {
+          if (d.path.startsWith('customFields.')) customFieldErrors[d.path.slice('customFields.'.length)] = d.message;
+          else if (d.path) fieldErrors[d.path as keyof Values] = d.message;
+        }
         setErrors(fieldErrors);
+        setCustomErrors(customFieldErrors);
       }
       setFormError(err instanceof Error ? err.message : 'Could not save the lead');
       setSaving(false); setPhase('');
@@ -218,20 +313,20 @@ export default function AddLeadModal({ mode, lead, options: initialOptions, curr
 
         <form onSubmit={save} noValidate className="flex flex-col min-h-0 flex-1">
           <div ref={body} className="overflow-y-auto px-6 py-5 grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-5 flex-1">
-            <Field label="Customer Name" required error={errors.customerName}>
+            <Field label={L('customerName', 'Customer Name')} required={R('customerName')} error={errors.customerName}>
               <input className={`${input} ${ring('customerName')}`} aria-invalid={inv('customerName')} value={v.customerName} onChange={e => set('customerName', e.target.value)} placeholder="Enter customer name" maxLength={120} autoFocus />
             </Field>
-            <Field label="Contact Number" required error={errors.contactNumber}>
+            <Field label={L('contactNumber', 'Contact Number')} required={R('contactNumber')} error={errors.contactNumber}>
               <input className={`${input} ${ring('contactNumber')}`} aria-invalid={inv('contactNumber')} value={v.contactNumber} onChange={e => set('contactNumber', e.target.value)} placeholder="Enter contact number" inputMode="tel" maxLength={30} />
             </Field>
 
-            <Field label="Task Assigned Person" required error={errors.taskAssignedPersonId}>
+            <Field label={L('taskAssignedPersonId', 'Task Assigned Person')} required={R('taskAssignedPersonId')} error={errors.taskAssignedPersonId}>
               <select className={`${input} ${ring('taskAssignedPersonId')}`} aria-invalid={inv('taskAssignedPersonId')} value={v.taskAssignedPersonId} onChange={e => set('taskAssignedPersonId', e.target.value)}>
                 <option value="">Select Person</option>
                 {options.employees.map(o => <option key={o.id} value={o.id}>{o.name}{o.designation ? ` (${o.designation})` : ''}</option>)}
               </select>
             </Field>
-            <Field label="Product or Service" required error={errors.productOrServiceId}>
+            <Field label={L('productOrServiceId', 'Product or Service')} required={R('productOrServiceId')} error={errors.productOrServiceId}>
               <select className={`${input} ${ring('productOrServiceId')}`} aria-invalid={inv('productOrServiceId')} value={v.productOrServiceId} onChange={e => set('productOrServiceId', e.target.value)}>
                 <option value="">Select Type</option>
                 {options.productOrService.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
@@ -239,40 +334,41 @@ export default function AddLeadModal({ mode, lead, options: initialOptions, curr
             </Field>
 
             <div className="space-y-3">
-              <Field label="Requirements" required error={errors.requirementId}>
+              <Field label={L('requirementId', 'Requirements')} required={R('requirementId')} error={errors.requirementId}>
                 <select className={`${input} ${ring('requirementId')}`} aria-invalid={inv('requirementId')} value={v.requirementId} onChange={e => set('requirementId', e.target.value)}>
                   <option value="">Select Requirement</option>
                   {options.requirements.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
                 </select>
               </Field>
-              <textarea className={`${area} ${ok}`} rows={4} aria-label="Exact Requirement" placeholder="Exact Requirement" value={v.exactRequirement} onChange={e => set('exactRequirement', e.target.value)} maxLength={2000} />
+              <textarea className={`${area} ${ring('exactRequirement')}`} aria-invalid={inv('exactRequirement')} rows={4} aria-label={L('exactRequirement', 'Exact Requirement')} placeholder={`${L('exactRequirement', 'Exact Requirement')}${R('exactRequirement') ? ' *' : ''}`} value={v.exactRequirement} onChange={e => set('exactRequirement', e.target.value)} maxLength={2000} />
+              {errors.exactRequirement && <p role="alert" className="text-[12px] text-[#d9232b] -mt-2">{errors.exactRequirement}</p>}
             </div>
             <div className="space-y-5">
-              <Field label="Mode of Customer" required error={errors.modeOfCustomerId}>
+              <Field label={L('modeOfCustomerId', 'Mode of Customer')} required={R('modeOfCustomerId')} error={errors.modeOfCustomerId}>
                 <select className={`${input} ${ring('modeOfCustomerId')}`} aria-invalid={inv('modeOfCustomerId')} value={v.modeOfCustomerId} onChange={e => set('modeOfCustomerId', e.target.value)}>
                   <option value="">Select Mode of Customer</option>
                   {options.modesOfCustomer.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
                 </select>
               </Field>
-              <Field label="Source">
-                <select className={`${input} ${ok}`} value={v.sourceId} onChange={e => set('sourceId', e.target.value)}>
+              <Field label={L('sourceId', 'Source')} required={R('sourceId')} error={errors.sourceId}>
+                <select className={`${input} ${ring('sourceId')}`} aria-invalid={inv('sourceId')} value={v.sourceId} onChange={e => set('sourceId', e.target.value)}>
                   <option value="">Select Source</option>
                   {options.sources.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
                 </select>
               </Field>
             </div>
 
-            <Field label="Location" required error={errors.location}>
+            <Field label={L('location', 'Location')} required={R('location')} error={errors.location}>
               <input className={`${input} ${ring('location')}`} aria-invalid={inv('location')} value={v.location} onChange={e => set('location', e.target.value)} placeholder="e.g. Chennai, Tamil Nadu, India" maxLength={200} />
             </Field>
-            <Field label="Exact Location">
-              <input className={`${input} ${ok}`} value={v.exactLocation} onChange={e => set('exactLocation', e.target.value)} placeholder="Enter exact location" maxLength={300} />
+            <Field label={L('exactLocation', 'Exact Location')} required={R('exactLocation')} error={errors.exactLocation}>
+              <input className={`${input} ${ring('exactLocation')}`} aria-invalid={inv('exactLocation')} value={v.exactLocation} onChange={e => set('exactLocation', e.target.value)} placeholder="Enter exact location" maxLength={300} />
             </Field>
 
-            <Field label="Location Link" error={errors.locationLink}>
+            <Field label={L('locationLink', 'Location Link')} required={R('locationLink')} error={errors.locationLink}>
               <input className={`${input} ${ring('locationLink')}`} aria-invalid={inv('locationLink')} value={v.locationLink} onChange={e => set('locationLink', e.target.value)} placeholder="Enter Google Maps link or location URL" inputMode="url" maxLength={2000} />
             </Field>
-            <Field label="Main Category" required error={errors.mainCategoryId}>
+            <Field label={L('mainCategoryId', 'Main Category')} required={R('mainCategoryId')} error={errors.mainCategoryId}>
               <div className="flex gap-2">
                 <select className={`${input} ${ring('mainCategoryId')}`} aria-invalid={inv('mainCategoryId')} value={v.mainCategoryId} onChange={e => { setErrors(x => ({ ...x, mainCategoryId: undefined })); setV(c => ({ ...c, mainCategoryId: e.target.value, categoryId: '', subcategoryId: '' })); }}>
                   <option value="">Select Main Category</option>
@@ -284,51 +380,57 @@ export default function AddLeadModal({ mode, lead, options: initialOptions, curr
               </div>
             </Field>
 
-            <Field label="Category" required error={errors.categoryId}>
+            <Field label={L('categoryId', 'Category')} required={R('categoryId')} error={errors.categoryId}>
               <select className={`${input} ${ring('categoryId')}`} aria-invalid={inv('categoryId')} value={v.categoryId} onChange={e => setV(c => ({ ...c, categoryId: e.target.value, subcategoryId: '' }))} disabled={!v.mainCategoryId}>
                 <option value="">Select Category</option>
                 {categories.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
               </select>
             </Field>
-            <Field label="Subcategory" required error={errors.subcategoryId}>
+            <Field label={L('subcategoryId', 'Subcategory')} required={R('subcategoryId')} error={errors.subcategoryId}>
               <select className={`${input} ${ring('subcategoryId')}`} aria-invalid={inv('subcategoryId')} value={v.subcategoryId} onChange={e => set('subcategoryId', e.target.value)} disabled={!v.categoryId}>
                 <option value="">Select Subcategory</option>
                 {subcategories.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
               </select>
             </Field>
 
-            <Field label="Lead Person">
-              <select className={`${input} ${ok}`} value={v.leadPersonId} onChange={e => set('leadPersonId', e.target.value)}>
+            <Field label={L('leadPersonId', 'Lead Person')} required={R('leadPersonId')} error={errors.leadPersonId}>
+              <select className={`${input} ${ring('leadPersonId')}`} aria-invalid={inv('leadPersonId')} value={v.leadPersonId} onChange={e => set('leadPersonId', e.target.value)}>
                 <option value="">Select Person</option>
                 {options.employees.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
               </select>
             </Field>
-            <Field label="Lead Status" required error={errors.leadStatusId}>
+            <Field label={L('leadStatusId', 'Lead Status')} required={R('leadStatusId')} error={errors.leadStatusId}>
               <select className={`${input} ${ring('leadStatusId')}`} aria-invalid={inv('leadStatusId')} value={v.leadStatusId} onChange={e => set('leadStatusId', e.target.value)}>
                 <option value="">Select Lead Status</option>
                 {options.leadStatuses.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
               </select>
             </Field>
 
-            <Field label="Amount" error={errors.amount}>
+            <Field label={L('amount', 'Amount')} required={R('amount')} error={errors.amount}>
               <input className={`${input} ${ring('amount')}`} aria-invalid={inv('amount')} type="number" min={0} step="0.01" inputMode="decimal" value={v.amount} onChange={e => set('amount', e.target.value)} placeholder="0.00" />
             </Field>
-            <Field label="Conventional Rate">
+            <Field label={L('conventionalRate', 'Conventional Rate')} required={R('conventionalRate')}>
               <select className={`${input} ${ok}`} value={v.conventionalRate} onChange={e => set('conventionalRate', e.target.value)}>
                 {CONVENTIONAL_RATES.map(r => <option key={r} value={r}>{r}%</option>)}
               </select>
             </Field>
 
-            <Field label="Notes">
-              <textarea className={`${area} ${ok}`} rows={4} value={v.notes} onChange={e => set('notes', e.target.value)} maxLength={5000} />
+            <Field label={L('notes', 'Notes')} required={R('notes')} error={errors.notes}>
+              <textarea className={`${area} ${ring('notes')}`} aria-invalid={inv('notes')} rows={4} value={v.notes} onChange={e => set('notes', e.target.value)} maxLength={5000} />
             </Field>
-            <Field label="Type Of Lead">
-              <select className={`${input} ${ok}`} value={v.leadTypeId} onChange={e => set('leadTypeId', e.target.value)}>
+            <Field label={L('leadTypeId', 'Type Of Lead')} required={R('leadTypeId')} error={errors.leadTypeId}>
+              <select className={`${input} ${ring('leadTypeId')}`} aria-invalid={inv('leadTypeId')} value={v.leadTypeId} onChange={e => set('leadTypeId', e.target.value)}>
+                <option value="">Select Type Of Lead</option>
                 {options.leadTypes.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
               </select>
             </Field>
 
-            <Field label="Upload Files" className="sm:col-span-2">
+            {customFields.map(f => (
+              <CustomField key={f.key} field={f} value={custom[f.key]} error={customErrors[f.key]} options={options.customOptions[f.key] ?? []}
+                onChange={val => { setCustom(c => ({ ...c, [f.key]: val })); if (customErrors[f.key]) setCustomErrors(x => ({ ...x, [f.key]: '' })); }} />
+            ))}
+
+            <Field label={L('attachments', 'Upload Files')} className="sm:col-span-2">
               <FileUpload files={files} existing={existing} removedIds={removed} disabled={saving}
                 onAdd={f => setFiles(cur => [...cur, ...f])} onRemove={i => setFiles(cur => cur.filter((_, j) => j !== i))}
                 onRemoveExisting={id => setRemoved(cur => [...cur, id])} onError={m => toast.error(m)} />
@@ -337,7 +439,7 @@ export default function AddLeadModal({ mode, lead, options: initialOptions, curr
 
             <label className="sm:col-span-2 flex items-center gap-2.5 text-[16px] text-[#555] cursor-pointer select-none pt-1">
               <input type="checkbox" checked={v.dailyTask} onChange={e => set('dailyTask', e.target.checked)} className="w-[18px] h-[18px] accent-black" />
-              Daily Task Settings
+              {L('dailyTask', 'Daily Task Settings')}
             </label>
           </div>
 

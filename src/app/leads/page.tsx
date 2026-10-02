@@ -21,6 +21,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         edit: can(ctx, "leads", "edit"),
         delete: can(ctx, "leads", "delete"),
         export: can(ctx, "leads", "export"),
+        layout: ctx.isSuperAdmin, // Edit Page Layout is Super Admin only (the API enforces it too)
       }}
       storageReady={isStorageConfigured()}
     />

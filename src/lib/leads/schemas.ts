@@ -4,7 +4,6 @@ import { isHttpUrl, normalizePhone } from "./format";
 
 // .strict(): unknown fields (createdById, leadCode, deletedAt, ...) are rejected, never silently applied.
 
-const id = (label: string) => z.string({ required_error: `${label} is required` }).trim().min(1, `${label} is required`).max(64);
 const optionalId = z.string().trim().max(64).nullable().optional().transform(v => v || null);
 const optionalText = (max: number) =>
   z.string().trim().max(max, `At most ${max} characters`).nullable().optional().transform(v => v || null);
@@ -18,13 +17,14 @@ export const leadInputSchema = z
       .min(1, "Contact Number is required")
       .max(30)
       .refine(v => normalizePhone(v) !== null, "Enter a valid contact number (7–15 digits)"),
-    taskAssignedPersonId: id("Task Assigned Person"),
-    productOrServiceId: id("Product or Service"),
-    requirementId: id("Requirements"),
+    // Which of these are required is set in Edit Page Layout and checked in the service (checkLeadAgainstLayout)
+    taskAssignedPersonId: optionalId,
+    productOrServiceId: optionalId,
+    requirementId: optionalId,
     exactRequirement: optionalText(2000),
-    modeOfCustomerId: id("Mode of Customer"),
+    modeOfCustomerId: optionalId,
     sourceId: optionalId,
-    location: z.string({ required_error: "Location is required" }).trim().min(2, "Location is required").max(200),
+    location: optionalText(200),
     exactLocation: optionalText(300),
     locationLink: z
       .string()
@@ -34,16 +34,18 @@ export const leadInputSchema = z
       .optional()
       .transform(v => v || null)
       .refine(v => v === null || isHttpUrl(v), "Enter a valid http(s) link"),
-    mainCategoryId: id("Main Category"),
-    categoryId: id("Category"),
-    subcategoryId: id("Subcategory"),
+    mainCategoryId: optionalId,
+    categoryId: optionalId,
+    subcategoryId: optionalId,
     leadPersonId: optionalId,
-    leadStatusId: id("Lead Status"),
+    leadStatusId: optionalId,
     amount: z.number().min(0, "Amount cannot be negative").max(9999999999.99).nullable().optional().transform(v => v ?? null),
     conventionalRate: z.number().min(0).max(100).nullable().optional().transform(v => v ?? null),
     notes: optionalText(5000),
     leadTypeId: optionalId,
     dailyTask: z.boolean().optional().default(false),
+    // Values of fields added in Edit Page Layout, keyed by field key. Validated against the layout when saved.
+    customFields: z.record(z.string().max(64), z.union([z.string().max(5000), z.number(), z.boolean(), z.null()])).optional().default({}),
   })
   .strict();
 export type LeadInput = z.infer<typeof leadInputSchema>;

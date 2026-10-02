@@ -1,5 +1,5 @@
 import { randomUUID } from "crypto";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import type { AuthContext } from "@/lib/auth";
 import { hasPermission } from "@/lib/rbac/effective";
@@ -8,6 +8,7 @@ import { ALLOWED_ATTACHMENT_TYPES, MAX_ATTACHMENTS_PER_LEAD, MAX_ATTACHMENT_BYTE
 import { normalizePhone } from "./format";
 import type { LeadInput } from "./schemas";
 import { getLeadRow } from "./queries";
+import { checkLeadAgainstLayout, type CustomValues } from "./layout";
 import { createReadUrls, createUploadUrl, removeObjects, statObject } from "./storage";
 
 const badRequest = (m: string) => new ServiceError(400, m);
@@ -62,8 +63,9 @@ async function resolveReferences(input: LeadInput) {
   const subcategory = expect(input.subcategoryId, "SUBCATEGORY", "Subcategory");
   expect(input.leadStatusId, "LEAD_STATUS", "Lead Status");
   expect(input.leadTypeId, "LEAD_TYPE", "Type Of Lead");
-  if (category!.parentId !== input.mainCategoryId) throw badRequest("Category does not belong to the selected Main Category");
-  if (subcategory!.parentId !== input.categoryId) throw badRequest("Subcategory does not belong to the selected Category");
+  if (category && category.parentId !== input.mainCategoryId) throw badRequest("Category does not belong to the selected Main Category");
+  if (subcategory && subcategory.parentId !== input.categoryId) throw badRequest("Subcategory does not belong to the selected Category");
+  if (subcategory && !category) throw badRequest("Choose a Category for the Subcategory");
 
   const employeeIds = [input.taskAssignedPersonId, input.leadPersonId].filter((x): x is string => !!x);
   const employees = await prisma.employee.findMany({
@@ -71,10 +73,10 @@ async function resolveReferences(input: LeadInput) {
     select: { id: true },
   });
   const known = new Set(employees.map(e => e.id));
-  if (!known.has(input.taskAssignedPersonId)) throw badRequest("Task Assigned Person is not valid");
+  if (input.taskAssignedPersonId && !known.has(input.taskAssignedPersonId)) throw badRequest("Task Assigned Person is not valid");
   if (input.leadPersonId && !known.has(input.leadPersonId)) throw badRequest("Lead Person is not valid");
 
-  return { requirementLabel: requirement!.label, sourceLabel: source?.label ?? null };
+  return { requirementLabel: requirement?.label ?? null, sourceLabel: source?.label ?? null };
 }
 
 async function findOrCreateCustomer(db: Db, name: string, phone: string) {
@@ -87,7 +89,7 @@ async function findOrCreateCustomer(db: Db, name: string, phone: string) {
   return (await db.customer.create({ data: { name, phone, customerType: "Individual" }, select: { id: true } })).id;
 }
 
-function leadData(input: LeadInput, refs: Awaited<ReturnType<typeof resolveReferences>>, actor: AuthContext, phone: string) {
+function leadData(input: LeadInput, refs: Awaited<ReturnType<typeof resolveReferences>>, actor: AuthContext, phone: string, custom: CustomValues) {
   return {
     customerName: input.customerName,
     contactNumber: phone,
@@ -110,6 +112,7 @@ function leadData(input: LeadInput, refs: Awaited<ReturnType<typeof resolveRefer
     conventionalRate: input.conventionalRate,
     notes: input.notes,
     dailyTask: input.dailyTask,
+    customFields: Object.keys(custom).length ? (custom as Prisma.InputJsonObject) : Prisma.DbNull,
     // Mirror into the older CRM columns so /crm keeps showing these leads sensibly
     source: refs.sourceLabel,
     requirement: input.exactRequirement ?? refs.requirementLabel,
@@ -135,6 +138,7 @@ async function audit(db: Db, actor: AuthContext, leadId: string, action: string,
 const TX = { maxWait: 10_000, timeout: 20_000 };
 
 async function insertLead(actor: AuthContext, input: LeadInput, action: string) {
+  const custom = await checkLeadAgainstLayout(input);
   const refs = await resolveReferences(input);
   const phone = normalizePhone(input.contactNumber)!;
   return prisma.$transaction(async tx => {
@@ -144,7 +148,7 @@ async function insertLead(actor: AuthContext, input: LeadInput, action: string) 
     const code = leadCodeFor(seq);
     const lead = await tx.lead.create({
       data: {
-        ...leadData(input, refs, actor, phone),
+        ...leadData(input, refs, actor, phone, custom),
         customerId,
         leadSeq: seq,
         leadCode: code,
@@ -169,9 +173,10 @@ export async function updateLead(actor: AuthContext, id: string, input: LeadInpu
   need(actor, "edit");
   const before = await prisma.lead.findFirst({ where: { id, deletedAt: null } });
   if (!before) throw notFound();
+  const custom = await checkLeadAgainstLayout(input);
   const refs = await resolveReferences(input);
   const phone = normalizePhone(input.contactNumber)!;
-  const data = leadData(input, refs, actor, phone);
+  const data = leadData(input, refs, actor, phone, custom);
 
   await prisma.$transaction(async tx => {
     const customerId = phone !== before.contactNumber ? await findOrCreateCustomer(tx, input.customerName, phone) : undefined;
@@ -179,8 +184,9 @@ export async function updateLead(actor: AuthContext, id: string, input: LeadInpu
     const changed: Record<string, { from: unknown; to: unknown }> = {};
     for (const [key, value] of Object.entries(data)) {
       const from = record[key];
-      const a = from === null || from === undefined ? null : String(from);
-      const b = value === null || value === undefined ? null : String(value);
+      const text = (x: unknown) => (x === null || x === undefined || x === Prisma.DbNull ? null : typeof x === "object" && !(x instanceof Date) && !("toFixed" in (x as object)) ? JSON.stringify(x) : String(x));
+      const a = text(from);
+      const b = text(value);
       if (a !== b) changed[key] = { from: from ?? null, to: value ?? null };
     }
     await tx.lead.update({ where: { id }, data: { ...data, ...(customerId ? { customerId } : {}), updatedById: actor.userId } });
@@ -213,30 +219,30 @@ export async function duplicateLead(actor: AuthContext, id: string) {
   need(actor, "create");
   const src = await prisma.lead.findFirst({ where: { id, deletedAt: null } });
   if (!src) throw notFound();
-  const required = [src.customerName, src.contactNumber, src.salesExecutiveId, src.productOrServiceId, src.requirementId, src.modeOfCustomerId, src.location, src.mainCategoryId, src.categoryId, src.subcategoryId, src.leadStatusId];
-  if (required.some(v => !v)) throw badRequest("This lead is missing required details. Edit it first, then duplicate.");
+  if (!src.customerName || !src.contactNumber) throw badRequest("This lead is missing required details. Edit it first, then duplicate.");
   const input: LeadInput = {
-    customerName: src.customerName!,
-    contactNumber: src.contactNumber!,
-    taskAssignedPersonId: src.salesExecutiveId!,
-    productOrServiceId: src.productOrServiceId!,
-    requirementId: src.requirementId!,
+    customerName: src.customerName,
+    contactNumber: src.contactNumber,
+    taskAssignedPersonId: src.salesExecutiveId,
+    productOrServiceId: src.productOrServiceId,
+    requirementId: src.requirementId,
     exactRequirement: src.exactRequirement,
-    modeOfCustomerId: src.modeOfCustomerId!,
+    modeOfCustomerId: src.modeOfCustomerId,
     sourceId: src.sourceId,
-    location: src.location!,
+    location: src.location,
     exactLocation: src.exactLocation,
     locationLink: src.locationLink,
-    mainCategoryId: src.mainCategoryId!,
-    categoryId: src.categoryId!,
-    subcategoryId: src.subcategoryId!,
+    mainCategoryId: src.mainCategoryId,
+    categoryId: src.categoryId,
+    subcategoryId: src.subcategoryId,
     leadPersonId: src.leadPersonId,
-    leadStatusId: src.leadStatusId!,
+    leadStatusId: src.leadStatusId,
     amount: src.amount !== null ? Number(src.amount) : null,
     conventionalRate: src.conventionalRate !== null ? Number(src.conventionalRate) : null,
     notes: src.notes,
     leadTypeId: src.leadTypeId,
     dailyTask: src.dailyTask,
+    customFields: (src.customFields ?? {}) as Record<string, string | number | boolean | null>,
   };
   return insertLead(actor, input, "Duplicated");
 }

@@ -8,13 +8,13 @@ export async function callApi<T = Record<string, unknown>>(url: string, method: 
   const data = await res.json().catch(() => ({}));
   if (!res.ok) {
     const details = Array.isArray(data.details) ? data.details.map((d: { path: string; message: string }) => d.message).join("; ") : "";
-    throw new ApiError(details || data.error || `Request failed (${res.status})`, res.status, data.details);
+    throw new ApiError(details || data.error || `Request failed (${res.status})`, res.status, data.details, data);
   }
   return data as T;
 }
 
 export class ApiError extends Error {
-  constructor(message: string, public status: number, public details?: { path: string; message: string }[]) {
+  constructor(message: string, public status: number, public details?: { path: string; message: string }[], public body?: { code?: string; usage?: number; action?: string }) {
     super(message);
   }
 }
