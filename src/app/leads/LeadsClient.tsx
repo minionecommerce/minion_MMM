@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useTransition } from 'react';
+import { useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
 import type { ColumnFilterKey, LeadFilterId, LeadFormOptions, LeadSortKey } from '@/lib/leads/constants';
@@ -41,21 +41,23 @@ export default function LeadsClient({ data, params, options, currentEmployeeId, 
   const [q, setQ] = useState(params.q ?? '');
   const [dialog, setDialog] = useState<Dialog>(null);
   const [busy, setBusy] = useState(false);
+  // While a reset is on its way, the search box's own delayed update must not put the old search/filters back in the address
+  const resetting = useRef(false);
 
-  const setParams = (updates: Record<string, string | undefined>) => {
+  const setParams = (updates: Record<string, string | undefined>, replace = false) => {
     const next = new URLSearchParams(search.toString());
     for (const [k, v] of Object.entries(updates)) {
       if (v) next.set(k, v);
       else next.delete(k);
     }
     if (!('page' in updates)) next.delete('page');
-    startTransition(() => router.push(`/leads${next.toString() ? `?${next}` : ''}`));
+    startTransition(() => (replace ? router.replace : router.push)(`/leads${next.toString() ? `?${next}` : ''}`));
   };
 
-  // Debounced search: runs on the server, so only the matching page of rows is loaded
+  // Live search: results update about 0.15s after each keystroke (runs on the server, so only the matching page of rows is loaded)
   useEffect(() => {
-    if ((params.q ?? '') === q.trim()) return;
-    const t = setTimeout(() => setParams({ q: q.trim() || undefined }), 350);
+    if (resetting.current || (params.q ?? '') === q.trim()) return;
+    const t = setTimeout(() => setParams({ q: q.trim() || undefined }, true), 150);
     return () => clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q]);
@@ -86,7 +88,7 @@ export default function LeadsClient({ data, params, options, currentEmployeeId, 
   const people = options.employees.map(e => ({ value: e.id, label: e.name }));
   const filterGroups = {
     customer: [group('customer', 'Customer details', options.customerNames.map(n => ({ value: n, label: n })))],
-    requirement: [group('requirement', 'Requirements', options.requirements.map(o => ({ value: o.id, label: o.label })))],
+    requirement: [group('requirement', 'Requirements', options.exactRequirements.map(t => ({ value: t, label: t })))],
     assigned: [group('assigned', 'Task Assigned Person', people), group('leadPerson', 'Lead Person', people)],
     status: [group('status', 'Lead Status', options.leadStatuses.map(o => ({ value: o.id, label: o.label })))],
     source: [group('source', 'Source', options.sources.map(o => ({ value: o.id, label: o.label })))],
@@ -94,7 +96,13 @@ export default function LeadsClient({ data, params, options, currentEmployeeId, 
     location: [group('location', 'Location', options.locations.map(l => ({ value: l, label: l })))],
   };
 
-  const resetAll = () => { setQ(''); startTransition(() => router.push('/leads')); };
+  // Clears the search, every filter and the sorting, then reloads the list
+  const clearAll = () => {
+    resetting.current = true;
+    setQ('');
+    startTransition(() => { router.push('/leads'); router.refresh(); });
+  };
+  useEffect(() => { resetting.current = false; }, [data]);
 
   return (
     <div data-light-native className="w-full min-h-screen bg-white text-[#333] font-sans">
@@ -108,7 +116,7 @@ export default function LeadsClient({ data, params, options, currentEmployeeId, 
           refreshing={pending}
           onAdd={() => setDialog({ kind: 'add' })}
           onEditLayout={() => setDialog({ kind: 'layout' })}
-          onRefresh={() => startTransition(() => router.refresh())}
+          onRefresh={clearAll}
           onParams={setParams}
           exportHref={exportHref}
         />
@@ -135,7 +143,7 @@ export default function LeadsClient({ data, params, options, currentEmployeeId, 
             filterGroups={filterGroups}
             onFilter={next => setParams(Object.fromEntries(Object.entries(next).map(([k, v]) => [`f_${k}`, v && v.length ? JSON.stringify(v) : undefined])))}
             onSort={(k: LeadSortKey, d) => setParams({ sort: k, dir: d })}
-            onReset={resetAll}
+            onReset={clearAll}
             handlersFor={handlersFor}
           />
         </div>

@@ -8,15 +8,15 @@ import { callApi } from '@/lib/leads/client';
 import { useToast } from '@/components/ui/Toast';
 
 const label = 'text-[10px] font-semibold uppercase tracking-wide text-gray-500';
-const box = 'w-full border border-gray-300 rounded px-2.5 py-1.5 text-[12px] text-gray-800 bg-white min-h-[30px] flex items-center';
+const box = 'w-full border border-gray-300 rounded px-2 py-0.5 text-[12px] text-gray-800 bg-white min-h-[26px] flex items-center';
 
 export function LeadIdCell({ row }: { row: LeadRow }) {
   const badge = row.productOrServiceLabel ? row.productOrServiceLabel.trim()[0].toUpperCase() : '•';
   return (
     <div className="flex items-start gap-2.5">
       <span title={row.productOrServiceLabel ?? 'Product or Service not set'} className="w-6 h-6 rounded-full bg-[#f5b800] text-white text-[12px] font-bold flex items-center justify-center shrink-0">{badge}</span>
-      <div className="space-y-1.5">
-        <div className="text-[#d9232b] font-semibold text-[14px]">{row.code}</div>
+      <div className="space-y-0.5">
+        <div className="text-[#d9232b] font-semibold text-[13px]">{row.code}</div>
         <div className="flex items-center gap-1.5 text-[12px] text-gray-600"><Calendar className="w-3.5 h-3.5 text-gray-500" fill="currentColor" />{row.date}</div>
         <div className="flex items-center gap-1.5 text-[12px] text-gray-600"><Clock className="w-3.5 h-3.5 text-gray-500" fill="currentColor" stroke="white" />{row.time}</div>
       </div>
@@ -26,8 +26,8 @@ export function LeadIdCell({ row }: { row: LeadRow }) {
 
 export function CustomerDetailsCell({ row }: { row: LeadRow }) {
   return (
-    <div className="space-y-1.5">
-      <div className="flex items-center gap-1.5 font-semibold text-[14px] text-[#333]"><User className="w-3.5 h-3.5 text-[#d9232b] shrink-0" fill="currentColor" />{row.customerName}</div>
+    <div className="space-y-0.5">
+      <div className="flex items-center gap-1.5 font-semibold text-[13px] text-[#333]"><User className="w-3.5 h-3.5 text-[#d9232b] shrink-0" fill="currentColor" />{row.customerName}</div>
       <div className="flex items-center gap-1.5 text-[12px] text-gray-600"><Phone className="w-3.5 h-3.5 text-gray-500 shrink-0" />{row.contactNumber || '—'}</div>
       <div className="flex items-center gap-1.5 text-[11px] text-gray-500"><Tag className="w-3 h-3 shrink-0" fill="currentColor" />{row.leadTypeLabel ?? 'Standard'}</div>
     </div>
@@ -36,12 +36,9 @@ export function CustomerDetailsCell({ row }: { row: LeadRow }) {
 
 export function RequirementsCell({ row }: { row: LeadRow }) {
   return (
-    <div className="space-y-2.5 max-w-[260px]">
-      <div className="text-[14px] text-[#333]">{row.requirementLabel ?? '—'}</div>
-      {row.exactRequirement && (
-        <div className="bg-[#fffbea] border-l-[3px] border-[#f5b800] px-2.5 py-2 text-[12px] italic text-gray-600 whitespace-pre-line break-words max-h-[110px] overflow-hidden">{row.exactRequirement}</div>
-      )}
-      <div className="bg-gray-100 border border-gray-200 rounded px-2.5 py-2 text-[12px] text-gray-700">
+    <div className="space-y-1.5 max-w-[260px]">
+      <div className="text-[13px] text-[#333] break-words line-clamp-3" title={row.exactRequirement ?? undefined}>{row.exactRequirement || '—'}</div>
+      <div className="bg-gray-100 border border-gray-200 rounded px-2.5 py-1 text-[12px] text-gray-700">
         Amount: <span className="text-[#16a34a] font-bold ml-1">{formatRupees(row.amount)}</span>
       </div>
     </div>
@@ -84,7 +81,7 @@ export function LeadStatusCell({ row, canEdit }: { row: LeadRow; canEdit: boolea
   };
 
   return (
-    <div className="space-y-2 w-full max-w-[230px]">
+    <div className="space-y-1 w-full max-w-[230px]">
       <div className={box} title="Lead Status">{row.leadStatus?.label ?? '—'}</div>
       {editing ? (
         <div className="bg-gray-100 rounded p-2 space-y-2">
@@ -99,7 +96,7 @@ export function LeadStatusCell({ row, canEdit }: { row: LeadRow; canEdit: boolea
           type="button"
           disabled={!canEdit}
           onClick={() => setEditing(true)}
-          className={`w-full bg-gray-100 rounded px-3 py-3 text-left text-[13px] flex items-start justify-between gap-2 ${canEdit ? 'hover:bg-gray-200 cursor-pointer' : 'cursor-default'}`}
+          className={`w-full bg-gray-100 rounded px-2.5 py-1.5 text-left text-[12px] flex items-start justify-between gap-2 ${canEdit ? 'hover:bg-gray-200 cursor-pointer' : 'cursor-default'}`}
         >
           <span className={`whitespace-pre-line break-words ${saved ? 'text-gray-700' : 'text-gray-500'}`}>{saved ?? 'Click to add notes'}</span>
           {canEdit && <Pencil className="w-4 h-4 text-gray-600 shrink-0 mt-0.5" />}
@@ -127,12 +124,12 @@ export function FollowUpCell() {
 export function StatusCell({ rate }: { rate: number | null }) {
   const pct = Math.max(0, Math.min(100, rate ?? 0));
   return (
-    <div className="w-[150px] space-y-2">
-      <div><div className={label}>Status:</div><div className="text-[18px] text-[#333] leading-tight">Open</div></div>
+    <div className="w-[150px] space-y-1">
+      <div><div className={label}>Status:</div><div className="text-[15px] text-[#333] leading-tight">Open</div></div>
       <div>
         <div className={label}>Rate:</div>
         <div className="h-2 rounded bg-gray-200 overflow-hidden mt-1" role="progressbar" aria-valuenow={pct} aria-valuemin={0} aria-valuemax={100}><div className="h-full bg-[#f5b800]" style={{ width: `${pct}%` }} /></div>
-        <div className={`${box} mt-1.5 py-1`}>{pct}%</div>
+        <div className={`${box} mt-1 py-0`}>{pct}%</div>
       </div>
     </div>
   );
@@ -160,7 +157,7 @@ export function CategoryCell({ row }: { row: LeadRow }) {
 export function LocationCell({ row }: { row: LeadRow }) {
   const link = row.locationLink && isHttpUrl(row.locationLink) ? row.locationLink : null;
   return (
-    <div className="space-y-1.5 w-full max-w-[220px]">
+    <div className="space-y-0.5 w-full max-w-[220px]">
       <div className={label}>Location:</div>
       <div className="flex items-center gap-1.5">
         <div className={box}>{row.location ?? 'N/A'}</div>

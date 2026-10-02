@@ -334,13 +334,7 @@ export default function AddLeadModal({ mode, lead, options: initialOptions, curr
             </Field>
 
             <div className="space-y-3">
-              <Field label={L('requirementId', 'Requirements')} required={R('requirementId')} error={errors.requirementId}>
-                <select className={`${input} ${ring('requirementId')}`} aria-invalid={inv('requirementId')} value={v.requirementId} onChange={e => set('requirementId', e.target.value)}>
-                  <option value="">Select Requirement</option>
-                  {options.requirements.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
-                </select>
-              </Field>
-              <textarea className={`${area} ${ring('exactRequirement')}`} aria-invalid={inv('exactRequirement')} rows={4} aria-label={L('exactRequirement', 'Exact Requirement')} placeholder={`${L('exactRequirement', 'Exact Requirement')}${R('exactRequirement') ? ' *' : ''}`} value={v.exactRequirement} onChange={e => set('exactRequirement', e.target.value)} maxLength={2000} />
+              <input className={`${input} ${ring('exactRequirement')}`} aria-invalid={inv('exactRequirement')} aria-label={L('exactRequirement', 'Exact Requirement')} placeholder={`${L('exactRequirement', 'Exact Requirement')}${R('exactRequirement') ? ' *' : ''}`} value={v.exactRequirement} onChange={e => set('exactRequirement', e.target.value)} maxLength={300} />
               {errors.exactRequirement && <p role="alert" className="text-[12px] text-[#d9232b] -mt-2">{errors.exactRequirement}</p>}
             </div>
             <div className="space-y-5">
