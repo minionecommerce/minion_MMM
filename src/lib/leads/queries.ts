@@ -220,6 +220,7 @@ async function buildWhere(params: LeadListParams): Promise<Prisma.LeadWhereInput
   if (c.customer) and.push({ customerName: { in: c.customer } });
   if (c.requirement) and.push({ requirementId: { in: c.requirement } });
   if (c.assigned) and.push({ salesExecutiveId: { in: c.assigned } });
+  if (c.leadPerson) and.push({ leadPersonId: { in: c.leadPerson } });
   if (c.status) and.push({ leadStatusId: { in: c.status } });
   if (c.source) and.push({ sourceId: { in: c.source } });
   if (c.category) and.push({ mainCategoryId: { in: c.category } });
