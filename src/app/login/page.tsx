@@ -46,8 +46,12 @@ function LoginForm() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isLoading) return;
     setIsLoading(true);
     setError("");
+    // Stay in the loading state after a successful sign-in: the next page can take a moment to render
+    // and re-enabling the button here made people click twice.
+    let navigating = false;
 
     try {
       const res = await signIn("credentials", {
@@ -62,6 +66,7 @@ function LoginForm() {
         return;
       }
 
+      navigating = true;
       const session = await getSession();
       if (session?.user?.mustChangePassword) {
         router.push("/account/change-password");
@@ -74,9 +79,10 @@ function LoginForm() {
       }
       router.refresh();
     } catch {
+      navigating = false;
       setError("An unexpected error occurred.");
     } finally {
-      setIsLoading(false);
+      if (!navigating) setIsLoading(false);
     }
   };
 

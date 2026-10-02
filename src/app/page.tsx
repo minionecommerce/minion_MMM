@@ -9,7 +9,7 @@ import {
 export default async function CoordinatorDashboard() {
   await requirePageAccess(["dashboard"]);
   return (
-    <div className="w-full min-h-screen font-sans selection:bg-yellow-500 selection:text-black flex flex-col">
+    <div data-home className="w-full min-h-screen font-sans selection:bg-yellow-500 selection:text-black flex flex-col">
 
       <div className="bg-[#111111] text-white w-full flex-1 flex flex-col">
         {/* Main Content Area */}
