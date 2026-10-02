@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useDropdown } from '@/lib/dropdowns/useDropdown';
 import { X, Calendar } from 'lucide-react';
 import { scheduleMaintenance } from '../actions';
 
@@ -17,6 +18,7 @@ const maintenanceTypes = [
 
 export default function ScheduleMaintenanceModal({ landscapes, onClose }: ScheduleMaintenanceModalProps) {
   const [loading, setLoading] = useState(false);
+  const ddMaintenanceType = useDropdown('MAINTENANCE_TYPE', maintenanceTypes);
   const [submitted, setSubmitted] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent<HTMLFormElement>) => {
@@ -77,8 +79,8 @@ export default function ScheduleMaintenanceModal({ landscapes, onClose }: Schedu
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="text-[11px] font-semibold text-gray-500 uppercase block mb-1.5">Maintenance Type *</label>
-                    <select name="type" required className={inputCls}>
-                      {maintenanceTypes.map(t => (
+                    <select name="type" required className={inputCls} key={ddMaintenanceType.ready ? 'ready' : 'loading'} defaultValue={ddMaintenanceType.defaultValue ?? ddMaintenanceType.options[0]}>
+                      {ddMaintenanceType.options.map(t => (
                         <option key={t} value={t}>{t}</option>
                       ))}
                     </select>

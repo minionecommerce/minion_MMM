@@ -69,6 +69,7 @@ export const ROUTE_MODULES: { prefix: string; modules: ModuleKey[] }[] = [
   { prefix: "/users", modules: ["users"] },
   { prefix: "/admin/access", modules: ["users"] }, // Legacy Audit Log only
   { prefix: "/leads", modules: ["leads"] },
+  { prefix: "/settings", modules: ["settings"] },
   { prefix: "/crm", modules: CRM_MODULES },
   { prefix: "/projects", modules: ["projects", "boq"] },
   { prefix: "/parks", modules: ["parks"] },
@@ -93,7 +94,7 @@ export function modulesForPath(pathname: string): ModuleKey[] | null {
 }
 
 // Sidebar order; an item shows when the user can view any of its modules.
-export const NAV_ITEMS: { label: string; href: string; modules: ModuleKey[] }[] = [
+export const NAV_ITEMS: { label: string; href: string; modules: ModuleKey[]; superAdminOnly?: boolean }[] = [
   { label: "HOME", href: "/", modules: ["dashboard"] },
   { label: "MY WORK", href: "/my-work", modules: ["my_work"] },
   { label: "LEADS", href: "/leads", modules: ["leads"] },
@@ -106,6 +107,7 @@ export const NAV_ITEMS: { label: string; href: string; modules: ModuleKey[] }[] 
   { label: "LEARNING", href: "/learning", modules: ["learning"] },
   { label: "REWARDS", href: "/rewards", modules: ["rewards"] },
   { label: "RESOURCES", href: "/resources", modules: ["resources"] },
+  { label: "DROPDOWNS", href: "/settings/dropdowns", modules: ["settings"], superAdminOnly: true },
 ];
 
 // Sentinel stored in the session snapshot for Super Admins / Full Administrators
@@ -122,7 +124,7 @@ export function snapshotCanViewAny(snapshot: readonly string[] | undefined, modu
 
 // First page a user may open after signing in
 export function landingPath(snapshot: readonly string[] | undefined) {
-  const item = NAV_ITEMS.find(i => snapshotCanViewAny(snapshot, i.modules));
+  const item = NAV_ITEMS.find(i => !i.superAdminOnly && snapshotCanViewAny(snapshot, i.modules));
   return item ? item.href : "/unauthorized";
 }
 

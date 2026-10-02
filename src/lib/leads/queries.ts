@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { LEAD_FILTERS, PAGE_SIZE, SORT_KEYS, type EmployeeOptionDto, type LeadFilterId, type LeadFormOptions, type LeadOptionDto, type LeadSortKey, type OptionType } from "./constants";
+import { LEAD_FILTERS, OPTION_TYPES, PAGE_SIZE, SORT_KEYS, type EmployeeOptionDto, type LeadFilterId, type LeadFormOptions, type LeadOptionDto, type LeadSortKey, type OptionType } from "./constants";
 import { formatDate, formatTime, todayBounds } from "./format";
 
 export type LeadListParams = {
@@ -257,7 +257,7 @@ export async function getLeadRow(id: string) {
 export async function getFormOptions(): Promise<LeadFormOptions> {
   const [options, employees] = await Promise.all([
     prisma.leadOption.findMany({
-      where: { isActive: true },
+      where: { type: { in: [...OPTION_TYPES] } },
       orderBy: [{ sortOrder: "asc" }, { label: "asc" }],
       select: { id: true, type: true, key: true, label: true, parentId: true },
     }),
