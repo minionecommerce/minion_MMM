@@ -20,7 +20,7 @@ const sel = (variant, cls) => {
     case "hover": return `${PREFIX} .${esc("hover:" + cls)}:hover${SKIP}`;
     case "focus": return `${PREFIX} .${esc("focus:" + cls)}:focus${SKIP}`;
     case "group-hover": return `${PREFIX} .group:hover .${esc("group-hover:" + cls)}${SKIP}`;
-    case "placeholder": return `${PREFIX} .${esc("placeholder-" + cls)}::placeholder${SKIP}`;
+    case "placeholder": return `${PREFIX} .${esc("placeholder-" + cls)}${SKIP}::placeholder`;
     default: return `${PREFIX} .${c}${SKIP}`;
   }
 };
