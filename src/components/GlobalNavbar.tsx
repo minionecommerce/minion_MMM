@@ -282,14 +282,14 @@ export default function GlobalNavbar() {
 
       {/* Desktop, hidden: only a small menu icon is left; clicking it brings the icon strip back */}
       {hidden && (
-        <div data-sidebar className="hidden lg:block sticky top-0 h-screen w-14 shrink-0 z-40 bg-[#111113] border-r border-[#292B30]">
+        <div data-sidebar className="hidden lg:block sticky top-0 h-screen w-7 shrink-0 z-40 bg-[#111113]">
           <button
             onClick={e => { setHoldClosed({ x: e.clientX, y: e.clientY }); setHiddenPreference(false); }}
             aria-label="Show menu"
             title="Show menu"
-            className="mt-4 mx-auto w-10 h-10 flex items-center justify-center rounded-lg text-gray-300 hover:text-white hover:bg-[#1a1b1e] transition-colors"
+            className="mt-3 mx-auto w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-white hover:bg-[#1a1b1e] transition-colors"
           >
-            <Menu className="w-6 h-6" />
+            <PanelLeftClose className="w-4 h-4" />
           </button>
         </div>
       )}
@@ -302,7 +302,8 @@ export default function GlobalNavbar() {
             onMouseEnter={() => { if (!holdClosed) setExpanded(true); }}
             onMouseMove={e => { if (holdClosed && Math.hypot(e.clientX - holdClosed.x, e.clientY - holdClosed.y) > 6) { setHoldClosed(null); setExpanded(true); } }}
             onMouseLeave={() => { setExpanded(false); setDropdownOpen(false); setHoldClosed(null); }}
-            onFocus={() => setExpanded(true)}
+            // Keyboard users tabbing in open it; focus left over from a mouse click does not
+            onFocus={e => { if (!holdClosed && e.target.matches(':focus-visible')) setExpanded(true); }}
             onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) { setExpanded(false); setDropdownOpen(false); } }}
             className={`absolute left-0 top-0 h-screen bg-[#111113] border-r border-[#292B30] transition-[width,box-shadow] duration-200 ${
               expanded ? 'w-60 shadow-2xl shadow-black/40' : 'w-[76px]'
