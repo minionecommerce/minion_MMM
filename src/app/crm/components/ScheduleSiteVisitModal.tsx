@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { useDropdown } from '@/lib/dropdowns/useDropdown';
 import { X, ChevronDown, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { scheduleSiteVisit } from '@/app/actions/crm';
 
@@ -23,9 +22,7 @@ export default function ScheduleSiteVisitModal({ leads, employees, onClose, onSu
   const [assignedToId, setAssignedToId] = useState('');
   const [visitDate, setVisitDate] = useState('');
   const [visitTime, setVisitTime] = useState('10:00');
-  const [visitTypePick, setVisitType] = useState('');
-  const ddVisitType = useDropdown('VISIT_TYPE', visitTypes);
-  const visitType = visitTypePick || ddVisitType.defaultValue || 'Initial';
+  const [visitType, setVisitType] = useState('Initial');
   const [siteLocation, setSiteLocation] = useState('');
   const [notes, setNotes] = useState('');
 
@@ -123,7 +120,7 @@ export default function ScheduleSiteVisitModal({ leads, employees, onClose, onSu
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label>Visit Type</Label>
-                    <SelectField value={visitType} onChange={setVisitType} options={ddVisitType.options} />
+                    <SelectField value={visitType} onChange={setVisitType} options={visitTypes} />
                   </div>
                   <div>
                     <Label>Assigned To *</Label>

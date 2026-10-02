@@ -2,6 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { LEAD_FILTERS, OPTION_TYPES, PAGE_SIZE, SORT_KEYS, type EmployeeOptionDto, type LeadFilterId, type LeadFormOptions, type LeadOptionDto, type LeadSortKey, type OptionType } from "./constants";
 import { formatDate, formatTime, todayBounds } from "./format";
+import { getLayout } from "./layout";
 
 export type LeadListParams = {
   q?: string;
@@ -39,6 +40,7 @@ const rowSelect = {
   exactLocation: true,
   locationLink: true,
   dailyTask: true,
+  customFields: true,
   productOrServiceId: true,
   requirementId: true,
   modeOfCustomerId: true,
@@ -101,6 +103,7 @@ export function toRow(l: RowRecord) {
     exactLocation: l.exactLocation,
     locationLink: l.locationLink,
     dailyTask: l.dailyTask,
+    customFields: ((l.customFields ?? {}) as Record<string, string | number | boolean>),
     attachmentCount: l._count.attachments,
     ids: {
       taskAssignedPersonId: l.salesExecutiveId,
@@ -255,9 +258,9 @@ export async function getLeadRow(id: string) {
 }
 
 export async function getFormOptions(): Promise<LeadFormOptions> {
-  const [options, employees] = await Promise.all([
+  const [options, employees, fields] = await Promise.all([
     prisma.leadOption.findMany({
-      where: { type: { in: [...OPTION_TYPES] } },
+      where: { OR: [{ type: { in: [...OPTION_TYPES] } }, { type: { startsWith: "CF:" } }] },
       orderBy: [{ sortOrder: "asc" }, { label: "asc" }],
       select: { id: true, type: true, key: true, label: true, parentId: true },
     }),
@@ -266,7 +269,10 @@ export async function getFormOptions(): Promise<LeadFormOptions> {
       orderBy: { user: { name: "asc" } },
       select: { id: true, designation: true, user: { select: { name: true } } },
     }),
+    getLayout(),
   ]);
+  const customOptions: Record<string, LeadOptionDto[]> = {};
+  for (const f of fields) if (!f.isSystem && f.optionType) customOptions[f.key] = options.filter(o => o.type === f.optionType) as LeadOptionDto[];
   const of = (type: OptionType) => options.filter(o => o.type === type) as LeadOptionDto[];
   const emp: EmployeeOptionDto[] = employees.map(e => ({ id: e.id, name: e.user.name ?? "Unnamed", designation: e.designation }));
   return {
@@ -280,5 +286,7 @@ export async function getFormOptions(): Promise<LeadFormOptions> {
     leadStatuses: of("LEAD_STATUS"),
     leadTypes: of("LEAD_TYPE"),
     employees: emp,
+    fields,
+    customOptions,
   };
 }

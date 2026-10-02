@@ -1,4 +1,5 @@
 // Shared by server and browser code. No server-only imports.
+import type { LeadFieldDto } from "./layout-shared";
 
 export const OPTION_TYPES = [
   "SOURCE",
@@ -15,7 +16,7 @@ export type OptionType = (typeof OPTION_TYPES)[number];
 
 export type LeadOptionDto = {
   id: string;
-  type: OptionType;
+  type: string;
   key: string | null;
   label: string;
   parentId: string | null;
@@ -34,6 +35,9 @@ export type LeadFormOptions = {
   leadStatuses: LeadOptionDto[];
   leadTypes: LeadOptionDto[];
   employees: EmployeeOptionDto[];
+  // Page layout (Edit Page Layout): how each field is set up, plus the options of custom pick-list fields
+  fields: LeadFieldDto[];
+  customOptions: Record<string, LeadOptionDto[]>;
 };
 
 // Quick filter buttons. Each maps to a stable LeadOption.key on LEAD_STATUS (labels can be renamed).

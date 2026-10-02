@@ -355,6 +355,7 @@ model Lead {
   updatedById String?
   deletedAt   DateTime?
 
+  customFields Json? // values of custom fields added in Edit Page Layout: { "cf_xxx": value }
   attachments LeadAttachment[]
 
   // Prelim Quote tracking
@@ -391,17 +392,16 @@ model Lead {
 
 // One table for every Leads dropdown (source, requirement, categories, status, ...).
 // Categories form a tree through parentId: MAIN_CATEGORY -> CATEGORY -> SUBCATEGORY.
-// Option store for every managed dropdown (Settings → Dropdown Options). Named for its first user, the Leads module.
+// Options of every Lead pick list (system lists and custom fields). Edited through Leads → Edit Page Layout.
 model LeadOption {
   id        String       @id @default(cuid())
-  type      String // the dropdown list this option belongs to, e.g. SOURCE, CUSTOMER_TYPE (see src/lib/dropdowns/registry.ts)
+  type      String // which pick list this option belongs to: SOURCE, REQUIREMENT, ... or "CF:<field key>" for a custom field
   key       String? // stable machine key used by filters, e.g. "open" (labels can be renamed)
   label     String
   parentId  String?
   parent    LeadOption?  @relation("LeadOptionTree", fields: [parentId], references: [id])
   children  LeadOption[] @relation("LeadOptionTree")
   sortOrder Int          @default(0)
-  isDefault Boolean      @default(false) // pre-selected in forms; at most one per single-select list
 
   asProductOrService Lead[] @relation("LeadProductOrService")
   asRequirement      Lead[] @relation("LeadRequirement")
@@ -419,6 +419,25 @@ model LeadOption {
   @@index([type, sortOrder])
   @@index([parentId])
   @@index([type, key])
+}
+
+// How each field on the Lead form is set up (Leads → Edit Page Layout). System fields are the original form fields;
+// custom fields are added by a Super Admin and their values live in Lead.customFields.
+model LeadField {
+  id             String   @id @default(cuid())
+  key            String   @unique // system: "customerName", ...; custom: "cf_<random>"
+  label          String
+  fieldType      String // TEXT, TEXTAREA, NUMBER, DATE, EMAIL, PHONE, URL, CHECKBOX, DROPDOWN, PERSON, RATE, FILE
+  isSystem       Boolean  @default(false)
+  required       Boolean  @default(false)
+  requiredLocked Boolean  @default(false)
+  defaultValue   String?
+  optionType     String? // LeadOption.type for pick lists
+  sortOrder      Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([sortOrder])
 }
 
 // Atomic counters. The Lead ID is taken inside the same transaction that saves the lead.

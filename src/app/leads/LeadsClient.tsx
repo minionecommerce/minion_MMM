@@ -14,6 +14,7 @@ import LeadFilters from './components/LeadFilters';
 import LeadTable from './components/LeadTable';
 import AddLeadModal from './components/AddLeadModal';
 import ViewLeadModal from './components/ViewLeadModal';
+import PageLayoutEditor from './components/PageLayoutEditor';
 
 type Data = {
   rows: LeadRow[];
@@ -23,14 +24,14 @@ type Data = {
   pageSize: number;
 };
 
-type Dialog = { kind: 'add' } | { kind: 'edit'; row: LeadRow } | { kind: 'view'; row: LeadRow } | { kind: 'delete'; row: LeadRow } | { kind: 'duplicate'; row: LeadRow } | null;
+type Dialog = { kind: 'add' } | { kind: 'edit'; row: LeadRow } | { kind: 'view'; row: LeadRow } | { kind: 'delete'; row: LeadRow } | { kind: 'duplicate'; row: LeadRow } | { kind: 'layout' } | null;
 
 export default function LeadsClient({ data, params, options, currentEmployeeId, abilities, storageReady }: {
   data: Data;
   params: LeadListParams;
   options: LeadFormOptions;
   currentEmployeeId: string | null;
-  abilities: { create: boolean; edit: boolean; delete: boolean; export: boolean };
+  abilities: { create: boolean; edit: boolean; delete: boolean; export: boolean; layout: boolean };
   storageReady: boolean;
 }) {
   const router = useRouter();
@@ -91,8 +92,10 @@ export default function LeadsClient({ data, params, options, currentEmployeeId, 
           params={params}
           canCreate={abilities.create}
           canExport={abilities.export}
+          canEditLayout={abilities.layout}
           refreshing={pending}
           onAdd={() => setDialog({ kind: 'add' })}
+          onEditLayout={() => setDialog({ kind: 'layout' })}
           onRefresh={() => startTransition(() => router.refresh())}
           onParams={setParams}
           exportHref={exportHref}
@@ -135,7 +138,10 @@ export default function LeadsClient({ data, params, options, currentEmployeeId, 
 
       {dialog?.kind === 'add' && <AddLeadModal mode="create" lead={null} options={options} currentEmployeeId={currentEmployeeId} storageReady={storageReady} onClose={() => setDialog(null)} onSaved={afterSave} />}
       {dialog?.kind === 'edit' && <AddLeadModal mode="edit" lead={dialog.row} options={options} currentEmployeeId={currentEmployeeId} storageReady={storageReady} onClose={() => setDialog(null)} onSaved={afterSave} />}
-      {dialog?.kind === 'view' && <ViewLeadModal leadId={dialog.row.id} onClose={() => setDialog(null)} />}
+      {dialog?.kind === 'layout' && abilities.layout && (
+        <PageLayoutEditor initialFields={options.fields} onClose={changed => { setDialog(null); if (changed) router.refresh(); }} />
+      )}
+      {dialog?.kind === 'view' && <ViewLeadModal leadId={dialog.row.id} options={options} onClose={() => setDialog(null)} />}
 
       {(dialog?.kind === 'delete' || dialog?.kind === 'duplicate') && (
         <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-4">

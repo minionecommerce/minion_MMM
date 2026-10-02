@@ -1,26 +1,28 @@
 'use client';
 
 import { useState } from 'react';
-import { Calendar, Check, Download, FileInput, Filter, Plus, RefreshCw } from 'lucide-react';
+import { Calendar, Check, ChevronDown, Download, FileInput, Filter, LayoutList, Plus, RefreshCw } from 'lucide-react';
 import type { LeadFormOptions } from '@/lib/leads/constants';
 import type { LeadListParams } from '@/lib/leads/queries';
 
 const iconBtn = 'w-10 h-10 flex items-center justify-center text-gray-800 hover:text-black hover:bg-gray-100 rounded transition-colors';
 const field = 'w-full border border-gray-300 rounded px-3 py-2 text-[13px] text-gray-800 bg-white focus:outline-none focus:border-yellow-500';
 
-export default function LeadHeader({ options, params, canCreate, canExport, refreshing, onAdd, onRefresh, onParams, exportHref }: {
+export default function LeadHeader({ options, params, canCreate, canExport, canEditLayout, refreshing, onAdd, onEditLayout, onRefresh, onParams, exportHref }: {
   options: LeadFormOptions;
   params: LeadListParams;
   canCreate: boolean;
   canExport: boolean;
+  canEditLayout: boolean; // Super Admin only
   refreshing: boolean;
   onAdd: () => void;
+  onEditLayout: () => void;
   onRefresh: () => void;
   onParams: (u: Record<string, string | undefined>) => void;
   exportHref: string;
 }) {
-  const [panel, setPanel] = useState<'filter' | 'date' | null>(null);
-  const toggle = (p: 'filter' | 'date') => setPanel(cur => (cur === p ? null : p));
+  const [panel, setPanel] = useState<'filter' | 'date' | 'add' | null>(null);
+  const toggle = (p: 'filter' | 'date' | 'add') => setPanel(cur => (cur === p ? null : p));
   const activeFilters = [params.statusId, params.sourceId, params.assigneeId].filter(Boolean).length;
   const activeDates = [params.from, params.to].filter(Boolean).length;
 
@@ -36,6 +38,25 @@ export default function LeadHeader({ options, params, canCreate, canExport, refr
           <button onClick={onAdd} title="Add New Lead" aria-label="Add New Lead" className="w-10 h-10 flex items-center justify-center border-2 border-[#f5b800] rounded-[3px] text-[#f5b800] hover:bg-[#fff8dc] transition-colors">
             <Plus className="w-6 h-6" strokeWidth={2.5} />
           </button>
+        )}
+        {canEditLayout && (
+          <>
+            <button onClick={() => toggle('add')} title="More lead options" aria-label="More lead options" aria-haspopup="menu" aria-expanded={panel === 'add'} className="-ml-1 w-7 h-10 flex items-center justify-center border-2 border-[#f5b800] rounded-[3px] text-[#f5b800] hover:bg-[#fff8dc] transition-colors">
+              <ChevronDown className="w-4 h-4" strokeWidth={3} />
+            </button>
+            {panel === 'add' && (
+              <div role="menu" className="absolute left-0 top-12 z-30 w-56 bg-white border border-gray-200 rounded-lg shadow-xl py-1">
+                {canCreate && (
+                  <button role="menuitem" onClick={() => { setPanel(null); onAdd(); }} className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left text-[14px] text-gray-800 hover:bg-gray-50">
+                    <Plus className="w-4 h-4" /> Add New Lead
+                  </button>
+                )}
+                <button role="menuitem" onClick={() => { setPanel(null); onEditLayout(); }} className="w-full flex items-center gap-2.5 px-3.5 py-2.5 text-left text-[14px] text-gray-800 hover:bg-gray-50">
+                  <LayoutList className="w-4 h-4" /> Edit Page Layout
+                </button>
+              </div>
+            )}
+          </>
         )}
         <button onClick={onRefresh} title="Refresh" aria-label="Refresh" className={iconBtn}><RefreshCw className={`w-5 h-5 ${refreshing ? 'animate-spin' : ''}`} /></button>
         <button onClick={() => toggle('filter')} title="Filter" aria-label="Filter" className={`${iconBtn} relative`}>

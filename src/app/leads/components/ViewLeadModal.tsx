@@ -6,12 +6,14 @@ import { formatRupees, isHttpUrl } from '@/lib/leads/format';
 import type { LeadRow } from '@/lib/leads/queries';
 import { callApi } from '@/lib/leads/client';
 import type { ExistingFile } from './FileUpload';
+import type { LeadFormOptions } from '@/lib/leads/constants';
+import { displayCustomValue } from '@/lib/leads/layout-shared';
 
 function Item({ label, children }: { label: string; children: React.ReactNode }) {
   return <div><dt className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{label}</dt><dd className="text-[14px] text-gray-900 mt-0.5 break-words whitespace-pre-line">{children || '—'}</dd></div>;
 }
 
-export default function ViewLeadModal({ leadId, onClose }: { leadId: string; onClose: () => void }) {
+export default function ViewLeadModal({ leadId, options, onClose }: { leadId: string; options: LeadFormOptions; onClose: () => void }) {
   const [data, setData] = useState<{ lead: LeadRow; attachments: ExistingFile[] } | null>(null);
   const [error, setError] = useState('');
 
@@ -28,6 +30,9 @@ export default function ViewLeadModal({ leadId, onClose }: { leadId: string; onC
   }, [onClose]);
 
   const l = data?.lead;
+  // Labels are editable in Edit Page Layout, so the panel uses the same names as the form
+  const name = (key: string, fallback: string) => options.fields.find(f => f.key === key)?.label ?? fallback;
+  const customFields = options.fields.filter(f => !f.isSystem);
   const link = l?.locationLink && isHttpUrl(l.locationLink) ? l.locationLink : null;
 
   return (
@@ -44,27 +49,32 @@ export default function ViewLeadModal({ leadId, onClose }: { leadId: string; onC
             <div className="space-y-6">
               <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-4">
                 <Item label="Created">{`${l.date}  ${l.time}`}</Item>
-                <Item label="Lead Status">{l.leadStatus?.label}</Item>
-                <Item label="Customer">{l.customerName}</Item>
-                <Item label="Contact Number">{l.contactNumber}</Item>
-                <Item label="Task Assigned Person">{l.taskPerson ? `${l.taskPerson.name}${l.taskPerson.designation ? ` (${l.taskPerson.designation})` : ''}` : null}</Item>
-                <Item label="Lead Person">{l.leadPerson?.name}</Item>
-                <Item label="Product or Service">{l.productOrServiceLabel}</Item>
-                <Item label="Mode of Customer">{l.modeOfCustomerLabel}</Item>
-                <Item label="Requirement">{l.requirementLabel}</Item>
-                <Item label="Source">{l.sourceLabel}</Item>
-                <div className="sm:col-span-2"><Item label="Exact Requirement">{l.exactRequirement}</Item></div>
-                <Item label="Main Category">{l.mainCategoryLabel}</Item>
-                <Item label="Category">{l.categoryLabel}</Item>
-                <Item label="Subcategory">{l.subcategoryLabel}</Item>
-                <Item label="Type Of Lead">{l.leadTypeLabel}</Item>
-                <Item label="Location">{l.location}</Item>
-                <Item label="Exact Location">{l.exactLocation}</Item>
-                <Item label="Location Link">{link ? <a href={link} target="_blank" rel="noopener noreferrer" className="text-[#2f80ed] inline-flex items-center gap-1 break-all">{link}<ExternalLink className="w-3.5 h-3.5 shrink-0" /></a> : null}</Item>
-                <Item label="Amount">{formatRupees(l.amount)}</Item>
-                <Item label="Conventional Rate">{`${l.conventionalRate ?? 0}%`}</Item>
-                <Item label="Daily Task">{l.dailyTask ? 'Yes' : 'No'}</Item>
-                <div className="sm:col-span-2"><Item label="Notes">{l.notes}</Item></div>
+                <Item label={name('leadStatusId', 'Lead Status')}>{l.leadStatus?.label}</Item>
+                <Item label={name('customerName', 'Customer Name')}>{l.customerName}</Item>
+                <Item label={name('contactNumber', 'Contact Number')}>{l.contactNumber}</Item>
+                <Item label={name('taskAssignedPersonId', 'Task Assigned Person')}>{l.taskPerson ? `${l.taskPerson.name}${l.taskPerson.designation ? ` (${l.taskPerson.designation})` : ''}` : null}</Item>
+                <Item label={name('leadPersonId', 'Lead Person')}>{l.leadPerson?.name}</Item>
+                <Item label={name('productOrServiceId', 'Product or Service')}>{l.productOrServiceLabel}</Item>
+                <Item label={name('modeOfCustomerId', 'Mode of Customer')}>{l.modeOfCustomerLabel}</Item>
+                <Item label={name('requirementId', 'Requirements')}>{l.requirementLabel}</Item>
+                <Item label={name('sourceId', 'Source')}>{l.sourceLabel}</Item>
+                <div className="sm:col-span-2"><Item label={name('exactRequirement', 'Exact Requirement')}>{l.exactRequirement}</Item></div>
+                <Item label={name('mainCategoryId', 'Main Category')}>{l.mainCategoryLabel}</Item>
+                <Item label={name('categoryId', 'Category')}>{l.categoryLabel}</Item>
+                <Item label={name('subcategoryId', 'Subcategory')}>{l.subcategoryLabel}</Item>
+                <Item label={name('leadTypeId', 'Type Of Lead')}>{l.leadTypeLabel}</Item>
+                <Item label={name('location', 'Location')}>{l.location}</Item>
+                <Item label={name('exactLocation', 'Exact Location')}>{l.exactLocation}</Item>
+                <Item label={name('locationLink', 'Location Link')}>{link ? <a href={link} target="_blank" rel="noopener noreferrer" className="text-[#2f80ed] inline-flex items-center gap-1 break-all">{link}<ExternalLink className="w-3.5 h-3.5 shrink-0" /></a> : null}</Item>
+                <Item label={name('amount', 'Amount')}>{formatRupees(l.amount)}</Item>
+                <Item label={name('conventionalRate', 'Conventional Rate')}>{`${l.conventionalRate ?? 0}%`}</Item>
+                <Item label={name('dailyTask', 'Daily Task Settings')}>{l.dailyTask ? 'Yes' : 'No'}</Item>
+                <div className="sm:col-span-2"><Item label={name('notes', 'Notes')}>{l.notes}</Item></div>
+                {customFields.map(f => (
+                  <div key={f.key} className={f.type === 'TEXTAREA' ? 'sm:col-span-2' : ''}>
+                    <Item label={f.label}>{displayCustomValue(f, l.customFields?.[f.key], id => (options.customOptions[f.key] ?? []).find(o => o.id === id)?.label)}</Item>
+                  </div>
+                ))}
               </dl>
               <div>
                 <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-2">Files ({data!.attachments.length})</div>

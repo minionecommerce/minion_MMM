@@ -1,7 +1,6 @@
 'use client';
 
 import { useState, useTransition } from 'react';
-import { useDropdown } from '@/lib/dropdowns/useDropdown';
 import { X, ChevronDown, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { createFollowUp } from '@/app/actions/crm';
 
@@ -23,9 +22,7 @@ export default function CreateFollowUpModal({ leads, employees, onClose, onSucce
   const [assignedToId, setAssignedToId] = useState('');
   const [date, setDate] = useState('');
   const [time, setTime] = useState('10:00');
-  const [typePick, setType] = useState('');
-  const ddType = useDropdown('FOLLOWUP_TYPE', followUpTypes);
-  const type = typePick || ddType.defaultValue || 'Call';
+  const [type, setType] = useState('Call');
   const [purpose, setPurpose] = useState('');
   const [notes, setNotes] = useState('');
 
@@ -120,7 +117,7 @@ export default function CreateFollowUpModal({ leads, employees, onClose, onSucce
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <Label>Type</Label>
-                    <SelectField value={type} onChange={setType} options={ddType.options} />
+                    <SelectField value={type} onChange={setType} options={followUpTypes} />
                   </div>
                   <div>
                     <Label>Assigned To *</Label>

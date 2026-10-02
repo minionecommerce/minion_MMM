@@ -1,7 +1,6 @@
 'use client';
 
 import { useState } from 'react';
-import { useDropdown } from '@/lib/dropdowns/useDropdown';
 import { Search, Filter, X, ChevronDown } from 'lucide-react';
 
 interface CRMSearchFiltersProps {
@@ -19,12 +18,7 @@ const filterOptions = {
   source: ['', 'Website', 'Referral', 'Walk-in', 'Social Media', 'Exhibition', 'Cold Call', 'Google Ads'],
 };
 
-// Filters that map to a managed dropdown use the Super Admin's list (built-in values until it loads)
-const MANAGED_FILTERS: Partial<Record<keyof typeof filterOptions, string>> = { customerType: 'CUSTOMER_TYPE', priority: 'LEAD_PRIORITY', source: 'CRM_LEAD_SOURCE' };
-
 function FilterSelect({ label, optKey, filters, onChange }: { label: string; optKey: keyof typeof filterOptions; filters: Record<string, string>; onChange: (k: string, v: string) => void }) {
-  const managed = useDropdown(MANAGED_FILTERS[optKey] ?? '', filterOptions[optKey].slice(1));
-  const choices = MANAGED_FILTERS[optKey] ? managed.options : filterOptions[optKey].slice(1);
   return (
     <div className="relative">
       <select
@@ -35,7 +29,7 @@ function FilterSelect({ label, optKey, filters, onChange }: { label: string; opt
         }`}
       >
         <option value="">{label}</option>
-        {choices.map(o => <option key={o} value={o}>{o}</option>)}
+        {filterOptions[optKey].slice(1).map(o => <option key={o} value={o}>{o}</option>)}
       </select>
       <ChevronDown className="absolute right-2 top-1/2 -translate-y-1/2 w-3 h-3 text-gray-500 pointer-events-none" />
     </div>
