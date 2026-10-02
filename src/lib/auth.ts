@@ -54,7 +54,9 @@ export type AuthState = {
 };
 
 export async function loadAuthState(userId: string): Promise<AuthState | null> {
+  // One SQL round trip instead of ~6 chained queries: this runs on every page and API request
   const user = await prisma.user.findUnique({
+    relationLoadStrategy: "join",
     where: { id: userId },
     select: {
       id: true,
