@@ -35,6 +35,9 @@ export type LeadFormOptions = {
   leadStatuses: LeadOptionDto[];
   leadTypes: LeadOptionDto[];
   employees: EmployeeOptionDto[];
+  // Distinct typed values used by the Customer and Location column filters
+  customerNames: string[];
+  locations: string[];
   // Page layout (Edit Page Layout): how each field is set up, plus the options of custom pick-list fields
   fields: LeadFieldDto[];
   customOptions: Record<string, LeadOptionDto[]>;
@@ -52,6 +55,12 @@ export type LeadFilterId = (typeof LEAD_FILTERS)[number]["id"];
 
 export const SORT_KEYS = ["lead", "customer", "requirement", "assigned", "status", "source", "category", "location"] as const;
 export type LeadSortKey = (typeof SORT_KEYS)[number];
+
+// Column header filters (tick-box lists). Same keys as the sortable columns, except the Lead ID column.
+export const COLUMN_FILTER_KEYS = ["customer", "requirement", "assigned", "status", "source", "category", "location"] as const;
+export type ColumnFilterKey = (typeof COLUMN_FILTER_KEYS)[number];
+export type ColumnFilters = Partial<Record<ColumnFilterKey, string[]>>;
+export const COLUMN_FILTER_MAX_VALUES = 200;
 
 export const CONVENTIONAL_RATES = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
 

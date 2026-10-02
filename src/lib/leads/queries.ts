@@ -1,6 +1,6 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { LEAD_FILTERS, OPTION_TYPES, PAGE_SIZE, SORT_KEYS, type EmployeeOptionDto, type LeadFilterId, type LeadFormOptions, type LeadOptionDto, type LeadSortKey, type OptionType } from "./constants";
+import { COLUMN_FILTER_KEYS, COLUMN_FILTER_MAX_VALUES, LEAD_FILTERS, OPTION_TYPES, PAGE_SIZE, SORT_KEYS, type ColumnFilters, type EmployeeOptionDto, type LeadFilterId, type LeadFormOptions, type LeadOptionDto, type LeadSortKey, type OptionType } from "./constants";
 import { formatDate, formatTime, todayBounds } from "./format";
 import { getLayout } from "./layout";
 
@@ -15,6 +15,7 @@ export type LeadListParams = {
   assigneeId?: string;
   from?: string; // YYYY-MM-DD, created date range in the CRM time zone
   to?: string;
+  cols?: ColumnFilters; // column header tick-box filters; several values in one column = OR, different columns = AND
 };
 
 const personSelect = { id: true, designation: true, user: { select: { name: true } } } as const;
@@ -155,7 +156,19 @@ export function parseListParams(sp: Record<string, string | string[] | undefined
   const sort = one("sort");
   const id = (k: string) => { const v = one(k); return v && /^[A-Za-z0-9_-]{1,64}$/.test(v) ? v : undefined; };
   const day = (k: string) => { const v = one(k); return v && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v)) ? v : undefined; };
+  const cols: ColumnFilters = {};
+  for (const k of COLUMN_FILTER_KEYS) {
+    const raw = one(`f_${k}`);
+    if (!raw) continue;
+    try {
+      const arr = JSON.parse(raw);
+      if (!Array.isArray(arr)) continue;
+      const vals = arr.filter((v): v is string => typeof v === "string" && v.length > 0 && v.length <= 200).slice(0, COLUMN_FILTER_MAX_VALUES);
+      if (vals.length) cols[k] = vals;
+    } catch { /* ignore a malformed value */ }
+  }
   return {
+    cols,
     statusId: id("status"),
     sourceId: id("source"),
     assigneeId: id("assignee"),
@@ -202,6 +215,15 @@ async function buildWhere(params: LeadListParams): Promise<Prisma.LeadWhereInput
       ],
     });
   }
+
+  const c = params.cols ?? {};
+  if (c.customer) and.push({ customerName: { in: c.customer } });
+  if (c.requirement) and.push({ requirementId: { in: c.requirement } });
+  if (c.assigned) and.push({ salesExecutiveId: { in: c.assigned } });
+  if (c.status) and.push({ leadStatusId: { in: c.status } });
+  if (c.source) and.push({ sourceId: { in: c.source } });
+  if (c.category) and.push({ mainCategoryId: { in: c.category } });
+  if (c.location) and.push({ location: { in: c.location } });
 
   if (params.statusId) and.push({ leadStatusId: params.statusId });
   if (params.sourceId) and.push({ sourceId: params.sourceId });
@@ -258,7 +280,7 @@ export async function getLeadRow(id: string) {
 }
 
 export async function getFormOptions(): Promise<LeadFormOptions> {
-  const [options, employees, fields] = await Promise.all([
+  const [options, employees, fields, customers, locations] = await Promise.all([
     prisma.leadOption.findMany({
       where: { OR: [{ type: { in: [...OPTION_TYPES] } }, { type: { startsWith: "CF:" } }] },
       orderBy: [{ sortOrder: "asc" }, { label: "asc" }],
@@ -270,6 +292,8 @@ export async function getFormOptions(): Promise<LeadFormOptions> {
       select: { id: true, designation: true, user: { select: { name: true } } },
     }),
     getLayout(),
+    prisma.lead.findMany({ where: { deletedAt: null, customerName: { not: null } }, distinct: ["customerName"], select: { customerName: true }, orderBy: { customerName: "asc" }, take: 1000 }),
+    prisma.lead.findMany({ where: { deletedAt: null, location: { not: null } }, distinct: ["location"], select: { location: true }, orderBy: { location: "asc" }, take: 1000 }),
   ]);
   const customOptions: Record<string, LeadOptionDto[]> = {};
   for (const f of fields) if (!f.isSystem && f.optionType) customOptions[f.key] = options.filter(o => o.type === f.optionType) as LeadOptionDto[];
@@ -286,6 +310,8 @@ export async function getFormOptions(): Promise<LeadFormOptions> {
     leadStatuses: of("LEAD_STATUS"),
     leadTypes: of("LEAD_TYPE"),
     employees: emp,
+    customerNames: customers.map(c => c.customerName!).filter(Boolean),
+    locations: locations.map(l => l.location!).filter(Boolean),
     fields,
     customOptions,
   };

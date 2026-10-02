@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
-import type { LeadFilterId, LeadFormOptions, LeadSortKey } from '@/lib/leads/constants';
+import type { ColumnFilterKey, LeadFilterId, LeadFormOptions, LeadSortKey } from '@/lib/leads/constants';
 import type { LeadListParams, LeadRow } from '@/lib/leads/queries';
 import { callApi } from '@/lib/leads/client';
 import { useToast } from '@/components/ui/Toast';
@@ -82,6 +82,16 @@ export default function LeadsClient({ data, params, options, currentEmployeeId, 
     onDelete: () => setDialog({ kind: 'delete', row }),
   });
 
+  const filterItems: Record<ColumnFilterKey, { value: string; label: string }[]> = {
+    customer: options.customerNames.map(n => ({ value: n, label: n })),
+    requirement: options.requirements.map(o => ({ value: o.id, label: o.label })),
+    assigned: options.employees.map(e => ({ value: e.id, label: e.name })),
+    status: options.leadStatuses.map(o => ({ value: o.id, label: o.label })),
+    source: options.sources.map(o => ({ value: o.id, label: o.label })),
+    category: options.mainCategories.map(o => ({ value: o.id, label: o.label })),
+    location: options.locations.map(l => ({ value: l, label: l })),
+  };
+
   const resetAll = () => { setQ(''); startTransition(() => router.push('/leads')); };
 
   return (
@@ -120,6 +130,9 @@ export default function LeadsClient({ data, params, options, currentEmployeeId, 
             dir={params.dir === 'asc' ? 'asc' : 'desc'}
             abilities={abilities}
             loading={pending}
+            filterItems={filterItems}
+            selected={params.cols ?? {}}
+            onFilter={(k, values) => setParams({ [`f_${k}`]: values.length ? JSON.stringify(values) : undefined })}
             onSort={(k: LeadSortKey, d) => setParams({ sort: k, dir: d })}
             onReset={resetAll}
             handlersFor={handlersFor}
