@@ -2,10 +2,10 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Home, Briefcase, Target, LayoutGrid, TreePine, CheckCircle2, Users, UserCog, BookOpen, Gift, Library, Search, Bell, ChevronUp, LogOut, Menu, X, PanelLeftClose, PanelLeftOpen, KeyRound, ClipboardList, type LucideIcon } from 'lucide-react';
+import { Home, Briefcase, Target, LayoutGrid, TreePine, CheckCircle2, Users, UserCog, BookOpen, Gift, Library, Search, Bell, ChevronUp, LogOut, Menu, X, KeyRound, ClipboardList, type LucideIcon } from 'lucide-react';
 import { NAV_ITEMS, snapshotCanViewAny } from '@/lib/rbac/catalog';
 import { useSession, signOut } from 'next-auth/react';
-import { useEffect, useState, useSyncExternalStore } from 'react';
+import { useEffect, useState } from 'react';
 
 const NAV_ICONS: Record<string, LucideIcon> = {
   "/": Home,
@@ -21,36 +21,6 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/rewards": Gift,
   "/resources": Library,
 };
-
-// Desktop collapsed/expanded preference, kept in localStorage.
-// Falls back to memory when storage is unavailable (private mode, blocked site data).
-const COLLAPSED_KEY = 'minion.sidebar.collapsed';
-const collapsedListeners = new Set<() => void>();
-let collapsedMemory: boolean | null = null;
-
-function getCollapsed() {
-  if (collapsedMemory !== null) return collapsedMemory;
-  try {
-    return localStorage.getItem(COLLAPSED_KEY) === '1';
-  } catch {
-    return false;
-  }
-}
-
-function setCollapsedPreference(value: boolean) {
-  collapsedMemory = value;
-  try {
-    localStorage.setItem(COLLAPSED_KEY, value ? '1' : '0');
-  } catch {}
-  collapsedListeners.forEach(listener => listener());
-}
-
-function subscribeCollapsed(listener: () => void) {
-  collapsedListeners.add(listener);
-  return () => {
-    collapsedListeners.delete(listener);
-  };
-}
 
 function Logo({ compact = false }: { compact?: boolean }) {
   return (
@@ -81,7 +51,8 @@ export default function GlobalNavbar() {
   const router = useRouter();
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
-  const collapsed = useSyncExternalStore(subscribeCollapsed, getCollapsed, () => false);
+  // Desktop: the sidebar rests as a slim icon strip and opens while the pointer (or keyboard focus) is on it
+  const [expanded, setExpanded] = useState(false);
   const [lastPathname, setLastPathname] = useState(pathname);
 
   // Close the mobile drawer and profile menu after navigating
@@ -90,8 +61,6 @@ export default function GlobalNavbar() {
     setMobileOpen(false);
     setDropdownOpen(false);
   }
-
-  const toggleCollapsed = () => setCollapsedPreference(!collapsed);
 
   const permissions = session?.user?.permissions || [];
 
@@ -230,17 +199,6 @@ export default function GlobalNavbar() {
             Sign In
           </Link>
         )}
-
-        {/* Desktop collapse toggle */}
-        <button
-          onClick={toggleCollapsed}
-          className={`hidden lg:flex w-full items-center gap-3 mt-2 rounded-lg p-2 text-gray-500 hover:text-white hover:bg-[#1a1b1e] transition-colors ${isCompact ? 'justify-center' : ''}`}
-          aria-label={isCompact ? 'Expand sidebar' : 'Collapse sidebar'}
-          title={isCompact ? 'Expand sidebar' : 'Collapse sidebar'}
-        >
-          {isCompact ? <PanelLeftOpen className="w-4 h-4" /> : <PanelLeftClose className="w-4 h-4" />}
-          {!isCompact && <span className="text-[11px] font-semibold tracking-wider">COLLAPSE</span>}
-        </button>
       </div>
     </div>
   );
@@ -275,15 +233,21 @@ export default function GlobalNavbar() {
         </div>
       )}
 
-      {/* Desktop sidebar */}
-      <aside
-        data-sidebar
-        className={`hidden lg:block sticky top-0 h-screen shrink-0 z-30 bg-[#111113] border-r border-[#292B30] transition-[width] duration-200 ${
-          collapsed ? 'w-[76px]' : 'w-60'
-        }`}
-      >
-        {renderSidebarContent(collapsed)}
-      </aside>
+      {/* Desktop sidebar: a fixed 76px strip keeps the page from shifting; the panel opens over it on hover or focus */}
+      <div className="hidden lg:block sticky top-0 h-screen w-[76px] shrink-0 z-40">
+        <aside
+          data-sidebar
+          onMouseEnter={() => setExpanded(true)}
+          onMouseLeave={() => { setExpanded(false); setDropdownOpen(false); }}
+          onFocus={() => setExpanded(true)}
+          onBlur={e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) { setExpanded(false); setDropdownOpen(false); } }}
+          className={`absolute left-0 top-0 h-screen bg-[#111113] border-r border-[#292B30] transition-[width,box-shadow] duration-200 ${
+            expanded ? 'w-60 shadow-2xl shadow-black/40' : 'w-[76px]'
+          }`}
+        >
+          {renderSidebarContent(!expanded)}
+        </aside>
+      </div>
     </>
   );
 }
