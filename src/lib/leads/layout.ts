@@ -5,7 +5,7 @@ import { prisma } from "@/lib/db";
 import type { AuthContext } from "@/lib/auth";
 import { writeAudit } from "@/lib/audit";
 import { ServiceError } from "@/lib/users/service";
-import { CONVENTIONAL_RATES } from "./constants";
+import { CONVENTIONAL_RATES, LEAD_COLUMNS, type LeadColumnId } from "./constants";
 import { isHttpUrl, normalizePhone } from "./format";
 import {
   CUSTOM_TYPE_SET,
@@ -62,7 +62,8 @@ function toDto(f: FieldRow): LeadFieldDto {
   return {
     id: f.id,
     key: f.key,
-    label: f.label,
+    // The Exact Requirement field is now simply "Requirement" (a label the Super Admin renamed on purpose is left alone)
+    label: f.isSystem && f.key === "exactRequirement" && f.label === "Exact Requirement" ? "Requirement" : f.label,
     type: (def ? def.type : f.fieldType) as FieldType,
     isSystem: f.isSystem,
     required: f.required,
@@ -227,11 +228,39 @@ export async function deleteField(ctx: AuthContext, id: string, confirm: boolean
   return { deleted: true, usage };
 }
 
-export async function reorderCustomFields(ctx: AuthContext, orderedIds: string[]) {
+// ---------------------------------------------------------------------------
+// Order of the Leads table columns (stored as one small setting)
+// ---------------------------------------------------------------------------
+const COLUMN_ORDER_KEY = "columnOrder";
+const DEFAULT_COLUMNS = LEAD_COLUMNS.map(c => c.id) as LeadColumnId[];
+
+// Always returns every column exactly once: saved order first, then anything not mentioned
+export async function getColumnOrder(): Promise<LeadColumnId[]> {
+  const row = await prisma.leadSetting.findUnique({ where: { key: COLUMN_ORDER_KEY }, select: { value: true } });
+  const saved = Array.isArray(row?.value) ? (row!.value as unknown[]).filter((v): v is LeadColumnId => DEFAULT_COLUMNS.includes(v as LeadColumnId)) : [];
+  const seen = new Set<string>();
+  const ordered = saved.filter(id => (seen.has(id) ? false : (seen.add(id), true)));
+  return [...ordered, ...DEFAULT_COLUMNS.filter(id => !seen.has(id))];
+}
+
+export async function setColumnOrder(ctx: AuthContext, ids: string[]) {
+  assertSuperAdmin(ctx);
+  if (ids.length !== DEFAULT_COLUMNS.length || new Set(ids).size !== ids.length || !ids.every(id => DEFAULT_COLUMNS.includes(id as LeadColumnId))) {
+    throw new ServiceError(400, "The new column order must list every column exactly once.");
+  }
+  await prisma.$transaction(async tx => {
+    await tx.leadSetting.upsert({ where: { key: COLUMN_ORDER_KEY }, create: { key: COLUMN_ORDER_KEY, value: ids }, update: { value: ids } });
+    await writeAudit({ action: "LEAD_COLUMNS_REORDERED", actorUserId: ctx.userId, metadata: { order: ids } }, tx);
+  });
+  return { ok: true };
+}
+
+// Reorders the form fields (system and custom). Fields not in the list keep their places.
+export async function reorderFields(ctx: AuthContext, orderedIds: string[]) {
   assertSuperAdmin(ctx);
   if (new Set(orderedIds).size !== orderedIds.length) throw new ServiceError(400, "Duplicate fields in the new order.");
-  const rows = await prisma.leadField.findMany({ where: { id: { in: orderedIds }, isSystem: false }, select: { id: true, sortOrder: true } });
-  if (rows.length !== orderedIds.length) throw new ServiceError(400, "Only custom fields can be reordered.");
+  const rows = await prisma.leadField.findMany({ where: { id: { in: orderedIds } }, select: { id: true, sortOrder: true } });
+  if (rows.length !== orderedIds.length) throw new ServiceError(400, "The new order contains fields that do not exist.");
   const slots = rows.map(r => r.sortOrder).sort((a, b) => a - b);
   await prisma.$transaction(async tx => {
     for (let i = 0; i < orderedIds.length; i++) await tx.leadField.update({ where: { id: orderedIds[i] }, data: { sortOrder: slots[i] } });

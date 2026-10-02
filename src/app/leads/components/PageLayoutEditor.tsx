@@ -2,14 +2,16 @@
 
 import { useEffect, useRef, useState } from 'react';
 import {
-  AlignLeft, ArrowDown, ArrowUp, Calendar, CheckSquare, Hash, Link2, Mail, MoreHorizontal, Paperclip, Percent, Phone, Plus, SquareChevronDown, Trash2, Type, User, X,
+  AlignLeft, ArrowDown, ArrowUp, Calendar, CheckSquare, Hash, Link2, Mail, MoreHorizontal, Paperclip, Percent, Phone, SquareChevronDown, Trash2, Type, User, X,
   type LucideIcon,
 } from 'lucide-react';
-import { CUSTOM_FIELD_TYPES, FIELD_TYPE_LABEL, type FieldType, type LeadFieldDto } from '@/lib/leads/layout-shared';
+import { LEAD_COLUMNS, type LeadColumnId } from '@/lib/leads/constants';
+import { FIELD_TYPE_LABEL, type FieldType, type LeadFieldDto } from '@/lib/leads/layout-shared';
 import { ApiError, callApi } from '@/lib/leads/client';
 import { useToast } from '@/components/ui/Toast';
 import FieldProperties from './FieldProperties';
 import LightConfirm from './LightConfirm';
+import { ColumnsReorder, DropdownsReorder, FormFieldsReorder } from './ReorderDialogs';
 
 const ICONS: Record<FieldType, LucideIcon> = {
   TEXT: Type, TEXTAREA: AlignLeft, NUMBER: Hash, DATE: Calendar, EMAIL: Mail, PHONE: Phone, URL: Link2,
@@ -17,12 +19,13 @@ const ICONS: Record<FieldType, LucideIcon> = {
 };
 
 // Super Admin only: every field on the Add New Lead form, with its properties
-export default function PageLayoutEditor({ initialFields, onClose }: { initialFields: LeadFieldDto[]; onClose: (changed: boolean) => void }) {
+export default function PageLayoutEditor({ initialFields, columnOrder, onClose }: { initialFields: LeadFieldDto[]; columnOrder: LeadColumnId[]; onClose: (changed: boolean) => void }) {
   const toast = useToast();
   const [fields, setFields] = useState(initialFields);
   const [changed, setChanged] = useState(false);
   const [menuFor, setMenuFor] = useState<string | null>(null);
-  const [picking, setPicking] = useState(false);
+  const [reorder, setReorder] = useState<'fields' | 'columns' | 'dropdowns' | null>(null);
+  const [columns, setColumns] = useState<LeadColumnId[]>(columnOrder);
   const [editing, setEditing] = useState<{ field: LeadFieldDto | null; createType: FieldType | null } | null>(null);
   const [removing, setRemoving] = useState<{ field: LeadFieldDto; usage: number | null } | null>(null);
   const [busy, setBusy] = useState(false);
@@ -33,7 +36,6 @@ export default function PageLayoutEditor({ initialFields, onClose }: { initialFi
     const away = (e: MouseEvent) => {
       const t = e.target as HTMLElement;
       if (!t.closest('[data-menu]')) setMenuFor(null);
-      if (!t.closest('[data-picker]')) setPicking(false);
     };
     document.addEventListener('mousedown', away);
     return () => document.removeEventListener('mousedown', away);
@@ -41,9 +43,9 @@ export default function PageLayoutEditor({ initialFields, onClose }: { initialFi
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || editing || removing) return;
+      if (e.key !== 'Escape' || editing || removing || reorder) return;
       // Escape closes an open menu first, and only then the window
-      if (menuFor || picking) { setMenuFor(null); setPicking(false); return; }
+      if (menuFor) { setMenuFor(null); return; }
       onClose(changed);
     };
     window.addEventListener('keydown', key);
@@ -101,30 +103,22 @@ export default function PageLayoutEditor({ initialFields, onClose }: { initialFi
         <div className="flex items-center justify-between gap-3 px-6 py-4 border-b border-gray-200 shrink-0">
           <div>
             <h2 id="layout-title" className="text-[19px] font-bold text-[#444]">Edit Page Layout</h2>
-            <p className="text-[12px] text-gray-500 mt-0.5">Lead form fields. Use the three dots on a field to edit its properties.</p>
+            <p className="text-[12px] text-gray-500 mt-0.5">Lead form fields. Use the three dots on a field to edit its properties, or the Reorder buttons to change the order.</p>
           </div>
           <div className="flex items-center gap-2">
-            <div className="relative" data-picker>
-              <button onClick={() => setPicking(p => !p)} aria-haspopup="menu" aria-expanded={picking} className="inline-flex items-center gap-1.5 px-3.5 h-[38px] rounded-md bg-[#f5b800] hover:bg-[#e0a800] text-black text-[14px] font-semibold">
-                <Plus className="w-4 h-4" /> New Field
-              </button>
-              {picking && (
-                <div role="menu" className="absolute right-0 top-11 z-20 w-64 bg-white border border-gray-200 rounded-lg shadow-xl py-1 max-h-[60vh] overflow-y-auto">
-                  <div className="px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wide text-gray-400">Choose a field type</div>
-                  {CUSTOM_FIELD_TYPES.map(t => {
-                    const Icon = ICONS[t.type];
-                    return (
-                      <button key={t.type} role="menuitem" onClick={() => { setPicking(false); setEditing({ field: null, createType: t.type }); }} className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-gray-50">
-                        <Icon className="w-4 h-4 text-gray-500 shrink-0" />
-                        <span><span className="block text-[14px] text-gray-900">{t.label}</span><span className="block text-[11px] text-gray-400">{t.hint}</span></span>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
+            <div className="hidden md:flex items-center gap-2">
+              {([['fields', 'Reorder Form Fields'], ['columns', 'Reorder Page Columns'], ['dropdowns', 'Reorder Dropdowns']] as const).map(([k, label]) => (
+                <button key={k} onClick={() => setReorder(k)} className="px-3 h-[36px] whitespace-nowrap rounded-md border border-gray-300 hover:border-gray-500 bg-white text-[13px] font-medium text-gray-800">{label}</button>
+              ))}
             </div>
             <button onClick={() => onClose(changed)} aria-label="Close" className="text-gray-500 hover:text-black"><X className="w-6 h-6" /></button>
           </div>
+        </div>
+
+        <div className="md:hidden flex flex-wrap gap-2 px-6 py-3 border-b border-gray-200 shrink-0">
+          {([['fields', 'Reorder Form Fields'], ['columns', 'Reorder Page Columns'], ['dropdowns', 'Reorder Dropdowns']] as const).map(([k, label]) => (
+            <button key={k} onClick={() => setReorder(k)} className="px-3 h-[34px] rounded-md border border-gray-300 bg-white text-[13px] font-medium text-gray-800">{label}</button>
+          ))}
         </div>
 
         <div className="overflow-y-auto px-6 py-5 bg-gray-50 flex-1">
@@ -161,7 +155,7 @@ export default function PageLayoutEditor({ initialFields, onClose }: { initialFi
               })}
             </ul>
             <p className="text-[12px] text-gray-500 mt-4">
-              <span className="inline-block w-[3px] h-3 bg-[#e5484d] align-middle mr-1.5" />Required field. System fields can be renamed and edited but not deleted; fields you add appear after them on the form.
+              <span className="inline-block w-[3px] h-3 bg-[#e5484d] align-middle mr-1.5" />Required field. System fields can be renamed and edited but not deleted.
             </p>
           </div>
         </div>
@@ -181,6 +175,12 @@ export default function PageLayoutEditor({ initialFields, onClose }: { initialFi
           onChanged={next => update(next)}
         />
       )}
+
+      {reorder === 'fields' && <FormFieldsReorder fields={fields} onSaved={next => update(next)} onClose={() => setReorder(null)} />}
+      {reorder === 'columns' && (
+        <ColumnsReorder columns={columns.map(id => ({ id, label: LEAD_COLUMNS.find(c => c.id === id)?.label ?? id }))} onSaved={order => { setColumns(order as LeadColumnId[]); setChanged(true); }} onClose={() => setReorder(null)} />
+      )}
+      {reorder === 'dropdowns' && <DropdownsReorder fields={fields} onClose={() => { setReorder(null); setChanged(true); }} />}
 
       {removing && (
         <LightConfirm title={removing.usage ? 'Field has data' : 'Delete field?'} confirmLabel="Delete" danger busy={busy} onCancel={() => setRemoving(null)} onConfirm={confirmDelete}>

@@ -106,15 +106,19 @@ export function LeadStatusCell({ row, canEdit }: { row: LeadRow; canEdit: boolea
   );
 }
 
-// Static for now: the follow-up workflow will be added later
-export function FollowUpCell() {
+// Follow-up column: the green arrow opens "Upload Follow-up Proof"; the number is how many follow-ups were done
+export function FollowUpCell({ row, canEdit, onUpload }: { row: LeadRow; canEdit: boolean; onUpload: () => void }) {
+  const when = (v: { date: string; time: string } | null) => (v ? <span className="text-gray-600">{v.date}<br />{v.time}</span> : <span className="text-gray-500">N/A</span>);
   return (
-    <div className="flex flex-col items-center gap-1 text-[11px] text-gray-600 w-[110px]">
-      <span className="w-5 h-5 rounded-sm bg-[#16a34a] flex items-center justify-center"><ChevronUp className="w-4 h-4 text-white" strokeWidth={3} /></span>
-      <span className="flex items-center gap-1 text-[#d9232b] font-semibold"><Phone className="w-3.5 h-3.5" fill="currentColor" />0</span>
+    <div className="flex flex-col items-center gap-1 text-[11px] text-gray-600 w-[120px]">
+      <button type="button" onClick={onUpload} disabled={!canEdit} title={canEdit ? 'Upload follow-up proof' : 'You cannot add follow-ups'} aria-label={`Upload follow-up proof for ${row.code}`}
+        className={`w-5 h-5 rounded-sm bg-[#16a34a] flex items-center justify-center ${canEdit ? 'hover:bg-[#15803d] cursor-pointer' : 'opacity-60 cursor-default'}`}>
+        <ChevronUp className="w-4 h-4 text-white" strokeWidth={3} />
+      </button>
+      <span className="flex items-center gap-1 text-[#d9232b] font-semibold" title="Follow-ups done"><Phone className="w-3.5 h-3.5" fill="currentColor" />{row.followUpCount}</span>
       <div className="space-y-0.5 text-left">
-        <div><span className="text-[#d9232b]">●</span> Last: <span className="text-gray-500">N/A</span></div>
-        <div><span className="text-[#16a34a]">●</span> Next: <span className="text-gray-500">N/A</span></div>
+        <div className="flex gap-1"><span className="text-[#d9232b]">●</span><span>Last: {when(row.lastFollowUp)}</span></div>
+        <div className="flex gap-1"><span className="text-[#16a34a]">●</span><span>Next: {when(row.nextFollowUp)}</span></div>
       </div>
     </div>
   );

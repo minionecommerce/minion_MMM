@@ -2,33 +2,34 @@
 
 import { useRef, useState } from 'react';
 import { ChevronDown, RotateCcw } from 'lucide-react';
-import type { ColumnFilterKey, LeadSortKey } from '@/lib/leads/constants';
+import type { ColumnFilterKey, LeadColumnId, LeadSortKey } from '@/lib/leads/constants';
 import type { LeadRow } from '@/lib/leads/queries';
 import LeadActions, { type LeadActionHandlers } from './LeadActions';
 import { CategoryCell, CustomerDetailsCell, FollowUpCell, LeadIdCell, LeadStatusCell, LocationCell, RequirementsCell, SourceCell, StaffAssignmentCell, StatusCell } from './LeadCells';
 
 type Abilities = { create: boolean; edit: boolean; delete: boolean };
 
-const COLUMNS: { label: string; sort?: LeadSortKey; width: string }[] = [
-  { label: 'Lead ID & Date', sort: 'lead', width: 'w-[150px]' },
-  { label: 'Customer details', sort: 'customer', width: 'w-[190px]' },
-  { label: 'Requirements', sort: 'requirement', width: 'w-[270px]' },
-  { label: 'Staff Assignment', sort: 'assigned', width: 'w-[130px]' },
-  { label: 'Lead Status', sort: 'status', width: 'w-[215px]' },
-  { label: 'Follow-up', width: 'w-[115px]' },
-  { label: 'Status', width: 'w-[140px]' },
-  { label: 'Source', sort: 'source', width: 'w-[110px]' },
-  { label: 'Categories', sort: 'category', width: 'w-[200px]' },
-  { label: 'Location', sort: 'location', width: 'w-[210px]' },
-  { label: 'Actions', width: 'w-[110px]' },
-];
+type Column = { id: LeadColumnId | 'actions'; label: string; sort?: LeadSortKey; width: string };
+const COLUMN_DEFS: Record<LeadColumnId, Column> = {
+  lead: { id: 'lead', label: 'Lead ID & Date', sort: 'lead', width: 'w-[150px]' },
+  customer: { id: 'customer', label: 'Customer details', sort: 'customer', width: 'w-[190px]' },
+  requirement: { id: 'requirement', label: 'Requirements', sort: 'requirement', width: 'w-[270px]' },
+  assigned: { id: 'assigned', label: 'Staff Assignment', sort: 'assigned', width: 'w-[130px]' },
+  status: { id: 'status', label: 'Lead Status', sort: 'status', width: 'w-[215px]' },
+  followup: { id: 'followup', label: 'Follow-up', width: 'w-[135px]' },
+  state: { id: 'state', label: 'Status', width: 'w-[140px]' },
+  source: { id: 'source', label: 'Source', sort: 'source', width: 'w-[110px]' },
+  category: { id: 'category', label: 'Categories', sort: 'category', width: 'w-[200px]' },
+  location: { id: 'location', label: 'Location', sort: 'location', width: 'w-[210px]' },
+};
+const ACTIONS_COLUMN: Column = { id: 'actions', label: 'Actions', width: 'w-[110px]' };
 
 type FilterItem = { value: string; label: string };
 export type FilterGroup = { key: ColumnFilterKey; label: string; items: FilterItem[]; selected: string[] };
 type Draft = Partial<Record<ColumnFilterKey, string[]>>;
 
 function HeaderCell({ col, active, dir, groups, onSort, onFilter, onReset }: {
-  col: (typeof COLUMNS)[number];
+  col: Column;
   active: boolean;
   dir: 'asc' | 'desc';
   groups: FilterGroup[];
@@ -157,21 +158,39 @@ function CardSection({ title, children }: { title: string; children: React.React
   return <div><div className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 mb-1">{title}</div>{children}</div>;
 }
 
-export default function LeadTable({ rows, sort, dir, abilities, loading, filterGroups, onSort, onFilter, onReset, handlersFor }: {
+export default function LeadTable({ rows, sort, dir, abilities, loading, columnOrder, filterGroups, onSort, onFilter, onReset, onFollowUp, handlersFor }: {
   rows: LeadRow[];
   sort?: LeadSortKey;
   dir: 'asc' | 'desc';
   abilities: Abilities;
   loading: boolean;
+  columnOrder: LeadColumnId[];
   filterGroups: Record<string, FilterGroup[]>; // by column sort key
   onSort: (k: LeadSortKey, d: 'asc' | 'desc') => void;
   onFilter: (next: Partial<Record<ColumnFilterKey, string[]>>) => void;
   onReset: () => void;
+  onFollowUp: (row: LeadRow) => void;
   handlersFor: (row: LeadRow) => LeadActionHandlers;
 }) {
   const activeSort = sort ?? 'lead';
+  const columns: Column[] = [...columnOrder.map(id => COLUMN_DEFS[id]), ACTIONS_COLUMN];
 
   const anyFilter = Object.values(filterGroups).some(gs => gs.some(g => g.selected.length));
+  const cellFor = (id: LeadColumnId, row: LeadRow) => {
+    switch (id) {
+      case 'lead': return <LeadIdCell row={row} />;
+      case 'customer': return <CustomerDetailsCell row={row} />;
+      case 'requirement': return <RequirementsCell row={row} />;
+      case 'assigned': return <StaffAssignmentCell row={row} />;
+      case 'status': return <LeadStatusCell row={row} canEdit={abilities.edit} />;
+      case 'followup': return <FollowUpCell row={row} canEdit={abilities.edit} onUpload={() => onFollowUp(row)} />;
+      case 'state': return <StatusCell rate={row.conventionalRate} />;
+      case 'source': return <SourceCell row={row} />;
+      case 'category': return <CategoryCell row={row} />;
+      case 'location': return <LocationCell row={row} />;
+    }
+  };
+
   if (rows.length === 0 && !anyFilter) {
     return (
       <div className="py-20 text-center text-gray-500 border border-dashed border-gray-300 rounded-lg">
@@ -188,28 +207,22 @@ export default function LeadTable({ rows, sort, dir, abilities, loading, filterG
         <table className="min-w-[1700px] w-full border-collapse">
           <thead className="bg-[#f3f4f6]">
             <tr>
-              {COLUMNS.map(c => (
+              {columns.map(c => (
                 <HeaderCell key={c.label} col={c} active={!!c.sort && c.sort === activeSort} dir={dir} groups={(c.sort && filterGroups[c.sort]) || []} onSort={onSort} onFilter={onFilter} onReset={onReset} />
               ))}
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 && (
-              <tr><td colSpan={COLUMNS.length} className="py-16 text-center text-gray-500"><div className="text-[16px] font-semibold text-gray-700">No leads match these filters</div><div className="text-[13px] mt-1">Open a column filter to change it, or use the reset button in Actions.</div></td></tr>
+              <tr><td colSpan={columns.length} className="py-16 text-center text-gray-500"><div className="text-[16px] font-semibold text-gray-700">No leads match these filters</div><div className="text-[13px] mt-1">Open a column filter to change it, or use the reset button in Actions.</div></td></tr>
             )}
             {rows.map(row => (
               <tr key={row.id} className="border-b border-gray-200 align-middle hover:bg-[#fafafa]">
-                <td className="px-3 py-2.5 align-middle"><LeadIdCell row={row} /></td>
-                <td className="px-3 py-2.5 align-middle"><CustomerDetailsCell row={row} /></td>
-                <td className="px-3 py-2.5 align-top"><RequirementsCell row={row} /></td>
-                <td className="px-3 py-2.5 align-middle"><StaffAssignmentCell row={row} /></td>
-                <td className="px-3 py-2.5 align-middle"><LeadStatusCell row={row} canEdit={abilities.edit} /></td>
-                <td className="px-3 py-2.5 align-middle"><FollowUpCell /></td>
-                <td className="px-3 py-2.5 align-middle"><StatusCell rate={row.conventionalRate} /></td>
-                <td className="px-3 py-2.5 align-middle"><SourceCell row={row} /></td>
-                <td className="px-3 py-2.5 align-middle"><CategoryCell row={row} /></td>
-                <td className="px-3 py-2.5 align-middle"><LocationCell row={row} /></td>
-                <td className="px-3 py-2.5 align-middle sticky right-0 z-10 bg-white shadow-[-6px_0_8px_-6px_rgba(0,0,0,0.15)]"><LeadActions canEdit={abilities.edit} canCreate={abilities.create} canDelete={abilities.delete} handlers={handlersFor(row)} /></td>
+                {columns.map(c => (
+                  c.id === 'actions'
+                    ? <td key={c.id} className="px-3 py-2.5 align-middle sticky right-0 z-10 bg-white shadow-[-6px_0_8px_-6px_rgba(0,0,0,0.15)]"><LeadActions canEdit={abilities.edit} canCreate={abilities.create} canDelete={abilities.delete} handlers={handlersFor(row)} /></td>
+                    : <td key={c.id} className="px-3 py-2.5 align-middle">{cellFor(c.id, row)}</td>
+                ))}
               </tr>
             ))}
           </tbody>
@@ -232,7 +245,7 @@ export default function LeadTable({ rows, sort, dir, abilities, loading, filterG
               <CardSection title="Categories"><CategoryCell row={row} /></CardSection>
               <CardSection title="Location"><LocationCell row={row} /></CardSection>
               <CardSection title="Source"><SourceCell row={row} /></CardSection>
-              <div className="flex gap-6"><CardSection title="Follow-up"><FollowUpCell /></CardSection><CardSection title="Status"><StatusCell rate={row.conventionalRate} /></CardSection></div>
+              <div className="flex gap-6"><CardSection title="Follow-up"><FollowUpCell row={row} canEdit={abilities.edit} onUpload={() => onFollowUp(row)} /></CardSection><CardSection title="Status"><StatusCell rate={row.conventionalRate} /></CardSection></div>
             </div>
           </article>
         ))}

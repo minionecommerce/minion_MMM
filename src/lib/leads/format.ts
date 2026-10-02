@@ -41,18 +41,28 @@ export function formatRupees(value: number | null | undefined) {
   return "₹" + new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(n);
 }
 
+// How far the time zone is ahead of UTC at a given instant, in minutes
+function offsetMinutes(instant: Date, timeZone: string) {
+  const local = new Intl.DateTimeFormat("en-US", { timeZone, hour12: false, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" })
+    .formatToParts(instant)
+    .reduce<Record<string, number>>((acc, p) => (p.type !== "literal" ? { ...acc, [p.type]: Number(p.value) } : acc), {});
+  const asUtc = Date.UTC(local.year, local.month - 1, local.day, local.hour === 24 ? 0 : local.hour, local.minute, local.second);
+  return Math.round((asUtc - instant.getTime()) / 60000);
+}
+
 // [start, end) of "today" in the CRM time zone, as UTC instants
 export function todayBounds(now = new Date(), timeZone = crmTimeZone()): [Date, Date] {
   const parts = new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now).split("-").map(Number);
   const [y, m, d] = parts;
-  const offsetMinutes = (instant: Date) => {
-    const local = new Intl.DateTimeFormat("en-US", { timeZone, hour12: false, year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" })
-      .formatToParts(instant)
-      .reduce<Record<string, number>>((acc, p) => (p.type !== "literal" ? { ...acc, [p.type]: Number(p.value) } : acc), {});
-    const asUtc = Date.UTC(local.year, local.month - 1, local.day, local.hour === 24 ? 0 : local.hour, local.minute, local.second);
-    return Math.round((asUtc - instant.getTime()) / 60000);
-  };
   const guess = new Date(Date.UTC(y, m - 1, d));
-  const start = new Date(guess.getTime() - offsetMinutes(guess) * 60000);
+  const start = new Date(guess.getTime() - offsetMinutes(guess, timeZone) * 60000);
   return [start, new Date(start.getTime() + 24 * 60 * 60 * 1000)];
+}
+
+// "2026-10-03" + "18:00" typed in the CRM time zone -> the real instant
+export function zonedDateTime(date: string, time: string, timeZone = crmTimeZone()): Date {
+  const [y, m, d] = date.split("-").map(Number);
+  const [hh, mm] = time.split(":").map(Number);
+  const guess = new Date(Date.UTC(y, m - 1, d, hh, mm));
+  return new Date(guess.getTime() - offsetMinutes(guess, timeZone) * 60000);
 }

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { ALLOWED_ATTACHMENT_TYPES, MAX_ATTACHMENTS_PER_LEAD, MAX_ATTACHMENT_BYTES } from "./constants";
+import { ALLOWED_ATTACHMENT_TYPES, FOLLOWUP_ATTACHMENT_TYPES, FOLLOWUP_NOTES_MAX, MAX_ATTACHMENTS_PER_LEAD, MAX_ATTACHMENT_BYTES, MAX_FOLLOWUP_FILES } from "./constants";
 import { isHttpUrl, normalizePhone } from "./format";
 
 // .strict(): unknown fields (createdById, leadCode, deletedAt, ...) are rejected, never silently applied.
@@ -71,3 +71,29 @@ export const attachmentSignSchema = z
   .strict();
 
 export const attachmentCompleteSchema = z.object({ ids: z.array(z.string().min(1).max(64)).min(1).max(MAX_ATTACHMENTS_PER_LEAD) }).strict();
+
+// Follow-up proof: files + when the next follow-up is due + notes
+export const followUpSchema = z
+  .object({
+    notes: z.string().trim().min(1, "Follow-up notes are required").max(FOLLOWUP_NOTES_MAX),
+    nextDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Use a valid date").optional().nullable(),
+    nextTime: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, "Use a valid time").optional().nullable(),
+    files: z
+      .array(
+        z
+          .object({
+            name: z.string().trim().min(1).max(255),
+            type: z.string().trim().max(150),
+            size: z.number().int().positive().max(MAX_ATTACHMENT_BYTES, "File is larger than 10 MB"),
+          })
+          .strict()
+          .refine(f => f.type in FOLLOWUP_ATTACHMENT_TYPES, "File type not allowed (images, PDF, CSV, XLS or XLSX)")
+      )
+      .min(1, "Select at least one file")
+      .max(MAX_FOLLOWUP_FILES),
+  })
+  .strict()
+  .refine(v => !(v.nextTime && !v.nextDate), { message: "Choose a date as well as a time", path: ["nextDate"] });
+
+export const followUpCompleteSchema = z.object({ followUpId: z.string().min(1).max(64) }).strict();
+export type FollowUpInput = z.infer<typeof followUpSchema>;

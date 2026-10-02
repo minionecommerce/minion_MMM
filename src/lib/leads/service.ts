@@ -4,9 +4,9 @@ import { prisma } from "@/lib/db";
 import type { AuthContext } from "@/lib/auth";
 import { hasPermission } from "@/lib/rbac/effective";
 import { ServiceError } from "@/lib/users/service";
-import { ALLOWED_ATTACHMENT_TYPES, MAX_ATTACHMENTS_PER_LEAD, MAX_ATTACHMENT_BYTES } from "./constants";
-import { normalizePhone } from "./format";
-import type { LeadInput } from "./schemas";
+import { ALLOWED_ATTACHMENT_TYPES, FOLLOWUP_ATTACHMENT_TYPES, MAX_ATTACHMENTS_PER_LEAD, MAX_ATTACHMENT_BYTES } from "./constants";
+import { formatDate, formatTime, normalizePhone, zonedDateTime } from "./format";
+import type { FollowUpInput, LeadInput } from "./schemas";
 import { getLeadRow } from "./queries";
 import { checkLeadAgainstLayout, type CustomValues } from "./layout";
 import { createReadUrls, createUploadUrl, removeObjects, statObject } from "./storage";
@@ -252,14 +252,30 @@ export async function getLeadDetail(actor: AuthContext, id: string) {
   const row = await getLeadRow(id);
   if (!row) throw notFound();
   const files = await prisma.leadAttachment.findMany({
-    where: { leadId: id, status: "READY", deletedAt: null },
+    where: { leadId: id, followUpId: null, status: "READY", deletedAt: null },
     orderBy: { createdAt: "asc" },
     select: { id: true, fileName: true, mimeType: true, size: true, storagePath: true },
   });
-  const urls = await createReadUrls(files.map(f => f.storagePath));
+  const followUps = await prisma.leadFollowUp.findMany({
+    where: { leadId: id, completedAt: { not: null } },
+    orderBy: { completedAt: "desc" },
+    take: 50,
+    select: {
+      id: true, notes: true, nextAt: true, completedAt: true,
+      attachments: { where: { status: "READY", deletedAt: null }, orderBy: { createdAt: "asc" }, select: { id: true, fileName: true, mimeType: true, size: true, storagePath: true } },
+    },
+  });
+  const urls = await createReadUrls([...files.map(f => f.storagePath), ...followUps.flatMap(f => f.attachments.map(a => a.storagePath))]);
   return {
     lead: row,
     attachments: files.map(f => ({ id: f.id, fileName: f.fileName, mimeType: f.mimeType, size: f.size, url: urls.get(f.storagePath) ?? null })),
+    followUps: followUps.map(f => ({
+      id: f.id,
+      notes: f.notes,
+      doneOn: f.completedAt ? `${formatDate(f.completedAt)} ${formatTime(f.completedAt)}` : "",
+      next: f.nextAt ? `${formatDate(f.nextAt)} ${formatTime(f.nextAt)}` : null,
+      files: f.attachments.map(a => ({ id: a.id, fileName: a.fileName, mimeType: a.mimeType, size: a.size, url: urls.get(a.storagePath) ?? null })),
+    })),
   };
 }
 
@@ -277,7 +293,7 @@ async function assertCanAttach(actor: AuthContext, leadId: string) {
 
 export async function signAttachmentUploads(actor: AuthContext, leadId: string, files: { name: string; type: string; size: number }[]) {
   await assertCanAttach(actor, leadId);
-  const existing = await prisma.leadAttachment.count({ where: { leadId, deletedAt: null, status: { in: ["READY", "PENDING"] } } });
+  const existing = await prisma.leadAttachment.count({ where: { leadId, followUpId: null, deletedAt: null, status: { in: ["READY", "PENDING"] } } });
   if (existing + files.length > MAX_ATTACHMENTS_PER_LEAD) {
     throw badRequest(`A lead can have at most ${MAX_ATTACHMENTS_PER_LEAD} files.`);
   }
@@ -323,4 +339,82 @@ export async function removeAttachment(actor: AuthContext, leadId: string, attac
   if (!row) throw new ServiceError(404, "File not found");
   await prisma.leadAttachment.update({ where: { id: row.id }, data: { deletedAt: new Date() } });
   await removeObjects([row.storagePath]);
+}
+
+// ---------------------------------------------------------------------------
+// Follow-up proof (Leads → Follow-up column). Same direct-to-Storage upload as attachments:
+// step 1 records the follow-up and hands out upload URLs, step 2 verifies the files and
+// only then counts the follow-up and moves the lead's Last / Next dates.
+// ---------------------------------------------------------------------------
+export async function startFollowUp(actor: AuthContext, leadId: string, input: FollowUpInput) {
+  await assertCanAttach(actor, leadId);
+  const nextAt = input.nextDate ? zonedDateTime(input.nextDate, input.nextTime || "09:00") : null;
+  if (nextAt && nextAt.getTime() < Date.now() - 24 * 60 * 60 * 1000) throw badRequest("The next follow-up cannot be in the past.");
+
+  // Ask Storage for the upload links first, so nothing is saved if storage is not set up
+  const planned: { storagePath: string; file: FollowUpInput["files"][number]; uploadUrl: string }[] = [];
+  for (const f of input.files) {
+    const ext = FOLLOWUP_ATTACHMENT_TYPES[f.type];
+    if (!ext || f.size > MAX_ATTACHMENT_BYTES) throw badRequest(`${f.name}: file type or size is not allowed`);
+    const storagePath = `leads/${leadId}/followups/${randomUUID()}.${ext}`; // never built from the user's file name
+    planned.push({ storagePath, file: f, uploadUrl: await createUploadUrl(storagePath) });
+  }
+
+  const followUp = await prisma.leadFollowUp.create({
+    data: {
+      leadId,
+      notes: input.notes,
+      nextAt,
+      createdById: actor.userId,
+      attachments: {
+        create: planned.map(p => ({ leadId, storagePath: p.storagePath, fileName: p.file.name.slice(0, 255), mimeType: p.file.type, size: p.file.size, status: "PENDING", uploadedById: actor.userId })),
+      },
+    },
+    select: { id: true, attachments: { select: { id: true, storagePath: true } } },
+  });
+  const byPath = new Map(planned.map(p => [p.storagePath, p]));
+  return {
+    followUpId: followUp.id,
+    uploads: followUp.attachments.map(a => ({ id: a.id, name: byPath.get(a.storagePath)!.file.name, uploadUrl: byPath.get(a.storagePath)!.uploadUrl })),
+  };
+}
+
+export async function finishFollowUp(actor: AuthContext, leadId: string, followUpId: string) {
+  await assertCanAttach(actor, leadId);
+  const followUp = await prisma.leadFollowUp.findFirst({
+    where: { id: followUpId, leadId, completedAt: null },
+    select: { id: true, nextAt: true, attachments: { where: { status: "PENDING", deletedAt: null }, select: { id: true, storagePath: true } } },
+  });
+  if (!followUp) throw new ServiceError(404, "Follow-up not found, or it was already saved.");
+  if (!followUp.attachments.length) throw badRequest("No files were attached to this follow-up.");
+
+  const problems: string[] = [];
+  const good: string[] = [];
+  for (const a of followUp.attachments) {
+    const stat = await statObject(a.storagePath);
+    if (!stat) { problems.push("A file did not finish uploading"); continue; }
+    const typeOk = stat.mimeType in FOLLOWUP_ATTACHMENT_TYPES;
+    const sizeOk = stat.size > 0 && stat.size <= MAX_ATTACHMENT_BYTES;
+    if (!typeOk || !sizeOk) {
+      await removeObjects([a.storagePath]);
+      await prisma.leadAttachment.update({ where: { id: a.id }, data: { deletedAt: new Date() } });
+      problems.push(!typeOk ? "A file type is not allowed" : "A file is empty or larger than 10 MB");
+      continue;
+    }
+    await prisma.leadAttachment.update({ where: { id: a.id }, data: { status: "READY", size: stat.size, mimeType: stat.mimeType } });
+    good.push(a.id);
+  }
+  if (problems.length || !good.length) throw badRequest(`${problems[0] ?? "The files could not be verified"}. Nothing was saved; please try again.`);
+
+  const now = new Date();
+  await prisma.$transaction([
+    prisma.leadFollowUp.update({ where: { id: followUp.id }, data: { completedAt: now } }),
+    prisma.lead.update({ where: { id: leadId }, data: { lastContactedAt: now, nextActionDate: followUp.nextAt } }),
+  ]);
+  const count = await prisma.leadFollowUp.count({ where: { leadId, completedAt: { not: null } } });
+  return {
+    count,
+    last: { date: formatDate(now), time: formatTime(now) },
+    next: followUp.nextAt ? { date: formatDate(followUp.nextAt), time: formatTime(followUp.nextAt) } : null,
+  };
 }

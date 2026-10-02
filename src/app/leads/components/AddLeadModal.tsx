@@ -66,9 +66,9 @@ function initialValues(lead: LeadRow | null, options: LeadFormOptions, employeeI
   };
 }
 
-function Field({ label, required, error, children, className = '' }: { label: string; required?: boolean; error?: string; children: React.ReactNode; className?: string }) {
+function Field({ label, required, error, children, className = '', order }: { label: string; required?: boolean; error?: string; children: React.ReactNode; className?: string; order?: number }) {
   return (
-    <div className={className}>
+    <div className={className} style={order === undefined ? undefined : { order }}>
       <label className="block text-[15px] font-medium text-[#6b6b6b] mb-1.5">{label}{required && ' *'}</label>
       {children}
       {error && <p role="alert" className="text-[12px] text-[#d9232b] mt-1">{error}</p>}
@@ -77,15 +77,15 @@ function Field({ label, required, error, children, className = '' }: { label: st
 }
 
 // One custom field (added in Edit Page Layout)
-function CustomField({ field, value, error, options, onChange }: {
-  field: LeadFieldDto; value: string | boolean; error?: string; options: { id: string; label: string }[]; onChange: (v: string | boolean) => void;
+function CustomField({ field, value, error, options, onChange, order }: {
+  order?: number; field: LeadFieldDto; value: string | boolean; error?: string; options: { id: string; label: string }[]; onChange: (v: string | boolean) => void;
 }) {
   const cls = `${input} ${error ? bad : ok}`;
   const common = { 'aria-invalid': error ? true : undefined, 'aria-label': field.label } as const;
   const text = typeof value === 'string' ? value : '';
   if (field.type === 'CHECKBOX') {
     return (
-      <div className="sm:col-span-2">
+      <div className="sm:col-span-2" style={{ order }}>
         <label className="flex items-center gap-2.5 text-[16px] text-[#555] cursor-pointer select-none">
           <input type="checkbox" checked={value === true} onChange={e => onChange(e.target.checked)} className="w-[18px] h-[18px] accent-black" />
           {field.label}{field.required && ' *'}
@@ -95,7 +95,7 @@ function CustomField({ field, value, error, options, onChange }: {
     );
   }
   return (
-    <Field label={field.label} required={field.required} error={error} className={field.type === 'TEXTAREA' ? 'sm:col-span-2' : ''}>
+    <Field order={order} label={field.label} required={field.required} error={error} className={field.type === 'TEXTAREA' ? 'sm:col-span-2' : ''}>
       {field.type === 'TEXTAREA' ? (
         <textarea className={`${area} ${error ? bad : ok}`} rows={3} value={text} onChange={e => onChange(e.target.value)} maxLength={5000} {...common} />
       ) : field.type === 'DROPDOWN' ? (
@@ -143,6 +143,8 @@ export default function AddLeadModal({ mode, lead, options: initialOptions, curr
   const fieldMap = useMemo(() => new Map(options.fields.map(f => [f.key, f])), [options.fields]);
   const L = (key: string, fallback: string) => fieldMap.get(key)?.label ?? fallback;
   const R = (key: string) => !!fieldMap.get(key)?.required;
+  // The form follows the order set in Edit Page Layout
+  const ord = (key: string) => { const i = options.fields.findIndex(f => f.key === key); return i < 0 ? 9999 : i; };
   const customFields = useMemo(() => options.fields.filter(f => !f.isSystem), [options.fields]);
 
   const set = <K extends keyof Values>(k: K, value: Values[K]) => {
@@ -313,56 +315,53 @@ export default function AddLeadModal({ mode, lead, options: initialOptions, curr
 
         <form onSubmit={save} noValidate className="flex flex-col min-h-0 flex-1">
           <div ref={body} className="overflow-y-auto px-6 py-5 grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-5 flex-1">
-            <Field label={L('customerName', 'Customer Name')} required={R('customerName')} error={errors.customerName}>
+            <Field order={ord('customerName')} label={L('customerName', 'Customer Name')} required={R('customerName')} error={errors.customerName}>
               <input className={`${input} ${ring('customerName')}`} aria-invalid={inv('customerName')} value={v.customerName} onChange={e => set('customerName', e.target.value)} placeholder="Enter customer name" maxLength={120} autoFocus />
             </Field>
-            <Field label={L('contactNumber', 'Contact Number')} required={R('contactNumber')} error={errors.contactNumber}>
+            <Field order={ord('contactNumber')} label={L('contactNumber', 'Contact Number')} required={R('contactNumber')} error={errors.contactNumber}>
               <input className={`${input} ${ring('contactNumber')}`} aria-invalid={inv('contactNumber')} value={v.contactNumber} onChange={e => set('contactNumber', e.target.value)} placeholder="Enter contact number" inputMode="tel" maxLength={30} />
             </Field>
 
-            <Field label={L('taskAssignedPersonId', 'Task Assigned Person')} required={R('taskAssignedPersonId')} error={errors.taskAssignedPersonId}>
+            <Field order={ord('taskAssignedPersonId')} label={L('taskAssignedPersonId', 'Task Assigned Person')} required={R('taskAssignedPersonId')} error={errors.taskAssignedPersonId}>
               <select className={`${input} ${ring('taskAssignedPersonId')}`} aria-invalid={inv('taskAssignedPersonId')} value={v.taskAssignedPersonId} onChange={e => set('taskAssignedPersonId', e.target.value)}>
                 <option value="">Select Person</option>
                 {options.employees.map(o => <option key={o.id} value={o.id}>{o.name}{o.designation ? ` (${o.designation})` : ''}</option>)}
               </select>
             </Field>
-            <Field label={L('productOrServiceId', 'Product or Service')} required={R('productOrServiceId')} error={errors.productOrServiceId}>
+            <Field order={ord('productOrServiceId')} label={L('productOrServiceId', 'Product or Service')} required={R('productOrServiceId')} error={errors.productOrServiceId}>
               <select className={`${input} ${ring('productOrServiceId')}`} aria-invalid={inv('productOrServiceId')} value={v.productOrServiceId} onChange={e => set('productOrServiceId', e.target.value)}>
                 <option value="">Select Type</option>
                 {options.productOrService.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
               </select>
             </Field>
 
-            <div className="space-y-3">
-              <input className={`${input} ${ring('exactRequirement')}`} aria-invalid={inv('exactRequirement')} aria-label={L('exactRequirement', 'Exact Requirement')} placeholder={`${L('exactRequirement', 'Exact Requirement')}${R('exactRequirement') ? ' *' : ''}`} value={v.exactRequirement} onChange={e => set('exactRequirement', e.target.value)} maxLength={300} />
-              {errors.exactRequirement && <p role="alert" className="text-[12px] text-[#d9232b] -mt-2">{errors.exactRequirement}</p>}
-            </div>
-            <div className="space-y-5">
-              <Field label={L('modeOfCustomerId', 'Mode of Customer')} required={R('modeOfCustomerId')} error={errors.modeOfCustomerId}>
+            <Field order={ord('exactRequirement')} label={L('exactRequirement', 'Requirement')} required={R('exactRequirement')} error={errors.exactRequirement}>
+              <input className={`${input} ${ring('exactRequirement')}`} aria-invalid={inv('exactRequirement')} aria-label={L('exactRequirement', 'Requirement')} placeholder="Enter requirement" value={v.exactRequirement} onChange={e => set('exactRequirement', e.target.value)} maxLength={300} />
+            </Field>
+              <Field order={ord('modeOfCustomerId')} label={L('modeOfCustomerId', 'Mode of Customer')} required={R('modeOfCustomerId')} error={errors.modeOfCustomerId}>
                 <select className={`${input} ${ring('modeOfCustomerId')}`} aria-invalid={inv('modeOfCustomerId')} value={v.modeOfCustomerId} onChange={e => set('modeOfCustomerId', e.target.value)}>
                   <option value="">Select Mode of Customer</option>
                   {options.modesOfCustomer.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
                 </select>
               </Field>
-              <Field label={L('sourceId', 'Source')} required={R('sourceId')} error={errors.sourceId}>
+              <Field order={ord('sourceId')} label={L('sourceId', 'Source')} required={R('sourceId')} error={errors.sourceId}>
                 <select className={`${input} ${ring('sourceId')}`} aria-invalid={inv('sourceId')} value={v.sourceId} onChange={e => set('sourceId', e.target.value)}>
                   <option value="">Select Source</option>
                   {options.sources.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
                 </select>
               </Field>
-            </div>
 
-            <Field label={L('location', 'Location')} required={R('location')} error={errors.location}>
+            <Field order={ord('location')} label={L('location', 'Location')} required={R('location')} error={errors.location}>
               <input className={`${input} ${ring('location')}`} aria-invalid={inv('location')} value={v.location} onChange={e => set('location', e.target.value)} placeholder="e.g. Chennai, Tamil Nadu, India" maxLength={200} />
             </Field>
-            <Field label={L('exactLocation', 'Exact Location')} required={R('exactLocation')} error={errors.exactLocation}>
+            <Field order={ord('exactLocation')} label={L('exactLocation', 'Exact Location')} required={R('exactLocation')} error={errors.exactLocation}>
               <input className={`${input} ${ring('exactLocation')}`} aria-invalid={inv('exactLocation')} value={v.exactLocation} onChange={e => set('exactLocation', e.target.value)} placeholder="Enter exact location" maxLength={300} />
             </Field>
 
-            <Field label={L('locationLink', 'Location Link')} required={R('locationLink')} error={errors.locationLink}>
+            <Field order={ord('locationLink')} label={L('locationLink', 'Location Link')} required={R('locationLink')} error={errors.locationLink}>
               <input className={`${input} ${ring('locationLink')}`} aria-invalid={inv('locationLink')} value={v.locationLink} onChange={e => set('locationLink', e.target.value)} placeholder="Enter Google Maps link or location URL" inputMode="url" maxLength={2000} />
             </Field>
-            <Field label={L('mainCategoryId', 'Main Category')} required={R('mainCategoryId')} error={errors.mainCategoryId}>
+            <Field order={ord('mainCategoryId')} label={L('mainCategoryId', 'Main Category')} required={R('mainCategoryId')} error={errors.mainCategoryId}>
               <div className="flex gap-2">
                 <select className={`${input} ${ring('mainCategoryId')}`} aria-invalid={inv('mainCategoryId')} value={v.mainCategoryId} onChange={e => { setErrors(x => ({ ...x, mainCategoryId: undefined })); setV(c => ({ ...c, mainCategoryId: e.target.value, categoryId: '', subcategoryId: '' })); }}>
                   <option value="">Select Main Category</option>
@@ -374,45 +373,45 @@ export default function AddLeadModal({ mode, lead, options: initialOptions, curr
               </div>
             </Field>
 
-            <Field label={L('categoryId', 'Category')} required={R('categoryId')} error={errors.categoryId}>
+            <Field order={ord('categoryId')} label={L('categoryId', 'Category')} required={R('categoryId')} error={errors.categoryId}>
               <select className={`${input} ${ring('categoryId')}`} aria-invalid={inv('categoryId')} value={v.categoryId} onChange={e => setV(c => ({ ...c, categoryId: e.target.value, subcategoryId: '' }))} disabled={!v.mainCategoryId}>
                 <option value="">Select Category</option>
                 {categories.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
               </select>
             </Field>
-            <Field label={L('subcategoryId', 'Subcategory')} required={R('subcategoryId')} error={errors.subcategoryId}>
+            <Field order={ord('subcategoryId')} label={L('subcategoryId', 'Subcategory')} required={R('subcategoryId')} error={errors.subcategoryId}>
               <select className={`${input} ${ring('subcategoryId')}`} aria-invalid={inv('subcategoryId')} value={v.subcategoryId} onChange={e => set('subcategoryId', e.target.value)} disabled={!v.categoryId}>
                 <option value="">Select Subcategory</option>
                 {subcategories.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
               </select>
             </Field>
 
-            <Field label={L('leadPersonId', 'Lead Person')} required={R('leadPersonId')} error={errors.leadPersonId}>
+            <Field order={ord('leadPersonId')} label={L('leadPersonId', 'Lead Person')} required={R('leadPersonId')} error={errors.leadPersonId}>
               <select className={`${input} ${ring('leadPersonId')}`} aria-invalid={inv('leadPersonId')} value={v.leadPersonId} onChange={e => set('leadPersonId', e.target.value)}>
                 <option value="">Select Person</option>
                 {options.employees.map(o => <option key={o.id} value={o.id}>{o.name}</option>)}
               </select>
             </Field>
-            <Field label={L('leadStatusId', 'Lead Status')} required={R('leadStatusId')} error={errors.leadStatusId}>
+            <Field order={ord('leadStatusId')} label={L('leadStatusId', 'Lead Status')} required={R('leadStatusId')} error={errors.leadStatusId}>
               <select className={`${input} ${ring('leadStatusId')}`} aria-invalid={inv('leadStatusId')} value={v.leadStatusId} onChange={e => set('leadStatusId', e.target.value)}>
                 <option value="">Select Lead Status</option>
                 {options.leadStatuses.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
               </select>
             </Field>
 
-            <Field label={L('amount', 'Amount')} required={R('amount')} error={errors.amount}>
+            <Field order={ord('amount')} label={L('amount', 'Amount')} required={R('amount')} error={errors.amount}>
               <input className={`${input} ${ring('amount')}`} aria-invalid={inv('amount')} type="number" min={0} step="0.01" inputMode="decimal" value={v.amount} onChange={e => set('amount', e.target.value)} placeholder="0.00" />
             </Field>
-            <Field label={L('conventionalRate', 'Conventional Rate')} required={R('conventionalRate')}>
+            <Field order={ord('conventionalRate')} label={L('conventionalRate', 'Conventional Rate')} required={R('conventionalRate')}>
               <select className={`${input} ${ok}`} value={v.conventionalRate} onChange={e => set('conventionalRate', e.target.value)}>
                 {CONVENTIONAL_RATES.map(r => <option key={r} value={r}>{r}%</option>)}
               </select>
             </Field>
 
-            <Field label={L('notes', 'Notes')} required={R('notes')} error={errors.notes}>
+            <Field order={ord('notes')} label={L('notes', 'Notes')} required={R('notes')} error={errors.notes}>
               <textarea className={`${area} ${ring('notes')}`} aria-invalid={inv('notes')} rows={4} value={v.notes} onChange={e => set('notes', e.target.value)} maxLength={5000} />
             </Field>
-            <Field label={L('leadTypeId', 'Type Of Lead')} required={R('leadTypeId')} error={errors.leadTypeId}>
+            <Field order={ord('leadTypeId')} label={L('leadTypeId', 'Type Of Lead')} required={R('leadTypeId')} error={errors.leadTypeId}>
               <select className={`${input} ${ring('leadTypeId')}`} aria-invalid={inv('leadTypeId')} value={v.leadTypeId} onChange={e => set('leadTypeId', e.target.value)}>
                 <option value="">Select Type Of Lead</option>
                 {options.leadTypes.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
@@ -420,18 +419,18 @@ export default function AddLeadModal({ mode, lead, options: initialOptions, curr
             </Field>
 
             {customFields.map(f => (
-              <CustomField key={f.key} field={f} value={custom[f.key]} error={customErrors[f.key]} options={options.customOptions[f.key] ?? []}
+              <CustomField key={f.key} order={ord(f.key)} field={f} value={custom[f.key]} error={customErrors[f.key]} options={options.customOptions[f.key] ?? []}
                 onChange={val => { setCustom(c => ({ ...c, [f.key]: val })); if (customErrors[f.key]) setCustomErrors(x => ({ ...x, [f.key]: '' })); }} />
             ))}
 
-            <Field label={L('attachments', 'Upload Files')} className="sm:col-span-2">
+            <Field order={ord('attachments')} label={L('attachments', 'Upload Files')} className="sm:col-span-2">
               <FileUpload files={files} existing={existing} removedIds={removed} disabled={saving}
                 onAdd={f => setFiles(cur => [...cur, ...f])} onRemove={i => setFiles(cur => cur.filter((_, j) => j !== i))}
                 onRemoveExisting={id => setRemoved(cur => [...cur, id])} onError={m => toast.error(m)} />
               {!storageReady && <p className="text-[12px] text-amber-700 mt-1">File storage is not configured yet; files cannot be attached until it is.</p>}
             </Field>
 
-            <label className="sm:col-span-2 flex items-center gap-2.5 text-[16px] text-[#555] cursor-pointer select-none pt-1">
+            <label style={{ order: ord('dailyTask') }} className="sm:col-span-2 flex items-center gap-2.5 text-[16px] text-[#555] cursor-pointer select-none pt-1">
               <input type="checkbox" checked={v.dailyTask} onChange={e => set('dailyTask', e.target.checked)} className="w-[18px] h-[18px] accent-black" />
               {L('dailyTask', 'Daily Task Settings')}
             </label>

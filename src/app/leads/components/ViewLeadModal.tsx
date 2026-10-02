@@ -14,12 +14,13 @@ function Item({ label, children }: { label: string; children: React.ReactNode })
 }
 
 export default function ViewLeadModal({ leadId, options, onClose }: { leadId: string; options: LeadFormOptions; onClose: () => void }) {
-  const [data, setData] = useState<{ lead: LeadRow; attachments: ExistingFile[] } | null>(null);
+  type FollowUpItem = { id: string; notes: string; doneOn: string; next: string | null; files: ExistingFile[] };
+  const [data, setData] = useState<{ lead: LeadRow; attachments: ExistingFile[]; followUps: FollowUpItem[] } | null>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
     let live = true;
-    callApi<{ lead: LeadRow; attachments: ExistingFile[] }>(`/api/leads/${leadId}`, 'GET').then(d => live && setData(d)).catch(e => live && setError(e.message));
+    callApi<{ lead: LeadRow; attachments: ExistingFile[]; followUps: FollowUpItem[] }>(`/api/leads/${leadId}`, 'GET').then(d => live && setData(d)).catch(e => live && setError(e.message));
     return () => { live = false; };
   }, [leadId]);
 
@@ -90,6 +91,26 @@ export default function ViewLeadModal({ leadId, options, onClose }: { leadId: st
                             <div className="px-2 py-1.5 text-[12px] text-gray-700 truncate">{f.fileName}</div>
                           </a>
                         ) : <div className="px-2 py-3 text-[12px] text-gray-500">{f.fileName} (link unavailable)</div>}
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </div>
+              <div>
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-2">Follow-ups ({data!.followUps.length})</div>
+                {data!.followUps.length === 0 ? <p className="text-[13px] text-gray-500">No follow-ups yet.</p> : (
+                  <ul className="space-y-3">
+                    {data!.followUps.map(f => (
+                      <li key={f.id} className="border border-gray-200 rounded-md px-3 py-2.5">
+                        <div className="text-[12px] text-gray-500">Done {f.doneOn}{f.next ? ` · Next due ${f.next}` : ''}</div>
+                        <p className="text-[14px] text-gray-900 mt-1 whitespace-pre-line break-words">{f.notes}</p>
+                        {f.files.length > 0 && (
+                          <ul className="mt-2 flex flex-wrap gap-2">
+                            {f.files.map(a => (
+                              <li key={a.id}>{a.url ? <a href={a.url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-[12px] text-[#2f80ed] hover:underline"><FileText className="w-3.5 h-3.5" />{a.fileName}</a> : <span className="text-[12px] text-gray-500">{a.fileName}</span>}</li>
+                            ))}
+                          </ul>
+                        )}
                       </li>
                     ))}
                   </ul>
