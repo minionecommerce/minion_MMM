@@ -82,14 +82,16 @@ export default function LeadsClient({ data, params, options, currentEmployeeId, 
     onDelete: () => setDialog({ kind: 'delete', row }),
   });
 
-  const filterItems: Record<ColumnFilterKey, { value: string; label: string }[]> = {
-    customer: options.customerNames.map(n => ({ value: n, label: n })),
-    requirement: options.requirements.map(o => ({ value: o.id, label: o.label })),
-    assigned: options.employees.map(e => ({ value: e.id, label: e.name })),
-    status: options.leadStatuses.map(o => ({ value: o.id, label: o.label })),
-    source: options.sources.map(o => ({ value: o.id, label: o.label })),
-    category: options.mainCategories.map(o => ({ value: o.id, label: o.label })),
-    location: options.locations.map(l => ({ value: l, label: l })),
+  const group = (key: ColumnFilterKey, label: string, items: { value: string; label: string }[]) => ({ key, label, items, selected: params.cols?.[key] ?? [] });
+  const people = options.employees.map(e => ({ value: e.id, label: e.name }));
+  const filterGroups = {
+    customer: [group('customer', 'Customer details', options.customerNames.map(n => ({ value: n, label: n })))],
+    requirement: [group('requirement', 'Requirements', options.requirements.map(o => ({ value: o.id, label: o.label })))],
+    assigned: [group('assigned', 'Task Assigned Person', people), group('leadPerson', 'Lead Person', people)],
+    status: [group('status', 'Lead Status', options.leadStatuses.map(o => ({ value: o.id, label: o.label })))],
+    source: [group('source', 'Source', options.sources.map(o => ({ value: o.id, label: o.label })))],
+    category: [group('category', 'Categories', options.mainCategories.map(o => ({ value: o.id, label: o.label })))],
+    location: [group('location', 'Location', options.locations.map(l => ({ value: l, label: l })))],
   };
 
   const resetAll = () => { setQ(''); startTransition(() => router.push('/leads')); };
@@ -130,9 +132,8 @@ export default function LeadsClient({ data, params, options, currentEmployeeId, 
             dir={params.dir === 'asc' ? 'asc' : 'desc'}
             abilities={abilities}
             loading={pending}
-            filterItems={filterItems}
-            selected={params.cols ?? {}}
-            onFilter={(k, values) => setParams({ [`f_${k}`]: values.length ? JSON.stringify(values) : undefined })}
+            filterGroups={filterGroups}
+            onFilter={next => setParams(Object.fromEntries(Object.entries(next).map(([k, v]) => [`f_${k}`, v && v.length ? JSON.stringify(v) : undefined])))}
             onSort={(k: LeadSortKey, d) => setParams({ sort: k, dir: d })}
             onReset={resetAll}
             handlersFor={handlersFor}

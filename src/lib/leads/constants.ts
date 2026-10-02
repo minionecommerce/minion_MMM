@@ -57,7 +57,7 @@ export const SORT_KEYS = ["lead", "customer", "requirement", "assigned", "status
 export type LeadSortKey = (typeof SORT_KEYS)[number];
 
 // Column header filters (tick-box lists). Same keys as the sortable columns, except the Lead ID column.
-export const COLUMN_FILTER_KEYS = ["customer", "requirement", "assigned", "status", "source", "category", "location"] as const;
+export const COLUMN_FILTER_KEYS = ["customer", "requirement", "assigned", "leadPerson", "status", "source", "category", "location"] as const;
 export type ColumnFilterKey = (typeof COLUMN_FILTER_KEYS)[number];
 export type ColumnFilters = Partial<Record<ColumnFilterKey, string[]>>;
 export const COLUMN_FILTER_MAX_VALUES = 200;
