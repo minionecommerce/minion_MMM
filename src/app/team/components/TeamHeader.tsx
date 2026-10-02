@@ -1,7 +1,6 @@
 'use client';
 
-import { Plus, Download, Filter, Users, UserPlus, Network, FolderKanban, Shield } from 'lucide-react';
-import Link from 'next/link';
+import { Plus, Download, Filter, Users, UserPlus, Network, FolderKanban } from 'lucide-react';
 
 interface TeamHeaderProps {
   onAddEmployee?: () => void;
@@ -61,14 +60,6 @@ export default function TeamHeader({
         
         <div className="w-px h-6 bg-[#292B30] mx-1 hidden lg:block" />
 
-        <Link 
-          href="/users/roles"
-          className="flex items-center gap-1.5 px-3 py-2.5 rounded-lg bg-[#0D0D0F] border border-[#292B30] hover:border-purple-400/50 text-[12px] font-semibold text-gray-300 hover:text-purple-400 transition-all"
-        >
-          <Shield className="w-3.5 h-3.5" />
-          <span className="hidden sm:inline">Manage Roles</span>
-        </Link>
-        
         <button 
           onClick={onAssignTeam}
           className="flex items-center gap-1.5 px-3 py-2.5 rounded-lg bg-[#0D0D0F] border border-[#292B30] hover:border-blue-400/50 text-[12px] font-semibold text-gray-300 hover:text-blue-400 transition-all"

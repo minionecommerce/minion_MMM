@@ -88,16 +88,6 @@ export default function EmployeeClient({ employee }: EmployeeClientProps) {
             <div className="bg-[#151619] border border-[#292B30] rounded-xl p-6">
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6">
                 <h3 className="text-[15px] font-bold text-white uppercase tracking-wide">Account & Access Control</h3>
-                <div className="flex gap-2 mt-4 md:mt-0">
-                  {employee.userId && (
-                    <Link
-                      href={`/users/${employee.userId}/permissions`}
-                      className="px-4 py-2 bg-yellow-500 text-black font-semibold rounded-lg hover:bg-yellow-400 transition-colors text-[13px]"
-                    >
-                      Manage Access
-                    </Link>
-                  )}
-                </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
