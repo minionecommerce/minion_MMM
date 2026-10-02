@@ -56,7 +56,6 @@ export default function ViewLeadModal({ leadId, options, onClose }: { leadId: st
                 <Item label={name('leadPersonId', 'Lead Person')}>{l.leadPerson?.name}</Item>
                 <Item label={name('productOrServiceId', 'Product or Service')}>{l.productOrServiceLabel}</Item>
                 <Item label={name('modeOfCustomerId', 'Mode of Customer')}>{l.modeOfCustomerLabel}</Item>
-                <Item label={name('requirementId', 'Requirements')}>{l.requirementLabel}</Item>
                 <Item label={name('sourceId', 'Source')}>{l.sourceLabel}</Item>
                 <div className="sm:col-span-2"><Item label={name('exactRequirement', 'Exact Requirement')}>{l.exactRequirement}</Item></div>
                 <Item label={name('mainCategoryId', 'Main Category')}>{l.mainCategoryLabel}</Item>

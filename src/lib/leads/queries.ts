@@ -138,7 +138,7 @@ function orderBy(sort: LeadSortKey | undefined, dir: "asc" | "desc"): Prisma.Lea
   const tie: Prisma.LeadOrderByWithRelationInput[] = [{ createdAt: "desc" }, { id: "desc" }];
   switch (sort) {
     case "customer": return [{ customerName: { sort: dir, nulls: "last" } }, ...tie];
-    case "requirement": return [{ requirementOption: { label: dir } }, ...tie];
+    case "requirement": return [{ exactRequirement: { sort: dir, nulls: "last" } }, ...tie];
     case "assigned": return [{ salesExecutive: { user: { name: dir } } }, ...tie];
     case "status": return [{ leadStatus: { label: dir } }, ...tie];
     case "source": return [{ sourceOption: { label: dir } }, ...tie];
@@ -218,7 +218,7 @@ async function buildWhere(params: LeadListParams): Promise<Prisma.LeadWhereInput
 
   const c = params.cols ?? {};
   if (c.customer) and.push({ customerName: { in: c.customer } });
-  if (c.requirement) and.push({ requirementId: { in: c.requirement } });
+  if (c.requirement) and.push({ exactRequirement: { in: c.requirement } });
   if (c.assigned) and.push({ salesExecutiveId: { in: c.assigned } });
   if (c.leadPerson) and.push({ leadPersonId: { in: c.leadPerson } });
   if (c.status) and.push({ leadStatusId: { in: c.status } });
@@ -281,7 +281,7 @@ export async function getLeadRow(id: string) {
 }
 
 export async function getFormOptions(): Promise<LeadFormOptions> {
-  const [options, employees, fields, customers, locations] = await Promise.all([
+  const [options, employees, fields, customers, locations, requirementTexts] = await Promise.all([
     prisma.leadOption.findMany({
       where: { OR: [{ type: { in: [...OPTION_TYPES] } }, { type: { startsWith: "CF:" } }] },
       orderBy: [{ sortOrder: "asc" }, { label: "asc" }],
@@ -295,6 +295,7 @@ export async function getFormOptions(): Promise<LeadFormOptions> {
     getLayout(),
     prisma.lead.findMany({ where: { deletedAt: null, customerName: { not: null } }, distinct: ["customerName"], select: { customerName: true }, orderBy: { customerName: "asc" }, take: 1000 }),
     prisma.lead.findMany({ where: { deletedAt: null, location: { not: null } }, distinct: ["location"], select: { location: true }, orderBy: { location: "asc" }, take: 1000 }),
+    prisma.lead.findMany({ where: { deletedAt: null, exactRequirement: { not: null } }, distinct: ["exactRequirement"], select: { exactRequirement: true }, orderBy: { exactRequirement: "asc" }, take: 1000 }),
   ]);
   const customOptions: Record<string, LeadOptionDto[]> = {};
   for (const f of fields) if (!f.isSystem && f.optionType) customOptions[f.key] = options.filter(o => o.type === f.optionType) as LeadOptionDto[];
@@ -311,6 +312,7 @@ export async function getFormOptions(): Promise<LeadFormOptions> {
     leadStatuses: of("LEAD_STATUS"),
     leadTypes: of("LEAD_TYPE"),
     employees: emp,
+    exactRequirements: requirementTexts.map(r => r.exactRequirement!).filter(Boolean),
     customerNames: customers.map(c => c.customerName!).filter(Boolean),
     locations: locations.map(l => l.location!).filter(Boolean),
     fields,

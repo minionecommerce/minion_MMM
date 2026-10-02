@@ -37,6 +37,7 @@ export type LeadFormOptions = {
   employees: EmployeeOptionDto[];
   // Distinct typed values used by the Customer and Location column filters
   customerNames: string[];
+  exactRequirements: string[];
   locations: string[];
   // Page layout (Edit Page Layout): how each field is set up, plus the options of custom pick-list fields
   fields: LeadFieldDto[];

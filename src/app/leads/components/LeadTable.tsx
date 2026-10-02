@@ -113,13 +113,13 @@ function HeaderCell({ col, active, dir, groups, onSort, onFilter, onReset }: {
         <>
           <div className="fixed inset-0 z-30" onClick={close} />
           <div role="menu" onKeyDown={e => { if (e.key === 'Escape') close(); }} style={{ top: pos.top, left: pos.left }} className="fixed z-40 w-64 bg-white border border-gray-200 rounded-lg shadow-xl py-1 font-normal">
-            {(['asc', 'desc'] as const).map(d => (
+            {!multi && (['asc', 'desc'] as const).map(d => (
               <button key={d} role="menuitem" className={`w-full text-left px-3 py-2 text-[13px] hover:bg-gray-100 ${active && dir === d ? 'text-[#b8860b] font-semibold' : 'text-gray-700'}`} onClick={() => { close(); onSort(col.sort!, d); }}>
                 {d === 'asc' ? 'Sort A → Z / oldest' : 'Sort Z → A / newest'}
               </button>
             ))}
             {groups.length > 0 && (
-              <div className="border-t border-gray-200 mt-1 pt-2 px-2">
+              <div className={`${multi ? '' : 'border-t border-gray-200 mt-1 '}pt-2 px-2`}>
                 {multi ? (
                   <div className="space-y-1">
                     {groups.map(g => {
@@ -199,17 +199,17 @@ export default function LeadTable({ rows, sort, dir, abilities, loading, filterG
             )}
             {rows.map(row => (
               <tr key={row.id} className="border-b border-gray-200 align-middle hover:bg-[#fafafa]">
-                <td className="px-3 py-5 align-middle"><LeadIdCell row={row} /></td>
-                <td className="px-3 py-5 align-middle"><CustomerDetailsCell row={row} /></td>
-                <td className="px-3 py-5 align-top"><RequirementsCell row={row} /></td>
-                <td className="px-3 py-5 align-middle"><StaffAssignmentCell row={row} /></td>
-                <td className="px-3 py-5 align-middle"><LeadStatusCell row={row} canEdit={abilities.edit} /></td>
-                <td className="px-3 py-5 align-middle"><FollowUpCell /></td>
-                <td className="px-3 py-5 align-middle"><StatusCell rate={row.conventionalRate} /></td>
-                <td className="px-3 py-5 align-middle"><SourceCell row={row} /></td>
-                <td className="px-3 py-5 align-middle"><CategoryCell row={row} /></td>
-                <td className="px-3 py-5 align-middle"><LocationCell row={row} /></td>
-                <td className="px-3 py-5 align-middle sticky right-0 z-10 bg-white shadow-[-6px_0_8px_-6px_rgba(0,0,0,0.15)]"><LeadActions canEdit={abilities.edit} canCreate={abilities.create} canDelete={abilities.delete} handlers={handlersFor(row)} /></td>
+                <td className="px-3 py-2.5 align-middle"><LeadIdCell row={row} /></td>
+                <td className="px-3 py-2.5 align-middle"><CustomerDetailsCell row={row} /></td>
+                <td className="px-3 py-2.5 align-top"><RequirementsCell row={row} /></td>
+                <td className="px-3 py-2.5 align-middle"><StaffAssignmentCell row={row} /></td>
+                <td className="px-3 py-2.5 align-middle"><LeadStatusCell row={row} canEdit={abilities.edit} /></td>
+                <td className="px-3 py-2.5 align-middle"><FollowUpCell /></td>
+                <td className="px-3 py-2.5 align-middle"><StatusCell rate={row.conventionalRate} /></td>
+                <td className="px-3 py-2.5 align-middle"><SourceCell row={row} /></td>
+                <td className="px-3 py-2.5 align-middle"><CategoryCell row={row} /></td>
+                <td className="px-3 py-2.5 align-middle"><LocationCell row={row} /></td>
+                <td className="px-3 py-2.5 align-middle sticky right-0 z-10 bg-white shadow-[-6px_0_8px_-6px_rgba(0,0,0,0.15)]"><LeadActions canEdit={abilities.edit} canCreate={abilities.create} canDelete={abilities.delete} handlers={handlersFor(row)} /></td>
               </tr>
             ))}
           </tbody>

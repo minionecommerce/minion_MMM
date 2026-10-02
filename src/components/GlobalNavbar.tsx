@@ -280,14 +280,14 @@ export default function GlobalNavbar() {
         </div>
       )}
 
-      {/* Desktop, hidden: only a small menu icon is left; clicking it brings the icon strip back */}
+      {/* Desktop, hidden: only a small menu icon is left at the bottom; clicking it brings the icon strip back */}
       {hidden && (
-        <div data-sidebar className="hidden lg:block sticky top-0 h-screen w-7 shrink-0 z-40 bg-[#111113]">
+        <div data-sidebar className="hidden lg:flex flex-col justify-end sticky top-0 h-screen w-7 shrink-0 z-40 bg-[#111113]">
           <button
             onClick={e => { setHoldClosed({ x: e.clientX, y: e.clientY }); setHiddenPreference(false); }}
             aria-label="Show menu"
             title="Show menu"
-            className="mt-3 mx-auto w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-white hover:bg-[#1a1b1e] transition-colors"
+            className="mb-3 mx-auto w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-white hover:bg-[#1a1b1e] transition-colors"
           >
             <PanelLeftClose className="w-4 h-4" />
           </button>

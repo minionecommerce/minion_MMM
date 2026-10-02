@@ -63,7 +63,7 @@ function toDto(f: FieldRow): LeadFieldDto {
     id: f.id,
     key: f.key,
     label: f.label,
-    type: f.fieldType as FieldType,
+    type: (def ? def.type : f.fieldType) as FieldType,
     isSystem: f.isSystem,
     required: f.required,
     requiredLocked: f.requiredLocked,
@@ -84,7 +84,9 @@ export async function getLayout(): Promise<LeadFieldDto[]> {
     await createMissingSystemFields(have);
     rows = await loadFields();
   }
-  return rows.map(toDto);
+  // Fields that are no longer part of the form (e.g. the old Requirements pick list) stay in the table but are not shown or enforced
+  const known = new Set(SYSTEM_FIELDS.map(d => d.key));
+  return rows.filter(r => !r.isSystem || known.has(r.key)).map(toDto);
 }
 
 function cleanLabel(raw: string, max: number, what: string) {
