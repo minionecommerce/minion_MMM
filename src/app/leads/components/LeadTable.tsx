@@ -1,8 +1,8 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { ChevronDown, RotateCcw } from 'lucide-react';
-import type { LeadSortKey } from '@/lib/leads/constants';
+import type { ColumnFilterKey, LeadSortKey } from '@/lib/leads/constants';
 import type { LeadRow } from '@/lib/leads/queries';
 import LeadActions, { type LeadActionHandlers } from './LeadActions';
 import { CategoryCell, CustomerDetailsCell, FollowUpCell, LeadIdCell, LeadStatusCell, LocationCell, RequirementsCell, SourceCell, StaffAssignmentCell, StatusCell } from './LeadCells';
@@ -23,15 +23,49 @@ const COLUMNS: { label: string; sort?: LeadSortKey; width: string }[] = [
   { label: 'Actions', width: 'w-[110px]' },
 ];
 
-function HeaderCell({ col, active, dir, onSort, onReset }: { col: (typeof COLUMNS)[number]; active: boolean; dir: 'asc' | 'desc'; onSort: (k: LeadSortKey, d: 'asc' | 'desc') => void; onReset: () => void }) {
+type FilterItem = { value: string; label: string };
+
+function HeaderCell({ col, active, dir, filterItems, selected, onSort, onFilter, onReset }: {
+  col: (typeof COLUMNS)[number];
+  active: boolean;
+  dir: 'asc' | 'desc';
+  filterItems?: FilterItem[];
+  selected: string[];
+  onSort: (k: LeadSortKey, d: 'asc' | 'desc') => void;
+  onFilter: (values: string[]) => void;
+  onReset: () => void;
+}) {
   const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number }>({ top: 0, left: 0 });
+  const [term, setTerm] = useState('');
+  const [draft, setDraft] = useState<string[]>(selected);
+  const btn = useRef<HTMLButtonElement>(null);
   const isActions = col.label === 'Actions';
+  const filtered = selected.length > 0;
+
+  const toggle = () => {
+    if (!open && btn.current) {
+      const r = btn.current.getBoundingClientRect();
+      setPos({ top: r.bottom + 6, left: Math.max(8, Math.min(r.right - 256, window.innerWidth - 264)) });
+      setDraft(selected);
+      setTerm('');
+    }
+    setOpen(o => !o);
+  };
+  const close = () => setOpen(false);
+
+  const items = filterItems ?? [];
+  const shown = items.filter(i => i.label.toLowerCase().includes(term.trim().toLowerCase()));
+  const allShownOn = shown.length > 0 && shown.every(i => draft.includes(i.value));
+  const flip = (v: string) => setDraft(d => (d.includes(v) ? d.filter(x => x !== v) : [...d, v]));
+  const toggleShown = () => setDraft(d => (allShownOn ? d.filter(v => !shown.some(i => i.value === v)) : [...new Set([...d, ...shown.map(i => i.value)])]));
+
   return (
     <th scope="col" className={`${col.width} relative px-3 py-3 text-left text-[13px] font-semibold text-[#333] align-middle ${isActions ? 'sticky right-0 z-20 bg-[#f3f4f6] shadow-[-6px_0_8px_-6px_rgba(0,0,0,0.15)]' : ''}`} aria-sort={active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}>
       <div className="flex items-center justify-between gap-2">
         <span>{col.label}</span>
         {col.sort && (
-          <button onClick={() => setOpen(o => !o)} aria-label={`Sort by ${col.label}`} aria-haspopup="menu" aria-expanded={open} className={`w-5 h-5 rounded-sm flex items-center justify-center text-white ${active ? 'bg-[#f5b800]' : 'bg-[#6b7280] hover:bg-[#4b5563]'}`}>
+          <button ref={btn} onClick={toggle} aria-label={`Sort or filter ${col.label}`} aria-haspopup="menu" aria-expanded={open} className={`w-5 h-5 rounded-sm flex items-center justify-center text-white ${active || filtered ? 'bg-[#f5b800]' : 'bg-[#6b7280] hover:bg-[#4b5563]'}`}>
             <ChevronDown className="w-4 h-4" />
           </button>
         )}
@@ -41,13 +75,37 @@ function HeaderCell({ col, active, dir, onSort, onReset }: { col: (typeof COLUMN
       </div>
       {open && col.sort && (
         <>
-          <div className="fixed inset-0 z-30" onClick={() => setOpen(false)} />
-          <div role="menu" className="absolute right-2 top-10 z-40 w-40 bg-white border border-gray-200 rounded-lg shadow-xl py-1 font-normal">
+          <div className="fixed inset-0 z-30" onClick={close} />
+          <div role="menu" onKeyDown={e => { if (e.key === 'Escape') close(); }} style={{ top: pos.top, left: pos.left }} className="fixed z-40 w-64 bg-white border border-gray-200 rounded-lg shadow-xl py-1 font-normal">
             {(['asc', 'desc'] as const).map(d => (
-              <button key={d} role="menuitem" className={`w-full text-left px-3 py-2 text-[13px] hover:bg-gray-100 ${active && dir === d ? 'text-[#b8860b] font-semibold' : 'text-gray-700'}`} onClick={() => { setOpen(false); onSort(col.sort!, d); }}>
+              <button key={d} role="menuitem" className={`w-full text-left px-3 py-2 text-[13px] hover:bg-gray-100 ${active && dir === d ? 'text-[#b8860b] font-semibold' : 'text-gray-700'}`} onClick={() => { close(); onSort(col.sort!, d); }}>
                 {d === 'asc' ? 'Sort A → Z / oldest' : 'Sort Z → A / newest'}
               </button>
             ))}
+            {filterItems && (
+              <div className="border-t border-gray-200 mt-1 pt-2 px-2">
+                <input autoFocus value={term} onChange={e => setTerm(e.target.value)} placeholder={`Search ${col.label.toLowerCase()}...`} aria-label={`Search ${col.label}`} className="w-full h-8 px-2 border border-gray-300 rounded text-[13px] text-gray-800 focus:outline-none focus:border-[#f5b800]" />
+                <label className="flex items-center gap-2 px-1 py-1.5 mt-1 text-[13px] text-gray-700 cursor-pointer border-b border-gray-100">
+                  <input type="checkbox" checked={allShownOn} onChange={toggleShown} className="w-4 h-4 accent-[#f5b800]" />
+                  <span className="font-semibold">{term.trim() ? 'Select all results' : 'Select all'}</span>
+                </label>
+                <ul className="max-h-52 overflow-y-auto">
+                  {shown.map(i => (
+                    <li key={i.value}>
+                      <label className="flex items-start gap-2 px-1 py-1.5 text-[13px] text-gray-800 cursor-pointer hover:bg-gray-50">
+                        <input type="checkbox" checked={draft.includes(i.value)} onChange={() => flip(i.value)} className="w-4 h-4 mt-0.5 accent-[#f5b800] shrink-0" />
+                        <span className="break-words min-w-0">{i.label}</span>
+                      </label>
+                    </li>
+                  ))}
+                  {shown.length === 0 && <li className="px-1 py-3 text-[12px] text-gray-500">No matches</li>}
+                </ul>
+                <div className="flex items-center justify-between gap-2 py-2">
+                  <button onClick={() => { close(); onFilter([]); }} disabled={!filtered && draft.length === 0} className="px-3 h-8 rounded text-[13px] text-gray-700 hover:bg-gray-100 disabled:opacity-40">Clear</button>
+                  <button onClick={() => { close(); onFilter(draft); }} className="px-4 h-8 rounded bg-[#f5b800] text-black text-[13px] font-semibold hover:bg-[#e0a800]">Apply{draft.length ? ` (${draft.length})` : ''}</button>
+                </div>
+              </div>
+            )}
           </div>
         </>
       )}
@@ -59,19 +117,23 @@ function CardSection({ title, children }: { title: string; children: React.React
   return <div><div className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 mb-1">{title}</div>{children}</div>;
 }
 
-export default function LeadTable({ rows, sort, dir, abilities, loading, onSort, onReset, handlersFor }: {
+export default function LeadTable({ rows, sort, dir, abilities, loading, filterItems, selected, onSort, onFilter, onReset, handlersFor }: {
   rows: LeadRow[];
   sort?: LeadSortKey;
   dir: 'asc' | 'desc';
   abilities: Abilities;
   loading: boolean;
+  filterItems: Record<ColumnFilterKey, FilterItem[]>;
+  selected: Partial<Record<ColumnFilterKey, string[]>>;
   onSort: (k: LeadSortKey, d: 'asc' | 'desc') => void;
+  onFilter: (k: ColumnFilterKey, values: string[]) => void;
   onReset: () => void;
   handlersFor: (row: LeadRow) => LeadActionHandlers;
 }) {
   const activeSort = sort ?? 'lead';
 
-  if (rows.length === 0) {
+  const anyFilter = Object.values(selected).some(v => v && v.length);
+  if (rows.length === 0 && !anyFilter) {
     return (
       <div className="py-20 text-center text-gray-500 border border-dashed border-gray-300 rounded-lg">
         <div className="text-[16px] font-semibold text-gray-700">No leads found</div>
@@ -87,10 +149,16 @@ export default function LeadTable({ rows, sort, dir, abilities, loading, onSort,
         <table className="min-w-[1700px] w-full border-collapse">
           <thead className="bg-[#f3f4f6]">
             <tr>
-              {COLUMNS.map(c => <HeaderCell key={c.label} col={c} active={!!c.sort && c.sort === activeSort} dir={dir} onSort={onSort} onReset={onReset} />)}
+              {COLUMNS.map(c => {
+                const fk = c.sort && c.sort !== 'lead' ? (c.sort as ColumnFilterKey) : undefined;
+                return <HeaderCell key={c.label} col={c} active={!!c.sort && c.sort === activeSort} dir={dir} filterItems={fk ? filterItems[fk] : undefined} selected={(fk && selected[fk]) || []} onSort={onSort} onFilter={v => fk && onFilter(fk, v)} onReset={onReset} />;
+              })}
             </tr>
           </thead>
           <tbody>
+            {rows.length === 0 && (
+              <tr><td colSpan={COLUMNS.length} className="py-16 text-center text-gray-500"><div className="text-[16px] font-semibold text-gray-700">No leads match these filters</div><div className="text-[13px] mt-1">Open a column filter to change it, or use the reset button in Actions.</div></td></tr>
+            )}
             {rows.map(row => (
               <tr key={row.id} className="border-b border-gray-200 align-middle hover:bg-[#fafafa]">
                 <td className="px-3 py-5 align-middle"><LeadIdCell row={row} /></td>
