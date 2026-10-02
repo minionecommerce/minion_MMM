@@ -15,6 +15,7 @@ import LeadTable from './components/LeadTable';
 import AddLeadModal from './components/AddLeadModal';
 import ViewLeadModal from './components/ViewLeadModal';
 import PageLayoutEditor from './components/PageLayoutEditor';
+import FollowUpModal from './components/FollowUpModal';
 
 type Data = {
   rows: LeadRow[];
@@ -24,7 +25,7 @@ type Data = {
   pageSize: number;
 };
 
-type Dialog = { kind: 'add' } | { kind: 'edit'; row: LeadRow } | { kind: 'view'; row: LeadRow } | { kind: 'delete'; row: LeadRow } | { kind: 'duplicate'; row: LeadRow } | { kind: 'layout' } | null;
+type Dialog = { kind: 'add' } | { kind: 'edit'; row: LeadRow } | { kind: 'view'; row: LeadRow } | { kind: 'delete'; row: LeadRow } | { kind: 'duplicate'; row: LeadRow } | { kind: 'layout' } | { kind: 'followup'; row: LeadRow } | null;
 
 export default function LeadsClient({ data, params, options, currentEmployeeId, abilities, storageReady }: {
   data: Data;
@@ -140,10 +141,12 @@ export default function LeadsClient({ data, params, options, currentEmployeeId, 
             dir={params.dir === 'asc' ? 'asc' : 'desc'}
             abilities={abilities}
             loading={pending}
+            columnOrder={options.columnOrder}
             filterGroups={filterGroups}
             onFilter={next => setParams(Object.fromEntries(Object.entries(next).map(([k, v]) => [`f_${k}`, v && v.length ? JSON.stringify(v) : undefined])))}
             onSort={(k: LeadSortKey, d) => setParams({ sort: k, dir: d })}
             onReset={clearAll}
+            onFollowUp={row => setDialog({ kind: 'followup', row })}
             handlersFor={handlersFor}
           />
         </div>
@@ -161,7 +164,10 @@ export default function LeadsClient({ data, params, options, currentEmployeeId, 
       {dialog?.kind === 'add' && <AddLeadModal mode="create" lead={null} options={options} currentEmployeeId={currentEmployeeId} storageReady={storageReady} onClose={() => setDialog(null)} onSaved={afterSave} />}
       {dialog?.kind === 'edit' && <AddLeadModal mode="edit" lead={dialog.row} options={options} currentEmployeeId={currentEmployeeId} storageReady={storageReady} onClose={() => setDialog(null)} onSaved={afterSave} />}
       {dialog?.kind === 'layout' && abilities.layout && (
-        <PageLayoutEditor initialFields={options.fields} onClose={changed => { setDialog(null); if (changed) router.refresh(); }} />
+        <PageLayoutEditor initialFields={options.fields} columnOrder={options.columnOrder} onClose={changed => { setDialog(null); if (changed) router.refresh(); }} />
+      )}
+      {dialog?.kind === 'followup' && abilities.edit && (
+        <FollowUpModal row={dialog.row} onClose={() => setDialog(null)} onSaved={() => afterSave(`Follow-up saved for ${dialog.row.code}`)} />
       )}
       {dialog?.kind === 'view' && <ViewLeadModal leadId={dialog.row.id} options={options} onClose={() => setDialog(null)} />}
 

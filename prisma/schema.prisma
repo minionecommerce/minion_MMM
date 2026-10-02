@@ -355,8 +355,9 @@ model Lead {
   updatedById String?
   deletedAt   DateTime?
 
-  customFields Json? // values of custom fields added in Edit Page Layout: { "cf_xxx": value }
-  attachments LeadAttachment[]
+  customFields  Json? // values of custom fields added in Edit Page Layout: { "cf_xxx": value }
+  attachments   LeadAttachment[]
+  leadFollowUps LeadFollowUp[]
 
   // Prelim Quote tracking
   prelimQuoteAmount Decimal?  @db.Decimal(12, 2)
@@ -449,21 +450,47 @@ model Counter {
 
 // Files attached to a lead. The bytes live in Supabase Storage (private bucket); only metadata is stored here.
 model LeadAttachment {
-  id           String  @id @default(cuid())
+  id           String        @id @default(cuid())
   leadId       String
-  lead         Lead    @relation(fields: [leadId], references: [id])
-  storagePath  String  @unique // leads/<leadId>/<random>.<ext>
+  lead         Lead          @relation(fields: [leadId], references: [id])
+  storagePath  String        @unique // leads/<leadId>/<random>.<ext>
   fileName     String // original name, display only
   mimeType     String
   size         Int
-  status       String  @default("PENDING") // PENDING until the upload is verified, then READY
+  status       String        @default("PENDING") // PENDING until the upload is verified, then READY
   uploadedById String?
+  followUpId   String? // set when the file is proof for a follow-up (these are not shown as the lead's own files)
+  followUp     LeadFollowUp? @relation(fields: [followUpId], references: [id])
 
   createdAt DateTime  @default(now())
   deletedAt DateTime?
 
+  @@index([followUpId])
   @@index([leadId, deletedAt])
   @@index([status, createdAt])
+}
+
+// One follow-up done on a lead (Leads → Follow-up column). It only counts once its proof files are verified (completedAt).
+model LeadFollowUp {
+  id          String    @id @default(cuid())
+  leadId      String
+  lead        Lead      @relation(fields: [leadId], references: [id])
+  notes       String
+  nextAt      DateTime? // when the next follow-up is due
+  createdById String?
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  attachments LeadAttachment[]
+
+  @@index([leadId, completedAt])
+}
+
+// Small page-layout settings for the Leads page (e.g. the order of the table columns)
+model LeadSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
 }
 
 model FollowUp {

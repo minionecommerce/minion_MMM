@@ -29,7 +29,8 @@ export type SecurityAction =
   | "LEAD_FIELD_CREATED"
   | "LEAD_FIELD_UPDATED"
   | "LEAD_FIELD_DELETED"
-  | "LEAD_FIELDS_REORDERED";
+  | "LEAD_FIELDS_REORDERED"
+  | "LEAD_COLUMNS_REORDERED";
 
 type Db = Prisma.TransactionClient | typeof prisma;
 

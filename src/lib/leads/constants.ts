@@ -37,6 +37,7 @@ export type LeadFormOptions = {
   employees: EmployeeOptionDto[];
   // Distinct typed values used by the Customer and Location column filters
   customerNames: string[];
+  columnOrder: LeadColumnId[];
   exactRequirements: string[];
   locations: string[];
   // Page layout (Edit Page Layout): how each field is set up, plus the options of custom pick-list fields
@@ -63,6 +64,21 @@ export type ColumnFilterKey = (typeof COLUMN_FILTER_KEYS)[number];
 export type ColumnFilters = Partial<Record<ColumnFilterKey, string[]>>;
 export const COLUMN_FILTER_MAX_VALUES = 200;
 
+// Columns of the Leads table that can be reordered in Edit Page Layout (the Actions column always stays last)
+export const LEAD_COLUMNS = [
+  { id: "lead", label: "Lead ID & Date" },
+  { id: "customer", label: "Customer details" },
+  { id: "requirement", label: "Requirements" },
+  { id: "assigned", label: "Staff Assignment" },
+  { id: "status", label: "Lead Status" },
+  { id: "followup", label: "Follow-up" },
+  { id: "state", label: "Status" },
+  { id: "source", label: "Source" },
+  { id: "category", label: "Categories" },
+  { id: "location", label: "Location" },
+] as const;
+export type LeadColumnId = (typeof LEAD_COLUMNS)[number]["id"];
+
 export const CONVENTIONAL_RATES = [0, 10, 20, 30, 40, 50, 60, 70, 80, 90, 100];
 
 export const PAGE_SIZE = 50;
@@ -77,3 +93,14 @@ export const ALLOWED_ATTACHMENT_TYPES: Record<string, string> = {
   "application/pdf": "pdf",
 };
 export const ATTACHMENT_ACCEPT = Object.keys(ALLOWED_ATTACHMENT_TYPES).join(",");
+
+// Follow-up proof may also be spreadsheets
+export const FOLLOWUP_ATTACHMENT_TYPES: Record<string, string> = {
+  ...ALLOWED_ATTACHMENT_TYPES,
+  "text/csv": "csv",
+  "application/vnd.ms-excel": "xls",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": "xlsx",
+};
+export const FOLLOWUP_ATTACHMENT_ACCEPT = [...Object.keys(FOLLOWUP_ATTACHMENT_TYPES), ".csv", ".xls", ".xlsx"].join(",");
+export const MAX_FOLLOWUP_FILES = 10;
+export const FOLLOWUP_NOTES_MAX = 2000;

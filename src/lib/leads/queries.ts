@@ -2,7 +2,7 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { COLUMN_FILTER_KEYS, COLUMN_FILTER_MAX_VALUES, LEAD_FILTERS, OPTION_TYPES, PAGE_SIZE, SORT_KEYS, type ColumnFilters, type EmployeeOptionDto, type LeadFilterId, type LeadFormOptions, type LeadOptionDto, type LeadSortKey, type OptionType } from "./constants";
 import { formatDate, formatTime, todayBounds } from "./format";
-import { getLayout } from "./layout";
+import { getColumnOrder, getLayout } from "./layout";
 
 export type LeadListParams = {
   q?: string;
@@ -65,7 +65,8 @@ const rowSelect = {
   subcategory: { select: optionSelect },
   leadStatus: { select: optionSelect },
   leadType: { select: optionSelect },
-  _count: { select: { attachments: { where: { status: "READY", deletedAt: null } } } },
+  leadFollowUps: { where: { completedAt: { not: null } }, orderBy: { completedAt: "desc" }, take: 1, select: { completedAt: true, nextAt: true } },
+  _count: { select: { attachments: { where: { status: "READY", deletedAt: null, followUpId: null } }, leadFollowUps: { where: { completedAt: { not: null } } } } },
 } satisfies Prisma.LeadSelect;
 
 type RowRecord = Prisma.LeadGetPayload<{ select: typeof rowSelect }>;
@@ -106,6 +107,9 @@ export function toRow(l: RowRecord) {
     dailyTask: l.dailyTask,
     customFields: ((l.customFields ?? {}) as Record<string, string | number | boolean>),
     attachmentCount: l._count.attachments,
+    followUpCount: l._count.leadFollowUps,
+    lastFollowUp: l.leadFollowUps[0]?.completedAt ? { date: formatDate(l.leadFollowUps[0].completedAt), time: formatTime(l.leadFollowUps[0].completedAt) } : null,
+    nextFollowUp: l.leadFollowUps[0]?.nextAt ? { date: formatDate(l.leadFollowUps[0].nextAt), time: formatTime(l.leadFollowUps[0].nextAt) } : null,
     ids: {
       taskAssignedPersonId: l.salesExecutiveId,
       leadPersonId: l.leadPersonId,
@@ -281,7 +285,7 @@ export async function getLeadRow(id: string) {
 }
 
 export async function getFormOptions(): Promise<LeadFormOptions> {
-  const [options, employees, fields, customers, locations, requirementTexts] = await Promise.all([
+  const [options, employees, fields, customers, locations, requirementTexts, columnOrder] = await Promise.all([
     prisma.leadOption.findMany({
       where: { OR: [{ type: { in: [...OPTION_TYPES] } }, { type: { startsWith: "CF:" } }] },
       orderBy: [{ sortOrder: "asc" }, { label: "asc" }],
@@ -296,6 +300,7 @@ export async function getFormOptions(): Promise<LeadFormOptions> {
     prisma.lead.findMany({ where: { deletedAt: null, customerName: { not: null } }, distinct: ["customerName"], select: { customerName: true }, orderBy: { customerName: "asc" }, take: 1000 }),
     prisma.lead.findMany({ where: { deletedAt: null, location: { not: null } }, distinct: ["location"], select: { location: true }, orderBy: { location: "asc" }, take: 1000 }),
     prisma.lead.findMany({ where: { deletedAt: null, exactRequirement: { not: null } }, distinct: ["exactRequirement"], select: { exactRequirement: true }, orderBy: { exactRequirement: "asc" }, take: 1000 }),
+    getColumnOrder(),
   ]);
   const customOptions: Record<string, LeadOptionDto[]> = {};
   for (const f of fields) if (!f.isSystem && f.optionType) customOptions[f.key] = options.filter(o => o.type === f.optionType) as LeadOptionDto[];
@@ -313,6 +318,7 @@ export async function getFormOptions(): Promise<LeadFormOptions> {
     leadTypes: of("LEAD_TYPE"),
     employees: emp,
     exactRequirements: requirementTexts.map(r => r.exactRequirement!).filter(Boolean),
+    columnOrder,
     customerNames: customers.map(c => c.customerName!).filter(Boolean),
     locations: locations.map(l => l.location!).filter(Boolean),
     fields,
