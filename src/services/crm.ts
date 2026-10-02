@@ -1,7 +1,11 @@
+import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/db";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { SAFE_USER_SELECT } from "@/lib/safe-select";
+
+// Tag used to refresh the cached CRM numbers right after something changes (see app/actions/crm.ts)
+export const CRM_STATS_TAG = "crm-stats";
 
 export async function getLeads() {
   try {
@@ -41,8 +45,10 @@ export async function getLeads() {
   }
 }
 
-export async function getCRMDashboardData() {
-  try {
+// Company-wide numbers (not per user), so one cached copy serves everyone for 60 seconds.
+// The loaders throw on failure so a database hiccup is never cached as "all zeros".
+async function loadCRMDashboardData() {
+  {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
@@ -102,6 +108,14 @@ export async function getCRMDashboardData() {
       },
       statusGroups,
     };
+  }
+}
+
+const cachedCRMDashboardData = unstable_cache(loadCRMDashboardData, ["crm-dashboard-data"], { revalidate: 60, tags: [CRM_STATS_TAG] });
+
+export async function getCRMDashboardData() {
+  try {
+    return await cachedCRMDashboardData();
   } catch (error) {
     console.error("Failed to fetch CRM dashboard data:", error);
     return {
@@ -118,8 +132,8 @@ export async function getCRMDashboardData() {
   }
 }
 
-export async function getCRMAnalyticsData() {
-  try {
+async function loadCRMAnalyticsData() {
+  {
     const now = new Date();
     const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
     const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
@@ -159,6 +173,14 @@ export async function getCRMAnalyticsData() {
       dealConversion: { value: pct(wonDeals, totalDeals), desc: `${wonDeals}/${totalDeals} won` },
       pipelineValue: { value: pipelineValue, desc: `Active pipeline` },
     };
+  }
+}
+
+const cachedCRMAnalyticsData = unstable_cache(loadCRMAnalyticsData, ["crm-analytics-data"], { revalidate: 60, tags: [CRM_STATS_TAG] });
+
+export async function getCRMAnalyticsData() {
+  try {
+    return await cachedCRMAnalyticsData();
   } catch (err) {
     console.error("Failed to fetch CRM analytics:", err);
     return null;
