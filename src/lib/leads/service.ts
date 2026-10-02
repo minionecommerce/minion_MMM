@@ -37,13 +37,13 @@ export async function nextLeadSeq(db: Db): Promise<number> {
 export const leadCodeFor = (seq: number) => `ML${seq}`;
 
 // ---------------------------------------------------------------------------
-// Reference validation: every id must exist, be active, be the right kind of option,
+// Reference validation: every id must exist, be the right kind of option,
 // and the category chain must be consistent. Nothing from the browser is trusted.
 // ---------------------------------------------------------------------------
 async function resolveReferences(input: LeadInput) {
   const optionIds = [input.productOrServiceId, input.requirementId, input.modeOfCustomerId, input.sourceId, input.mainCategoryId, input.categoryId, input.subcategoryId, input.leadStatusId, input.leadTypeId].filter((x): x is string => !!x);
   const options = await prisma.leadOption.findMany({
-    where: { id: { in: optionIds }, isActive: true },
+    where: { id: { in: optionIds } },
     select: { id: true, type: true, parentId: true, label: true },
   });
   const byId = new Map(options.map(o => [o.id, o]));

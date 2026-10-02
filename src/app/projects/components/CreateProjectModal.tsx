@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useDropdown } from '@/lib/dropdowns/useDropdown';
 import { X, Search } from 'lucide-react';
 import { ProjectType } from '../data/mock';
 
@@ -14,6 +15,7 @@ const projectTypes: ProjectType[] = ['Smart Home Automation', 'Interior Design',
 
 export default function CreateProjectModal({ onClose }: CreateProjectModalProps) {
   const [step, setStep] = useState(1);
+  const ddProjectType = useDropdown('PROJECT_TYPE', projectTypes);
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
   const nextProjectId = `PRJ-2026-${String(Math.floor(Math.random() * 1000) + 51).padStart(4, '0')}`;
@@ -101,9 +103,9 @@ export default function CreateProjectModal({ onClose }: CreateProjectModalProps)
 
                   <div className="col-span-2 md:col-span-1">
                     <label className="text-[11px] font-semibold text-gray-500 uppercase block mb-1.5">Project Type *</label>
-                    <select name="type" required className={inputCls}>
+                    <select name="type" required className={inputCls} key={ddProjectType.ready ? 'ready' : 'loading'} defaultValue={ddProjectType.defaultValue ?? ''}>
                       <option value="">Select type...</option>
-                      {projectTypes.map(t => <option key={t} value={t}>{t}</option>)}
+                      {ddProjectType.options.map(t => <option key={t} value={t}>{t}</option>)}
                     </select>
                   </div>
                   <div className="col-span-2 md:col-span-1">

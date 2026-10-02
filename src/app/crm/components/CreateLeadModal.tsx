@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useTransition } from 'react';
+import { useDropdown } from '@/lib/dropdowns/useDropdown';
 import { X, ChevronDown, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { createLead, checkDuplicateCustomer } from '@/app/actions/crm';
 
@@ -30,19 +31,32 @@ export default function CreateLeadModal({ employees, onClose, onSuccess }: Creat
   const [customerName, setCustomerName] = useState('');
   const [phone, setPhone] = useState('');
   const [email, setEmail] = useState('');
-  const [customerType, setCustomerType] = useState('Individual');
-  const [source, setSource] = useState('');
+  const [customerTypePick, setCustomerType] = useState('');
+  const [sourcePick, setSource] = useState('');
   const [siteLocation, setSiteLocation] = useState('');
-  const [propertyType, setPropertyType] = useState('');
+  const [propertyTypePick, setPropertyType] = useState('');
   const [requirement, setRequirement] = useState('');
   const [selectedServices, setSelectedServices] = useState<string[]>([]);
-  const [budget, setBudget] = useState('');
-  const [priority, setPriority] = useState('Medium');
+  const [budgetPick, setBudget] = useState('');
+  const [priorityPick, setPriority] = useState('');
   const [siteVisitRequired, setSiteVisitRequired] = useState('');
   const [notes, setNotes] = useState('');
   const [nextAction, setNextAction] = useState('Call Customer');
   const [salesExecId, setSalesExecId] = useState('');
   const [expectedValue, setExpectedValue] = useState('');
+
+  // Choices come from Settings → Dropdown Options (built-in lists are the fallback while loading)
+  const ddCustomerType = useDropdown('CUSTOMER_TYPE', customerTypes);
+  const ddSource = useDropdown('CRM_LEAD_SOURCE', leadSources);
+  const ddPropertyType = useDropdown('PROPERTY_TYPE', propertyTypes);
+  const ddBudget = useDropdown('BUDGET_RANGE', budgetRanges);
+  const ddPriority = useDropdown('LEAD_PRIORITY', leadPriorities);
+  const ddServices = useDropdown('SERVICES', services);
+  const customerType = customerTypePick || ddCustomerType.defaultValue || 'Individual';
+  const source = sourcePick || ddSource.defaultValue || '';
+  const propertyType = propertyTypePick || ddPropertyType.defaultValue || '';
+  const budget = budgetPick || ddBudget.defaultValue || '';
+  const priority = priorityPick || ddPriority.defaultValue || 'Medium';
 
   const toggleService = (svc: string) => {
     setSelectedServices(prev => prev.includes(svc) ? prev.filter(s => s !== svc) : [...prev, svc]);
@@ -209,11 +223,11 @@ export default function CreateLeadModal({ employees, onClose, onSuccess }: Creat
                     </div>
                     <div>
                       <Label>Customer Type *</Label>
-                      <SelectField value={customerType} onChange={setCustomerType} options={customerTypes} />
+                      <SelectField value={customerType} onChange={setCustomerType} options={ddCustomerType.options} />
                     </div>
                     <div>
                       <Label>Lead Source</Label>
-                      <SelectField value={source} onChange={setSource} options={leadSources} placeholder="Select source" />
+                      <SelectField value={source} onChange={setSource} options={ddSource.options} placeholder="Select source" />
                     </div>
                   </div>
                 )}
@@ -227,11 +241,11 @@ export default function CreateLeadModal({ employees, onClose, onSuccess }: Creat
                     </div>
                     <div>
                       <Label>Property Type</Label>
-                      <SelectField value={propertyType} onChange={setPropertyType} options={propertyTypes} placeholder="Select type" />
+                      <SelectField value={propertyType} onChange={setPropertyType} options={ddPropertyType.options} placeholder="Select type" />
                     </div>
                     <div>
                       <Label>Budget Range</Label>
-                      <SelectField value={budget} onChange={setBudget} options={budgetRanges} placeholder="Select budget" />
+                      <SelectField value={budget} onChange={setBudget} options={ddBudget.options} placeholder="Select budget" />
                     </div>
                     <div>
                       <Label>Expected Value (₹)</Label>
@@ -239,7 +253,7 @@ export default function CreateLeadModal({ employees, onClose, onSuccess }: Creat
                     </div>
                     <div>
                       <Label>Priority</Label>
-                      <SelectField value={priority} onChange={setPriority} options={leadPriorities} />
+                      <SelectField value={priority} onChange={setPriority} options={ddPriority.options} />
                     </div>
                     <div className="col-span-2">
                       <Label>Requirement</Label>
@@ -248,7 +262,7 @@ export default function CreateLeadModal({ employees, onClose, onSuccess }: Creat
                     <div className="col-span-2">
                       <Label>Services Required</Label>
                       <div className="flex flex-wrap gap-2">
-                        {services.map(svc => (
+                        {ddServices.options.map(svc => (
                           <button
                             type="button"
                             key={svc}

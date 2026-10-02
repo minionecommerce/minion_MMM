@@ -391,16 +391,17 @@ model Lead {
 
 // One table for every Leads dropdown (source, requirement, categories, status, ...).
 // Categories form a tree through parentId: MAIN_CATEGORY -> CATEGORY -> SUBCATEGORY.
+// Option store for every managed dropdown (Settings → Dropdown Options). Named for its first user, the Leads module.
 model LeadOption {
   id        String       @id @default(cuid())
-  type      String // SOURCE, REQUIREMENT, MODE_OF_CUSTOMER, PRODUCT_OR_SERVICE, MAIN_CATEGORY, CATEGORY, SUBCATEGORY, LEAD_STATUS, LEAD_TYPE
+  type      String // the dropdown list this option belongs to, e.g. SOURCE, CUSTOMER_TYPE (see src/lib/dropdowns/registry.ts)
   key       String? // stable machine key used by filters, e.g. "open" (labels can be renamed)
   label     String
   parentId  String?
   parent    LeadOption?  @relation("LeadOptionTree", fields: [parentId], references: [id])
   children  LeadOption[] @relation("LeadOptionTree")
   sortOrder Int          @default(0)
-  isActive  Boolean      @default(true)
+  isDefault Boolean      @default(false) // pre-selected in forms; at most one per single-select list
 
   asProductOrService Lead[] @relation("LeadProductOrService")
   asRequirement      Lead[] @relation("LeadRequirement")
@@ -415,7 +416,7 @@ model LeadOption {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([type, isActive, sortOrder])
+  @@index([type, sortOrder])
   @@index([parentId])
   @@index([type, key])
 }

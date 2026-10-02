@@ -21,7 +21,11 @@ export type SecurityAction =
   | "LOGOUT"
   | "FAILED_LOGIN"
   | "ACCOUNT_LOCKED"
-  | "ACCESS_DENIED";
+  | "ACCESS_DENIED"
+  | "DROPDOWN_OPTION_CREATED"
+  | "DROPDOWN_OPTION_UPDATED"
+  | "DROPDOWN_OPTION_DELETED"
+  | "DROPDOWN_OPTIONS_REORDERED";
 
 type Db = Prisma.TransactionClient | typeof prisma;
 

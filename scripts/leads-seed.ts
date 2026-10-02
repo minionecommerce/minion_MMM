@@ -8,8 +8,8 @@ const q = (s: string | undefined) => (s === undefined ? "NULL" : `'${s.replace(/
 
 async function main() {
   if (process.argv.includes("--sql")) {
-    const rows = SEED_OPTIONS.map((o, i) => `  (${q(o.id)}, ${q(o.type)}, ${q(o.key)}, ${q(o.label)}, ${q(o.parentId)}, ${i}, true, now(), now())`);
-    console.log(`INSERT INTO "LeadOption" ("id", "type", "key", "label", "parentId", "sortOrder", "isActive", "createdAt", "updatedAt") VALUES\n${rows.join(",\n")}\nON CONFLICT ("id") DO NOTHING;`);
+    const rows = SEED_OPTIONS.map((o, i) => `  (${q(o.id)}, ${q(o.type)}, ${q(o.key)}, ${q(o.label)}, ${q(o.parentId)}, ${i}, now(), now())`);
+    console.log(`INSERT INTO "LeadOption" ("id", "type", "key", "label", "parentId", "sortOrder", "createdAt", "updatedAt") VALUES\n${rows.join(",\n")}\nON CONFLICT ("id") DO NOTHING;`);
     return;
   }
   const prisma = new PrismaClient();

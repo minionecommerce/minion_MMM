@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { useDropdown } from '@/lib/dropdowns/useDropdown';
 import { X, Trees } from 'lucide-react';
 import { createLandscape } from '../actions';
 
@@ -16,6 +17,7 @@ const landscapeTypes = [
 
 export default function CreateLandscapeModal({ onClose }: CreateLandscapeModalProps) {
   const [loading, setLoading] = useState(false);
+  const ddLandscapeType = useDropdown('LANDSCAPE_TYPE', landscapeTypes);
   const [submitted, setSubmitted] = useState(false);
   const [assignedNumber, setAssignedNumber] = useState('');
 
@@ -87,8 +89,8 @@ export default function CreateLandscapeModal({ onClose }: CreateLandscapeModalPr
 
                 <div className="col-span-2 md:col-span-1">
                   <label className="text-[11px] font-semibold text-gray-500 uppercase block mb-1.5">Landscape Type *</label>
-                  <select name="type" required className={inputCls}>
-                    {landscapeTypes.map(t => (
+                  <select name="type" required className={inputCls} key={ddLandscapeType.ready ? 'ready' : 'loading'} defaultValue={ddLandscapeType.defaultValue ?? ddLandscapeType.options[0]}>
+                    {ddLandscapeType.options.map(t => (
                       <option key={t} value={t}>{t}</option>
                     ))}
                   </select>
