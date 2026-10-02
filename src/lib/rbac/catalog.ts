@@ -67,7 +67,7 @@ export const CRM_MODULES: ModuleKey[] = ["leads", "customers", "requirements", "
 // Longest prefix wins; routes not listed only require a signed-in user.
 export const ROUTE_MODULES: { prefix: string; modules: ModuleKey[] }[] = [
   { prefix: "/users", modules: ["users"] },
-  { prefix: "/admin/access", modules: ["users"] },
+  { prefix: "/admin/access", modules: ["users"] }, // Legacy Audit Log only
   { prefix: "/leads", modules: ["leads"] },
   { prefix: "/crm", modules: CRM_MODULES },
   { prefix: "/projects", modules: ["projects", "boq"] },

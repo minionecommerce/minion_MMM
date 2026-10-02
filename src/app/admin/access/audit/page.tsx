@@ -1,6 +1,7 @@
 import { requirePageAccess } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import { Activity } from "lucide-react";
+import Link from "next/link";
+import { Activity, ArrowLeft } from "lucide-react";
 import { SAFE_USER_SELECT } from "@/lib/safe-select";
 
 export default async function AuditLogPage() {
@@ -15,7 +16,14 @@ export default async function AuditLogPage() {
   });
 
   return (
-    <div className="space-y-6">
+    <div className="max-w-7xl mx-auto p-6 space-y-6">
+      <div>
+        <Link href="/users" className="inline-flex items-center gap-1.5 text-sm text-gray-400 hover:text-yellow-400">
+          <ArrowLeft className="w-4 h-4" /> Back to Users
+        </Link>
+        <h1 className="text-2xl font-bold tracking-wide mt-3">LEGACY ACCESS HISTORY</h1>
+        <p className="text-gray-400 text-sm mt-1">Read-only record of access changes made before the new Users module. New changes are logged under Users → Audit Log.</p>
+      </div>
       <div className="bg-[#1a1b1e] border border-[#292B30] rounded-xl overflow-hidden p-6">
         <h2 className="text-xl font-bold text-white mb-6 flex items-center gap-2">
           <Activity className="w-5 h-5 text-yellow-500" />
