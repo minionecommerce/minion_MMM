@@ -11,7 +11,7 @@ import { ApiError, callApi } from '@/lib/leads/client';
 import { useToast } from '@/components/ui/Toast';
 import FieldProperties from './FieldProperties';
 import LightConfirm from './LightConfirm';
-import { ColumnsReorder, DropdownsReorder, FormFieldsReorder } from './ReorderDialogs';
+import { ColumnsReorder, FormFieldsReorder } from './ReorderDialogs';
 
 const ICONS: Record<FieldType, LucideIcon> = {
   TEXT: Type, TEXTAREA: AlignLeft, NUMBER: Hash, DATE: Calendar, EMAIL: Mail, PHONE: Phone, URL: Link2,
@@ -24,7 +24,7 @@ export default function PageLayoutEditor({ initialFields, columnOrder, onClose }
   const [fields, setFields] = useState(initialFields);
   const [changed, setChanged] = useState(false);
   const [menuFor, setMenuFor] = useState<string | null>(null);
-  const [reorder, setReorder] = useState<'fields' | 'columns' | 'dropdowns' | null>(null);
+  const [reorder, setReorder] = useState<'fields' | 'columns' | null>(null);
   const [columns, setColumns] = useState<LeadColumnId[]>(columnOrder);
   const [editing, setEditing] = useState<{ field: LeadFieldDto | null; createType: FieldType | null } | null>(null);
   const [removing, setRemoving] = useState<{ field: LeadFieldDto; usage: number | null } | null>(null);
@@ -107,7 +107,7 @@ export default function PageLayoutEditor({ initialFields, columnOrder, onClose }
           </div>
           <div className="flex items-center gap-2">
             <div className="hidden md:flex items-center gap-2">
-              {([['fields', 'Reorder Form Fields'], ['columns', 'Reorder Page Columns'], ['dropdowns', 'Reorder Dropdowns']] as const).map(([k, label]) => (
+              {([['fields', 'Reorder Form Fields'], ['columns', 'Reorder Page Columns']] as const).map(([k, label]) => (
                 <button key={k} onClick={() => setReorder(k)} className="px-3 h-[36px] whitespace-nowrap rounded-md border border-gray-300 hover:border-gray-500 bg-white text-[13px] font-medium text-gray-800">{label}</button>
               ))}
             </div>
@@ -116,7 +116,7 @@ export default function PageLayoutEditor({ initialFields, columnOrder, onClose }
         </div>
 
         <div className="md:hidden flex flex-wrap gap-2 px-6 py-3 border-b border-gray-200 shrink-0">
-          {([['fields', 'Reorder Form Fields'], ['columns', 'Reorder Page Columns'], ['dropdowns', 'Reorder Dropdowns']] as const).map(([k, label]) => (
+          {([['fields', 'Reorder Form Fields'], ['columns', 'Reorder Page Columns']] as const).map(([k, label]) => (
             <button key={k} onClick={() => setReorder(k)} className="px-3 h-[34px] rounded-md border border-gray-300 bg-white text-[13px] font-medium text-gray-800">{label}</button>
           ))}
         </div>
@@ -180,7 +180,6 @@ export default function PageLayoutEditor({ initialFields, columnOrder, onClose }
       {reorder === 'columns' && (
         <ColumnsReorder columns={columns.map(id => ({ id, label: LEAD_COLUMNS.find(c => c.id === id)?.label ?? id }))} onSaved={order => { setColumns(order as LeadColumnId[]); setChanged(true); }} onClose={() => setReorder(null)} />
       )}
-      {reorder === 'dropdowns' && <DropdownsReorder fields={fields} onClose={() => { setReorder(null); setChanged(true); }} />}
 
       {removing && (
         <LightConfirm title={removing.usage ? 'Field has data' : 'Delete field?'} confirmLabel="Delete" danger busy={busy} onCancel={() => setRemoving(null)} onConfirm={confirmDelete}>

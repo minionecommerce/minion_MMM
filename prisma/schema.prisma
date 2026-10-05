@@ -1,5 +1,6 @@
 generator client {
   provider        = "prisma-client-js"
+  engineType      = "client" // Rust-free client: queries run through a driver adapter, no native query engine binary.
   previewFeatures = ["relationJoins"]
 }
 
@@ -26,6 +27,8 @@ model User {
   // Account lifecycle & security
   status             String    @default("ACTIVE") // ACTIVE, INACTIVE, SUSPENDED, PENDING
   isAdmin            Boolean   @default(false) // Full Administrator Access (granted only by a Super Admin)
+  isSuperAdmin       Boolean   @default(false) // Super Admin: set only through Create / Edit User -> Details -> Access, by another Super Admin
+  accessId           String? // the Access level chosen in Create / Edit User (an option of the Access field in Users -> Edit Page Layout)
   mustChangePassword Boolean   @default(false)
   sessionVersion     Int       @default(0) // bump to invalidate every session of this user
   lastLoginAt        DateTime?
@@ -35,6 +38,16 @@ model User {
   createdById        String?
   deletedAt          DateTime?
 
+  // Vendor and payment modules: the people chosen in Task Person / Owner / Approved By
+  materialVendorsAsTaskPerson    MaterialVendor[]    @relation("MaterialVendorTaskPerson")
+  materialVendorsAsOwner         MaterialVendor[]    @relation("MaterialVendorOwner")
+  serviceVendorsAsTaskPerson     ServiceVendor[]     @relation("ServiceVendorTaskPerson")
+  serviceVendorsAsOwner          ServiceVendor[]     @relation("ServiceVendorOwner")
+  prePaymentsAsTaskPerson        PrePayment[]        @relation("PrePaymentTaskPerson")
+  prePaymentsAsApprover          PrePayment[]        @relation("PrePaymentApprover")
+  paymentCollectionsAsTaskPerson PaymentCollection[] @relation("PaymentCollectionTaskPerson")
+  paymentCollectionsAsApprover   PaymentCollection[] @relation("PaymentCollectionApprover")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -43,13 +56,12 @@ model User {
 }
 
 model Role {
-  id           String  @id @default(cuid())
-  key          String? @unique // stable slug, e.g. "super_admin", "project_manager"
-  name         String  @unique // e.g., "Super Admin", "CEO / Founder", "Sales"
-  description  String?
-  isActive     Boolean @default(true)
-  isSuperAdmin Boolean @default(false) // grants every permission; only Super Admins can assign it
-  isSystem     Boolean @default(false) // cannot be renamed or deleted
+  id          String  @id @default(cuid())
+  key         String? @unique // stable slug, e.g. "project_manager"
+  name        String  @unique // e.g., "Manager", "Sales Executive"
+  description String?
+  isActive    Boolean @default(true)
+  isSystem    Boolean @default(false) // cannot be renamed or deleted
 
   permissions RolePermission[]
   users       User[]
@@ -200,6 +212,7 @@ model Employee {
   department    String?
   contactNumber String?
   joiningDate   DateTime?
+  customFields  Json? // values of the fields added in Users → Edit Page Layout, keyed by field key
   managerId     String?
   manager       Employee?   @relation("ManagerToEmployee", fields: [managerId], references: [id])
   subordinates  Employee[]  @relation("ManagerToEmployee")
@@ -276,6 +289,8 @@ model Customer {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  tasks Task[]
 
   @@index([phone])
   @@index([email])
@@ -354,10 +369,13 @@ model Lead {
   createdById String? // User ids; always set by the server
   updatedById String?
   deletedAt   DateTime?
+  closedAt    DateTime? // set while the lead is closed (Leads → Close Lead; the Status column then says Closed), empty = open. Why: LeadClosure
+  convertedAt DateTime? // set when the lead was converted into a deal (Leads → Convert): it then leaves the Leads list. The deal: Deal.leadId, numbered DL1, DL2, ...
 
   customFields  Json? // values of custom fields added in Edit Page Layout: { "cf_xxx": value }
   attachments   LeadAttachment[]
   leadFollowUps LeadFollowUp[]
+  closures      LeadClosure[]
 
   // Prelim Quote tracking
   prelimQuoteAmount Decimal?  @db.Decimal(12, 2)
@@ -376,6 +394,8 @@ model Lead {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  tasks Task[]
 
   @@index([customerId])
   @@index([salesExecutiveId])
@@ -413,6 +433,7 @@ model LeadOption {
   asSubcategory      Lead[] @relation("LeadSubcategory")
   asLeadStatus       Lead[] @relation("LeadLeadStatus")
   asLeadType         Lead[] @relation("LeadLeadType")
+  asDealStatus       Deal[] @relation("DealStatus")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -461,11 +482,23 @@ model LeadAttachment {
   uploadedById String?
   followUpId   String? // set when the file is proof for a follow-up (these are not shown as the lead's own files)
   followUp     LeadFollowUp? @relation(fields: [followUpId], references: [id])
+  closureId    String? // set when the file was added while closing the lead (these are not shown as the lead's own files)
+  closure      LeadClosure?  @relation(fields: [closureId], references: [id])
+
+  // Images only (null for documents and for files uploaded before image optimization). `storagePath` is then the
+  // optimized image and `size` its size; the original file is not kept.
+  thumbnailPath String? @unique
+  width         Int?
+  height        Int?
+  originalSize  Int? // size of the file the user picked, to report the saving
+  contentHash   String? // SHA-256 of the file the user picked, to catch the same photo added twice
 
   createdAt DateTime  @default(now())
   deletedAt DateTime?
 
   @@index([followUpId])
+  @@index([closureId])
+  @@index([leadId, contentHash])
   @@index([leadId, deletedAt])
   @@index([status, createdAt])
 }
@@ -486,8 +519,32 @@ model LeadFollowUp {
   @@index([leadId, completedAt])
 }
 
+// Leads → Actions → Close Lead: why the lead was closed, plus the optional files. It only counts once its files are
+// verified (closedAt); the lead then gets the "Closed" Lead Status. A reopened lead can be closed again (a new row).
+model LeadClosure {
+  id         String    @id @default(cuid())
+  leadId     String
+  lead       Lead      @relation(fields: [leadId], references: [id])
+  reason     String
+  closedById String? // User id of whoever closed it
+  createdAt  DateTime  @default(now())
+  closedAt   DateTime?
+
+  attachments LeadAttachment[]
+
+  @@index([leadId, closedAt])
+}
+
 // Small page-layout settings for the Leads page (e.g. the order of the table columns)
 model LeadSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+// Users → Edit Page Layout: one JSON row ("layout") with the field labels / required flags / defaults, the order of
+// the form fields and the order of the Users table columns.
+model UserSetting {
   key       String   @id
   value     Json
   updatedAt DateTime @updatedAt
@@ -544,18 +601,27 @@ model Deal {
   wonAt             DateTime?
   lostReason        String?
 
+  // Deals page (Leads → Convert): the deal's own status, chosen from the DEAL_STATUS pick-list (Edit Deal Layout), and soft delete
+  dealStatusId String?
+  dealStatus   LeadOption? @relation("DealStatus", fields: [dealStatusId], references: [id])
+  deletedAt    DateTime?
+
   // Assignment
   salesExecutiveId String?
   salesExecutive   Employee? @relation("DealSalesExecutive", fields: [salesExecutiveId], references: [id])
 
-  quotes       Quote[]
-  projects     Project[]
-  resources    Resource[]
-  followUps    FollowUp[]
-  crmAuditLogs CRMAuditLog[]
+  quotes             Quote[]
+  projects           Project[]
+  resources          Resource[]
+  followUps          FollowUp[]
+  crmAuditLogs       CRMAuditLog[]
+  prePayments        PrePayment[]
+  paymentCollections PaymentCollection[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  tasks Task[]
 
   @@index([customerId])
   @@index([leadId])
@@ -564,6 +630,7 @@ model Deal {
   @@index([stage])
   @@index([wonAt])
   @@index([createdAt])
+  @@index([dealStatusId])
 }
 
 model Quote {
@@ -732,20 +799,30 @@ model Task {
   id          String   @id @default(cuid())
   title       String
   description String?
+  notes       String? // shown in the Notes column of the Tasks page
+  // What kind of task this is: task | lead | project | deal | office. Stored in the database, never guessed from the screen.
+  taskType    String   @default("task")
   projectId   String?
   project     Project? @relation(fields: [projectId], references: [id])
 
   // CRM & Parks references
   leadId      String?
+  lead        Lead?      @relation(fields: [leadId], references: [id])
   customerId  String?
+  customer    Customer?  @relation(fields: [customerId], references: [id])
   dealId      String?
+  deal        Deal?      @relation(fields: [dealId], references: [id])
   landscapeId String?
   landscape   Landscape? @relation(fields: [landscapeId], references: [id])
+  productId   String? // typed in by the user (there is no Product table)
 
-  priority  String    @default("Medium") // Low, Medium, High
-  status    String    @default("Not Started") // Not Started, In Progress, Blocked, Waiting, Completed, Verified, Closed
-  dueDate   DateTime?
-  startDate DateTime?
+  priority   String    @default("Medium") // Low, Medium, High
+  status     String    @default("Not Started") // Not Started, Assigned, In Progress, Blocked, Waiting, Completed, Verified, Closed
+  dueDate    DateTime?
+  startDate  DateTime?
+  assignedAt DateTime  @default(now()) // when the task was given to the task person (Assigned D&T)
+  startedAt  DateTime? // when work really started (Started Task)
+  starred    Boolean   @default(false)
 
   // Assignments
   assigneeId           String?
@@ -776,6 +853,19 @@ model Task {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  // The Tasks page filters by type + status, scopes by person, sorts by the three date columns and searches by link
+  @@index([taskType, status])
+  @@index([assigneeId, status])
+  @@index([assignedByEmployeeId, status])
+  @@index([startDate])
+  @@index([dueDate])
+  @@index([assignedAt])
+  @@index([completedAt])
+  @@index([leadId])
+  @@index([projectId])
+  @@index([dealId])
+  @@index([customerId])
 }
 
 model TaskRecurringSeries {
@@ -902,6 +992,270 @@ model Expense {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------
+// 5b. Vendors and payment records: Material Vendor (MV1), Service Vendor (SV1), Pre-Payment Records (PPR1),
+//     Payment Collection Records (PCR1). The older Vendor / Payment tables above are not used by these.
+//
+// Each module has its own Edit Page Layout, kept in one ModuleLayout row. The standard fields are real columns (a field's key
+// is its column name); fields added in Edit Page Layout live in "customFields". A dropdown field holds the id of one of the
+// options in the layout (so renaming an option never changes a record). IDs come from the Counter table (keys materialVendor,
+// serviceVendor, prePayment, paymentCollection) and are never reused: records are only ever soft-deleted.
+// ---------------------------------------------------------
+model ModuleLayout {
+  module    String   @id // materialVendor, serviceVendor, prePayment, paymentCollection
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+// Files of the four modules. A file is uploaded to Storage first (recordId empty) and attached to the record when the form is saved.
+model ModuleFile {
+  id           String    @id @default(cuid())
+  module       String
+  recordId     String?
+  rowId        String? // the Price Detail row the file belongs to, if any
+  fieldKey     String // which file field of the layout
+  storagePath  String    @unique // records/<module>/<random>.<ext>
+  fileName     String
+  mimeType     String
+  size         Int
+  status       String    @default("PENDING") // PENDING until the upload is verified, then READY
+  uploadedById String?
+  createdAt    DateTime  @default(now())
+  deletedAt    DateTime?
+
+  @@index([module, recordId, deletedAt])
+  @@index([rowId])
+  @@index([uploadedById, status, createdAt])
+}
+
+model MaterialVendor {
+  id   String @id @default(cuid())
+  seq  Int    @unique // 1, 2, 3, ...
+  code String @unique // MV1, MV2, ...
+
+  companyName    String
+  phone1         String?
+  phone2         String?
+  address        String?
+  city           String?
+  vendorType     String?
+  shopType       String?
+  taskPersonId   String?
+  taskPerson     User?    @relation("MaterialVendorTaskPerson", fields: [taskPersonId], references: [id], onDelete: SetNull)
+  email          String?
+  exchangeRate   Decimal? @db.Decimal(18, 6)
+  ownerId        String? // Categories Owner
+  owner          User?    @relation("MaterialVendorOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  price          Decimal? @db.Decimal(16, 2)
+  rating         String?
+  subCategory    String?
+  category       String?
+  description    String?
+  products       String?
+  currency       String?
+  gstNumber      String?
+  sourceOfSupply String?
+
+  customFields       Json?
+  prices             MaterialVendorPrice[]
+  prePayments        PrePayment[]
+  paymentCollections PaymentCollection[]
+
+  createdById String?
+  updatedById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  @@index([deletedAt, seq])
+  @@index([taskPersonId])
+  @@index([ownerId])
+}
+
+// Price Detail rows of a Material Vendor
+model MaterialVendorPrice {
+  id           String         @id @default(cuid())
+  vendorId     String
+  vendor       MaterialVendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  sortOrder    Int
+  materialName String?
+  unit         String?
+  rate         Decimal?       @db.Decimal(16, 2)
+  size         String?
+  thickness    String?
+  note         String?
+  customFields Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([vendorId, sortOrder])
+}
+
+model ServiceVendor {
+  id   String @id @default(cuid())
+  seq  Int    @unique // 1, 2, 3, ...
+  code String @unique // SV1, SV2, ...
+
+  name             String // Service Vendor Name
+  nickName         String?
+  phone1           String?
+  phone2           String?
+  email            String?
+  address          String?
+  city             String?
+  vendorType       String?
+  serviceLocation  String?
+  taskPersonId     String?
+  taskPerson       User?    @relation("ServiceVendorTaskPerson", fields: [taskPersonId], references: [id], onDelete: SetNull)
+  companyName      String?
+  exchangeRate     Decimal? @db.Decimal(18, 6)
+  ownerId          String? // Vendor Catalogue Owner
+  owner            User?    @relation("ServiceVendorOwner", fields: [ownerId], references: [id], onDelete: SetNull)
+  status           String?
+  serviceCategory  String?
+  serviceType      String?
+  rating           String?
+  source           String?
+  category         String?
+  labourCount      Int?
+  projectDriveLink String?
+  currency         String?
+
+  customFields       Json?
+  prices             ServiceVendorPrice[]
+  remarks            ServiceVendorRemark[]
+  prePayments        PrePayment[]
+  paymentCollections PaymentCollection[]
+
+  createdById String?
+  updatedById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  @@index([deletedAt, seq])
+  @@index([taskPersonId])
+  @@index([ownerId])
+}
+
+// Price Detail rows of a Service Vendor
+model ServiceVendorPrice {
+  id           String        @id @default(cuid())
+  vendorId     String
+  vendor       ServiceVendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  sortOrder    Int
+  serviceName  String?
+  unit         String?
+  rate         Decimal?      @db.Decimal(16, 2)
+  areaRange    String?
+  customFields Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([vendorId, sortOrder])
+}
+
+// Remarks rows of a Service Vendor ("Remarks of Work")
+model ServiceVendorRemark {
+  id           String        @id @default(cuid())
+  vendorId     String
+  vendor       ServiceVendor @relation(fields: [vendorId], references: [id], onDelete: Cascade)
+  sortOrder    Int
+  workRemarks  String?
+  customFields Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([vendorId, sortOrder])
+}
+
+// Pre-Payment Records (PPR1, PPR2, ...)
+model PrePayment {
+  id   String @id @default(cuid())
+  seq  Int    @unique
+  code String @unique
+
+  dealId           String?
+  deal             Deal?           @relation(fields: [dealId], references: [id], onDelete: SetNull)
+  taskPersonId     String?
+  taskPerson       User?           @relation("PrePaymentTaskPerson", fields: [taskPersonId], references: [id], onDelete: SetNull)
+  paymentMode      String?
+  paymentType      String?
+  materialVendorId String?
+  materialVendor   MaterialVendor? @relation(fields: [materialVendorId], references: [id], onDelete: SetNull)
+  serviceVendorId  String?
+  serviceVendor    ServiceVendor?  @relation(fields: [serviceVendorId], references: [id], onDelete: SetNull)
+  amount           Decimal?        @db.Decimal(16, 2)
+  date             DateTime?       @db.Date
+  paymentStatus    String?
+  utrDate          DateTime?       @db.Date
+  utrNumber        String? // UTR / Transaction No
+  remarks          String?
+  approvedById     String? // empty = "Not Yet Approved"
+  approvedBy       User?           @relation("PrePaymentApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt       DateTime?
+
+  customFields Json?
+
+  createdById String?
+  updatedById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  @@index([deletedAt, seq])
+  @@index([dealId])
+  @@index([taskPersonId])
+  @@index([materialVendorId])
+  @@index([serviceVendorId])
+  @@index([date])
+}
+
+// Payment Collection Records (PCR1, PCR2, ...): same columns as Pre-Payment Records, numbered on their own
+model PaymentCollection {
+  id   String @id @default(cuid())
+  seq  Int    @unique
+  code String @unique
+
+  dealId           String?
+  deal             Deal?           @relation(fields: [dealId], references: [id], onDelete: SetNull)
+  taskPersonId     String?
+  taskPerson       User?           @relation("PaymentCollectionTaskPerson", fields: [taskPersonId], references: [id], onDelete: SetNull)
+  paymentMode      String?
+  paymentType      String?
+  materialVendorId String?
+  materialVendor   MaterialVendor? @relation(fields: [materialVendorId], references: [id], onDelete: SetNull)
+  serviceVendorId  String?
+  serviceVendor    ServiceVendor?  @relation(fields: [serviceVendorId], references: [id], onDelete: SetNull)
+  amount           Decimal?        @db.Decimal(16, 2)
+  date             DateTime?       @db.Date
+  paymentStatus    String?
+  utrDate          DateTime?       @db.Date
+  utrNumber        String?
+  remarks          String?
+  approvedById     String?
+  approvedBy       User?           @relation("PaymentCollectionApprover", fields: [approvedById], references: [id], onDelete: SetNull)
+  approvedAt       DateTime?
+
+  customFields Json?
+
+  createdById String?
+  updatedById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  deletedAt   DateTime?
+
+  @@index([deletedAt, seq])
+  @@index([dealId])
+  @@index([taskPersonId])
+  @@index([materialVendorId])
+  @@index([serviceVendorId])
+  @@index([date])
 }
 
 // ---------------------------------------------------------

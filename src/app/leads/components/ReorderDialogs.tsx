@@ -9,7 +9,7 @@ import { useToast } from '@/components/ui/Toast';
 type Item = { id: string; label: string; hint?: string };
 
 // A list you can reorder by dragging the handle or with the arrow buttons (so it works with a keyboard too).
-function ReorderList({ items, saveLabel, onSave }: { items: Item[]; saveLabel: string; onSave: (orderedIds: string[]) => Promise<void> }) {
+export function ReorderList({ items, saveLabel, onSave }: { items: Item[]; saveLabel: string; onSave: (orderedIds: string[]) => Promise<void> }) {
   const [order, setOrder] = useState(items);
   const [dragging, setDragging] = useState<number | null>(null);
   const [over, setOver] = useState<number | null>(null);
@@ -58,7 +58,7 @@ function ReorderList({ items, saveLabel, onSave }: { items: Item[]; saveLabel: s
   );
 }
 
-function Modal({ title, subtitle, onClose, children }: { title: string; subtitle: string; onClose: () => void; children: React.ReactNode }) {
+export function Modal({ title, subtitle, onClose, children }: { title: string; subtitle: string; onClose: () => void; children: React.ReactNode }) {
   useEffect(() => {
     const key = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.stopPropagation(); onClose(); } };
     window.addEventListener('keydown', key, true);
@@ -96,88 +96,19 @@ export function FormFieldsReorder({ fields, onSaved, onClose }: { fields: LeadFi
   );
 }
 
-// 2. Order of the columns on the Leads page (the Actions column always stays last)
-export function ColumnsReorder({ columns, onSaved, onClose }: { columns: { id: string; label: string }[]; onSaved: (order: string[]) => void; onClose: () => void }) {
+// 2. Order of the columns on the Leads page (the Actions column always stays last). The Deals page has its own.
+export function ColumnsReorder({ columns, onSaved, onClose, endpoint = '/api/leads/layout/columns', page = 'Leads' }: { columns: { id: string; label: string }[]; onSaved: (order: string[]) => void; onClose: () => void; endpoint?: string; page?: 'Leads' | 'Deals' }) {
   const toast = useToast();
   return (
-    <Modal title="Reorder lead page columns" subtitle="The order of the columns on the Leads page. Actions always stays last." onClose={onClose}>
+    <Modal title={`Reorder ${page === 'Deals' ? 'deal' : 'lead'} page columns`} subtitle={`The order of the columns on the ${page} page. Actions always stays last.`} onClose={onClose}>
       <ReorderList items={columns} saveLabel="Save order" onSave={async ids => {
         try {
-          await callApi('/api/leads/layout/columns', 'PUT', { order: ids });
+          await callApi(endpoint, 'PUT', { order: ids });
           toast.success('Column order saved');
           onSaved(ids);
           onClose();
         } catch (e) { toast.error(e instanceof Error ? e.message : 'Could not save the order'); }
       }} />
-    </Modal>
-  );
-}
-
-type Option = { id: string; label: string; parentId: string | null; sortOrder: number };
-
-// 3. Order of the options inside a dropdown
-export function DropdownsReorder({ fields, onClose }: { fields: LeadFieldDto[]; onClose: () => void }) {
-  const toast = useToast();
-  const lists = fields.filter(f => f.type === 'DROPDOWN');
-  const [fieldId, setFieldId] = useState(lists[0]?.id ?? '');
-  const field = lists.find(f => f.id === fieldId);
-  const parentField = field?.parentOptionType ? fields.find(f => f.optionType === field.parentOptionType) ?? null : null;
-  const [parentId, setParentId] = useState('');
-  const [data, setData] = useState<{ fieldId: string; options: Option[]; parents: Option[] } | null>(null);
-  const [error, setError] = useState('');
-  const options = data?.fieldId === fieldId ? data.options : null;
-  const parents = data?.fieldId === fieldId ? data.parents : [];
-
-  const load = async (id: string, parent: LeadFieldDto | null) => {
-    setError('');
-    try {
-      const [own, up] = await Promise.all([
-        callApi<{ options: Option[] }>(`/api/leads/layout/fields/${id}/options`, 'GET'),
-        parent ? callApi<{ options: Option[] }>(`/api/leads/layout/fields/${parent.id}/options`, 'GET') : Promise.resolve({ options: [] as Option[] }),
-      ]);
-      setData({ fieldId: id, options: own.options, parents: up.options });
-      setParentId(cur => (parent ? (up.options.some(p => p.id === cur) ? cur : up.options[0]?.id ?? '') : ''));
-    } catch (e) { setError(e instanceof Error ? e.message : 'Could not load the options'); }
-  };
-
-  useEffect(() => {
-    if (!fieldId) return;
-    let live = true;
-    (async () => { if (live) await load(fieldId, parentField); })();
-    return () => { live = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fieldId]);
-
-  const shown = (options ?? []).filter(o => (parentField ? o.parentId === parentId : true)).sort((a, b) => a.sortOrder - b.sortOrder);
-  const items = shown.map(o => ({ id: o.id, label: o.label }));
-
-  return (
-    <Modal title="Reorder dropdown options" subtitle="Choose a dropdown, then change the order its options are listed in." onClose={onClose}>
-      <div className="space-y-3 mb-4">
-        <label className="block text-[12px] font-semibold text-gray-600">Dropdown
-          <select value={fieldId} onChange={e => setFieldId(e.target.value)} className="mt-1 w-full border border-gray-300 rounded px-2.5 h-[38px] text-[14px] font-normal text-gray-900 bg-white focus:outline-none focus:border-[#f5b800]">
-            {lists.map(f => <option key={f.id} value={f.id}>{f.label}</option>)}
-          </select>
-        </label>
-        {parentField && (
-          <label className="block text-[12px] font-semibold text-gray-600">Options under ({parentField.label})
-            <select value={parentId} onChange={e => setParentId(e.target.value)} className="mt-1 w-full border border-gray-300 rounded px-2.5 h-[38px] text-[14px] font-normal text-gray-900 bg-white focus:outline-none focus:border-[#f5b800]">
-              {parents.map(p => <option key={p.id} value={p.id}>{p.label}</option>)}
-            </select>
-          </label>
-        )}
-      </div>
-      {error && <p role="alert" className="text-[13px] text-[#d9232b]">{error}</p>}
-      {!options && !error && <div className="py-8 flex justify-center text-gray-500"><Loader2 className="w-5 h-5 animate-spin" /></div>}
-      {options && (
-        <ReorderList key={`${fieldId}-${parentId}`} items={items} saveLabel="Save order" onSave={async ids => {
-          try {
-            await callApi(`/api/leads/layout/fields/${fieldId}/options/order`, 'PUT', { orderedIds: ids });
-            toast.success(`${field?.label ?? 'Dropdown'} order saved`);
-            await load(fieldId, parentField);
-          } catch (e) { toast.error(e instanceof Error ? e.message : 'Could not save the order'); }
-        }} />
-      )}
     </Modal>
   );
 }

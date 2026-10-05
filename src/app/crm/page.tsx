@@ -34,6 +34,7 @@ export default async function CRMPage() {
       orderBy: { visitDate: 'asc' }
     }),
     prisma.deal.findMany({
+      where: { deletedAt: null },
       include: {
         customer: true,
         lead: { select: { id: true, leadNumber: true } },

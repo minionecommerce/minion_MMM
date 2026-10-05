@@ -6,7 +6,7 @@
 //   3. Temporary permissions  ALLOW adds, DENY removes   (only while active; beats user)
 //   4. Any action other than `view` implies `view` on the same module,
 //      unless `view` itself was explicitly denied — then the whole module is removed.
-// Super Admin role and Full Administrator (isAdmin) short-circuit to everything;
+// Super Admin (the user's Access) and Full Administrator (isAdmin) short-circuit to everything;
 // the difference between them is enforced by the user-management guards.
 
 import { ACTIONS, ALL_PERMISSIONS, isAction, isModuleKey, permissionKey } from "./catalog";

@@ -1,0 +1,300 @@
+// The four record modules and their standard fields (the layout every module starts with before anyone edits it).
+// Shared by the server and the browser: no server-only imports.
+
+import type { ModuleKey } from "@/lib/rbac/catalog";
+import type { FieldOption, FieldType, LookupKind, ModuleId } from "./types";
+
+export type SystemField = {
+  key: string; // the column name (File Upload fields have no column: their files are in ModuleFile)
+  label: string;
+  type: FieldType;
+  section: string;
+  required?: boolean;
+  requiredLocked?: boolean; // cannot be made optional or hidden
+  readOnly?: boolean;
+  listed?: boolean; // starts as a column of the list page
+  options?: FieldOption[]; // the starting choices of a dropdown
+  default?: string; // option id, "@me", "@today", or a literal
+  lookup?: LookupKind;
+  relation?: string; // the Prisma relation behind a user / deal / vendor field
+  prefix?: string;
+  max?: number;
+  integer?: boolean;
+  min?: number;
+  maxFiles?: number;
+};
+
+export type TableDef = {
+  section: string; // the id of the section that shows it
+  relation: string; // name of the list of rows on the record
+  model: string; // Prisma delegate of the rows
+  table: string; // its SQL table
+  fields: SystemField[];
+};
+
+export type ModuleDef = {
+  id: ModuleId;
+  slug: string; // the address: /<slug>
+  label: string; // Material Vendor
+  plural: string;
+  heading: string; // title of the list page
+  createLabel: string; // + Create Material Vendor
+  idPrefix: string;
+  idLabel: string; // the ID column, when the form has no ID field of its own
+  counterKey: string;
+  permission: ModuleKey; // the role permissions that guard it (view / create / edit / delete / export / approve)
+  model: string; // Prisma delegate
+  table: string; // its SQL table
+  entityType: string; // in the activity log
+  nameKey: string; // the field that names a record in lookups ("Material Company Name")
+  sections: { id: string; label: string; kind: "FORM" | "TABLE" }[];
+  fields: SystemField[];
+  tables: TableDef[];
+  hasApproval: boolean;
+};
+
+// "Between 300-500" -> "between_300_500"; the same label twice gets _2, _3, ...
+function ids(labels: string[]): FieldOption[] {
+  const seen = new Map<string, number>();
+  return labels.map(label => {
+    const base = label.toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40) || "option";
+    const n = (seen.get(base) ?? 0) + 1;
+    seen.set(base, n);
+    return { id: n === 1 ? base : `${base}_${n}`, label };
+  });
+}
+const optionId = (label: string) => ids([label])[0].id;
+
+const STATES = [
+  "AN - Andaman and Nicobar Islands", "AP - Andhra Pradesh", "AR - Arunachal Pradesh", "AS - Assam", "BR - Bihar", "CH - Chandigarh",
+  "CG - Chhattisgarh", "DN - Dadra and Nagar Haveli and Daman and Diu", "DL - Delhi", "GA - Goa", "GJ - Gujarat", "HR - Haryana",
+  "HP - Himachal Pradesh", "JK - Jammu and Kashmir", "JH - Jharkhand", "KA - Karnataka", "KL - Kerala", "LA - Ladakh", "LD - Lakshadweep",
+  "MP - Madhya Pradesh", "MH - Maharashtra", "MN - Manipur", "ML - Meghalaya", "MZ - Mizoram", "NL - Nagaland", "OD - Odisha",
+  "PY - Puducherry", "PB - Punjab", "RJ - Rajasthan", "SK - Sikkim", "TN - Tamil Nadu", "TS - Telangana", "TR - Tripura",
+  "UP - Uttar Pradesh", "UK - Uttarakhand", "WB - West Bengal",
+];
+
+const RATING = ids(["1 Star", "2 Star", "3 Star", "4 Star", "5 Star"]);
+const CURRENCY = ids(["INR", "USD", "EUR", "GBP", "AED", "SGD"]);
+
+// ---------------------------------------------------------------------------
+// Material Vendor
+// ---------------------------------------------------------------------------
+const MATERIAL_VENDOR: ModuleDef = {
+  id: "materialVendor",
+  slug: "material-vendors",
+  label: "Material Vendor",
+  plural: "Material Vendors",
+  heading: "Material Vendor Management",
+  createLabel: "Create Material Vendor",
+  idPrefix: "MV",
+  idLabel: "Material Vendor ID",
+  counterKey: "materialVendor",
+  permission: "vendors",
+  model: "materialVendor",
+  table: "MaterialVendor",
+  entityType: "MaterialVendor",
+  nameKey: "companyName",
+  hasApproval: false,
+  sections: [
+    { id: "info", label: "Material Vendor Information", kind: "FORM" },
+    { id: "prices", label: "Price Detail", kind: "TABLE" },
+  ],
+  fields: [
+    // left column
+    { key: "companyName", label: "Material Company Name", type: "TEXT", section: "info", required: true, requiredLocked: true, listed: true, max: 200 },
+    { key: "phone1", label: "Phone 1", type: "PHONE", section: "info", listed: true },
+    { key: "phone2", label: "Phone 2", type: "PHONE", section: "info" },
+    { key: "address", label: "Address", type: "TEXTAREA", section: "info", max: 1000 },
+    { key: "city", label: "City", type: "TEXT", section: "info", listed: true, max: 100 },
+    { key: "vendorType", label: "Vendor Type", type: "DROPDOWN", section: "info", listed: true, options: ids(["Manufacturer", "Distributor", "Dealer", "Retailer", "Wholesaler", "Trader"]) },
+    { key: "shopType", label: "Shop Type", type: "DROPDOWN", section: "info", listed: true, options: ids(["Retail Shop", "Wholesale Shop", "Warehouse", "Showroom", "Online Store", "Factory"]) },
+    { key: "taskPersonId", label: "Task Person", type: "USER", section: "info", listed: true, relation: "taskPerson" },
+    { key: "email", label: "Email", type: "EMAIL", section: "info", listed: true },
+    { key: "exchangeRate", label: "Exchange Rate", type: "NUMBER", section: "info", readOnly: true, default: "1", min: 0 },
+    // right column
+    { key: "ownerId", label: "Categories Owner", type: "USER", section: "info", default: "@me", relation: "owner" },
+    { key: "price", label: "Price", type: "CURRENCY", section: "info", prefix: "Rs." },
+    { key: "rating", label: "Rating", type: "DROPDOWN", section: "info", listed: true, options: RATING },
+    {
+      key: "subCategory", label: "Sub Category", type: "DROPDOWN", section: "info",
+      options: ids(["Switches and Sockets", "Wires and Cables", "Conduits and Pipes", "Fittings", "Lights and Fixtures", "Sensors", "Panels and Boards", "Other"]),
+    },
+    {
+      key: "category", label: "Category", type: "DROPDOWN", section: "info", listed: true,
+      options: ids(["Electrical", "Plumbing", "Hardware", "Paints", "Tiles and Flooring", "Wood and Plywood", "Glass and Aluminium", "Automation Products", "Cables and Wires", "Lighting", "Other"]),
+    },
+    { key: "description", label: "Description", type: "TEXT", section: "info", max: 1000 },
+    { key: "products", label: "Products", type: "TEXT", section: "info", max: 1000 },
+    { key: "currency", label: "Currency", type: "DROPDOWN", section: "info", options: CURRENCY, default: "inr" },
+    { key: "gstNumber", label: "GST Registration Number", type: "TEXT", section: "info", max: 30 },
+    { key: "sourceOfSupply", label: "Source of Supply", type: "DROPDOWN", section: "info", options: ids(STATES), default: optionId("TN - Tamil Nadu") },
+  ],
+  tables: [
+    {
+      section: "prices",
+      relation: "prices",
+      model: "materialVendorPrice",
+      table: "MaterialVendorPrice",
+      fields: [
+        { key: "materialName", label: "Material Name", type: "TEXT", section: "prices", max: 200 },
+        { key: "unit", label: "Unit", type: "DROPDOWN", section: "prices", options: ids(["Nos", "Kg", "Gram", "Ton", "Meter", "Running Ft", "Sq.Ft", "Sq.M", "Litre", "Box", "Bag", "Set", "Roll", "Sheet", "Pair"]) },
+        { key: "rate", label: "Rate (Rs.)", type: "CURRENCY", section: "prices", prefix: "" },
+        { key: "uploadFiles", label: "Upload Files", type: "FILE", section: "prices", maxFiles: 5 },
+        { key: "size", label: "Size", type: "TEXT", section: "prices", max: 100 },
+        { key: "thickness", label: "Thickness", type: "TEXT", section: "prices", max: 100 },
+        { key: "note", label: "Note", type: "TEXT", section: "prices", max: 500 },
+      ],
+    },
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Service Vendor
+// ---------------------------------------------------------------------------
+const SERVICE_VENDOR: ModuleDef = {
+  id: "serviceVendor",
+  slug: "service-vendors",
+  label: "Service Vendor",
+  plural: "Service Vendors",
+  heading: "Service Vendor Management",
+  createLabel: "Create Service Vendor",
+  idPrefix: "SV",
+  idLabel: "Service Vendor ID",
+  counterKey: "serviceVendor",
+  permission: "vendors",
+  model: "serviceVendor",
+  table: "ServiceVendor",
+  entityType: "ServiceVendor",
+  nameKey: "name",
+  hasApproval: false,
+  sections: [
+    { id: "info", label: "Service Vendor Information", kind: "FORM" },
+    { id: "prices", label: "Price Detail", kind: "TABLE" },
+    { id: "remarks", label: "Remarks", kind: "TABLE" },
+  ],
+  fields: [
+    // left column
+    { key: "name", label: "Service Vendor Name", type: "TEXT", section: "info", required: true, requiredLocked: true, listed: true, max: 200 },
+    { key: "nickName", label: "Nick Name", type: "TEXT", section: "info", max: 100 },
+    { key: "phone1", label: "Phone 1", type: "PHONE", section: "info", required: true, listed: true },
+    { key: "phone2", label: "Phone 2", type: "PHONE", section: "info", required: true },
+    { key: "email", label: "Email", type: "EMAIL", section: "info" },
+    { key: "address", label: "Address", type: "TEXTAREA", section: "info", max: 1000 },
+    { key: "city", label: "City", type: "TEXT", section: "info", required: true, listed: true, max: 100 },
+    { key: "vendorType", label: "Vendor Type", type: "DROPDOWN", section: "info", required: true, listed: true, options: ids(["Individual", "Contractor", "Company", "Agency", "Freelancer"]) },
+    { key: "serviceLocation", label: "Service Location", type: "TEXTAREA", section: "info", required: true, max: 1000 },
+    { key: "taskPersonId", label: "Task Person", type: "USER", section: "info", required: true, listed: true, relation: "taskPerson" },
+    { key: "companyName", label: "Company Name", type: "TEXT", section: "info", max: 200 },
+    { key: "gstCertificate", label: "GST or Incorporation Certificate", type: "FILE", section: "info", maxFiles: 3 },
+    { key: "exchangeRate", label: "Exchange Rate", type: "NUMBER", section: "info", readOnly: true, default: "1", min: 0 },
+    // right column
+    { key: "ownerId", label: "Vendor Catalogue Owner", type: "USER", section: "info", default: "@me", relation: "owner" },
+    { key: "status", label: "Status", type: "DROPDOWN", section: "info", listed: true, options: ids(["Active", "Inactive", "On Hold", "Blacklisted"]), default: "active" },
+    {
+      key: "serviceCategory", label: "Service Category", type: "DROPDOWN", section: "info", required: true, listed: true,
+      options: ids(["Electrical", "Plumbing", "Carpentry", "Painting", "Civil Work", "False Ceiling", "Flooring and Tiling", "Automation / Smart Home", "Landscaping", "Interior Works", "Other"]),
+    },
+    { key: "serviceType", label: "Service Type", type: "DROPDOWN", section: "info", required: true, listed: true, options: ids(["Service Only", "Service with Material"]), default: "service_only" },
+    { key: "rating", label: "Rating", type: "DROPDOWN", section: "info", listed: true, options: RATING, default: "3_star" },
+    { key: "source", label: "Source", type: "DROPDOWN", section: "info", required: true, options: ids(["Reference", "Existing Vendor", "Online Search", "IndiaMART", "Social Media", "Walk-in", "Other"]) },
+    { key: "category", label: "Category", type: "DROPDOWN", section: "info", required: true, options: ids(["Contractor", "Sub-contractor", "Labour Supplier", "Consultant", "Other"]) },
+    { key: "labourCount", label: "Labour Count", type: "NUMBER", section: "info", required: true, integer: true, min: 0 },
+    { key: "projectDriveLink", label: "Project Drive Link", type: "URL", section: "info" },
+    { key: "bankDocument", label: "Bank Passbook / Cheque Leaf", type: "FILE", section: "info", maxFiles: 3 },
+    { key: "panCard", label: "PAN Card", type: "FILE", section: "info", maxFiles: 3 },
+    { key: "aadhaarCard", label: "Aadhaar Card", type: "FILE", section: "info", maxFiles: 3 },
+    { key: "currency", label: "Currency", type: "DROPDOWN", section: "info", options: CURRENCY, default: "inr" },
+  ],
+  tables: [
+    {
+      section: "prices",
+      relation: "prices",
+      model: "serviceVendorPrice",
+      table: "ServiceVendorPrice",
+      fields: [
+        { key: "serviceName", label: "Service Name", type: "TEXTAREA", section: "prices", max: 500 },
+        { key: "unit", label: "Unit", type: "DROPDOWN", section: "prices", options: ids(["Sq.Ft", "Running Ft", "Sq.M", "Nos", "Point", "Day", "Hour", "Visit", "Lump Sum", "Meter"]) },
+        { key: "rate", label: "Rate (Rs.)", type: "CURRENCY", section: "prices", prefix: "" },
+        { key: "areaRange", label: "Area Range", type: "DROPDOWN", section: "prices", options: ids(["Below 100", "Between 100-300", "Between 300-500", "Between 500-1000", "Above 1000"]) },
+      ],
+    },
+    {
+      section: "remarks",
+      relation: "remarks",
+      model: "serviceVendorRemark",
+      table: "ServiceVendorRemark",
+      fields: [{ key: "workRemarks", label: "Remarks of Work", type: "TEXTAREA", section: "remarks", max: 5000 }],
+    },
+  ],
+};
+
+// ---------------------------------------------------------------------------
+// Pre-Payment Records and Payment Collection Records: the same form, named for what they are
+// ---------------------------------------------------------------------------
+function paymentModule(kind: "pre" | "collection"): ModuleDef {
+  const pre = kind === "pre";
+  const noun = pre ? "Payment" : "Collection";
+  return {
+    id: pre ? "prePayment" : "paymentCollection",
+    slug: pre ? "pre-payments" : "payment-collections",
+    label: pre ? "Pre-Payment" : "Payment Collection",
+    plural: pre ? "Pre-Payment Records" : "Payment Collection Records",
+    heading: pre ? "Pre-Payment Records" : "Payment Collection Records",
+    createLabel: pre ? "Create Pre-Payment" : "Create Payment Collection",
+    idPrefix: pre ? "PPR" : "PCR",
+    idLabel: `${noun} ID`,
+    counterKey: pre ? "prePayment" : "paymentCollection",
+    permission: pre ? "ppr" : "payments",
+    model: pre ? "prePayment" : "paymentCollection",
+    table: pre ? "PrePayment" : "PaymentCollection",
+    entityType: pre ? "PrePayment" : "PaymentCollection",
+    nameKey: "code",
+    hasApproval: true,
+    sections: [{ id: "info", label: pre ? "Pre-Payment Information" : "Payment Collection Information", kind: "FORM" }],
+    fields: [
+      // left column
+      { key: "code", label: `${noun} ID`, type: "AUTO", section: "info", required: true, requiredLocked: true, readOnly: true },
+      { key: "dealId", label: "Deals ID", type: "LOOKUP", section: "info", required: true, listed: true, lookup: "deal", relation: "deal" },
+      { key: "taskPersonId", label: "Task Person", type: "USER", section: "info", required: true, listed: true, relation: "taskPerson" },
+      {
+        key: "paymentMode", label: `${noun} Mode`, type: "DROPDOWN", section: "info", required: true, listed: true,
+        options: ids(["DBS - MINION", "Cash", "UPI", "Cheque", "NEFT / RTGS / IMPS", "Credit Card", "Other"]), default: "dbs_minion",
+      },
+      {
+        key: "paymentType", label: `${noun} Type`, type: "DROPDOWN", section: "info", required: true, listed: true,
+        options: ids(pre ? ["Advance", "Material Payment", "Service Payment", "Labour Payment", "Transport", "Other"] : ["Advance", "Part Payment", "Final Payment", "Retention Release", "Other"]),
+      },
+      { key: "materialVendorId", label: "Material Vendor Name", type: "LOOKUP", section: "info", listed: true, lookup: "materialVendor", relation: "materialVendor" },
+      { key: "serviceVendorId", label: "Service Vendor Name", type: "LOOKUP", section: "info", listed: true, lookup: "serviceVendor", relation: "serviceVendor" },
+      { key: "amount", label: "Amount", type: "CURRENCY", section: "info", required: true, listed: true, prefix: "INR" },
+      // right column
+      { key: "date", label: "Date", type: "DATE", section: "info", required: true, listed: true, default: "@today" },
+      {
+        key: "paymentStatus", label: `${noun} Status`, type: "DROPDOWN", section: "info", required: true, listed: true,
+        options: ids(["Pending Approval", "Approved", pre ? "Paid" : "Collected", "Rejected", "Cancelled"]), default: "pending_approval",
+      },
+      { key: "utrDate", label: "UTR Transaction Date", type: "DATE", section: "info", default: "@today" },
+      { key: "utrNumber", label: "UTR / Transaction No", type: "TEXTAREA", section: "info", max: 36000 },
+      { key: "remarks", label: "Remarks", type: "TEXTAREA", section: "info", required: true, max: 36000 },
+      { key: "attachment", label: "Attachment", type: "FILE", section: "info", maxFiles: 3 },
+      { key: "approvedById", label: "Approved By", type: "APPROVER", section: "info", required: true, listed: true, relation: "approvedBy" },
+    ],
+    tables: [],
+  };
+}
+
+export const MODULES: Record<ModuleId, ModuleDef> = {
+  materialVendor: MATERIAL_VENDOR,
+  serviceVendor: SERVICE_VENDOR,
+  prePayment: paymentModule("pre"),
+  paymentCollection: paymentModule("collection"),
+};
+
+export const MODULE_LIST: ModuleDef[] = [MODULES.materialVendor, MODULES.serviceVendor, MODULES.prePayment, MODULES.paymentCollection];
+
+export function moduleBySlug(slug: string): ModuleDef | null {
+  return MODULE_LIST.find(m => m.slug === slug) ?? null;
+}
+
+export const NOT_YET_APPROVED = "Not Yet Approved";

@@ -1,13 +1,16 @@
 import bcrypt from "bcryptjs";
 import { randomUUID } from "crypto";
-import type { Prisma } from "@prisma/client";
+import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { writeAudit } from "@/lib/audit";
-import { BCRYPT_ROUNDS, loadAuthState, type AuthContext } from "@/lib/auth";
-import { hasPermission, withImpliedView } from "@/lib/rbac/effective";
-import { ALL_PERMISSIONS, isAction, isModuleKey, permissionKey } from "@/lib/rbac/catalog";
+import { BCRYPT_ROUNDS, type AuthContext } from "@/lib/auth";
+import { withImpliedView } from "@/lib/rbac/effective";
+import { isAction, isModuleKey, permissionKey } from "@/lib/rbac/catalog";
 import { generateStrongPassword, passwordProblems } from "@/lib/password-policy";
 import { SAFE_USER_SELECT } from "@/lib/safe-select";
+import { findUserLayoutProblem, readAccess, readStored } from "./layout";
+import { checkCustomValues, mergeCustomValues } from "./custom-fields";
+import { resolveAccess } from "./access";
 
 // ---------------------------------------------------------------------------
 // Errors
@@ -33,68 +36,29 @@ export type OverrideInput = { module: string; action: string; effect: "ALLOW" | 
 type Target = {
   id: string;
   isAdmin: boolean;
+  isSuperAdmin: boolean;
   status: string;
   deletedAt: Date | null;
-  role: { isSuperAdmin: boolean } | null;
 };
 
-function isPrivileged(t: Target) {
-  return t.isAdmin || !!t.role?.isSuperAdmin;
+// Creating and editing accounts, credentials (passwords, login emails, account status), Access, roles and permissions
+// are Super Admin features. Super Admin itself is a setting of the user (Details → Access), not a role.
+function requireSuperAdmin(actor: AuthContext, what: string) {
+  if (!actor.isSuperAdmin) throw forbidden(`Only a Super Admin can ${what}.`);
 }
 
 function assertNotSelf(actor: AuthContext, targetId: string, what: string) {
   if (actor.userId === targetId) throw forbidden(`You cannot ${what} your own account.`);
 }
 
-// You may only manage accounts that are not more powerful than you; otherwise a
-// password reset or email change would let you take over a stronger account.
-async function assertCanManage(actor: AuthContext, target: Target) {
+function assertCanManage(target: Target) {
   if (target.deletedAt) throw notFound();
-  if (actor.isSuperAdmin) return;
-  if (isPrivileged(target)) throw forbidden("Only a Super Admin can manage administrator accounts.");
-  if (actor.permissions.includes(ALL_PERMISSIONS)) return;
-  const targetState = await loadAuthState(target.id);
-  const stronger = (targetState?.permissions ?? []).filter(k => {
-    const [m, a] = k.split(".");
-    return !hasPermission(actor.permissions, m, a);
-  });
-  if (stronger.length) throw forbidden("This user has permissions you do not have, so you cannot manage their account.");
-}
-
-// You can only hand out permissions you hold yourself
-function assertGrantCeiling(actor: AuthContext, keys: string[]) {
-  if (actor.permissions.includes(ALL_PERMISSIONS)) return;
-  const missing = keys.filter(k => {
-    const [m, a] = k.split(".");
-    return !hasPermission(actor.permissions, m, a);
-  });
-  if (missing.length) throw forbidden(`You cannot grant permissions you do not have: ${missing.slice(0, 5).join(", ")}${missing.length > 5 ? "…" : ""}`);
-}
-
-async function loadRoleForAssignment(actor: AuthContext, roleId: string) {
-  const role = await prisma.role.findUnique({
-    where: { id: roleId },
-    select: {
-      id: true,
-      name: true,
-      isActive: true,
-      isSuperAdmin: true,
-      permissions: { where: { effect: "ALLOW", permission: { isLegacy: false } }, select: { permission: { select: { module: true, action: true } } } },
-    },
-  });
-  if (!role) throw badRequest("Selected role does not exist.");
-  if (!role.isActive) throw badRequest("Selected role is inactive.");
-  if (role.isSuperAdmin && !actor.isSuperAdmin) throw forbidden("Only a Super Admin can assign the Super Admin role.");
-  assertGrantCeiling(actor, role.permissions.map(p => permissionKey(p.permission.module, p.permission.action)));
-  return role;
 }
 
 async function assertNotLastSuperAdmin(target: Target) {
-  if (!target.role?.isSuperAdmin || target.status !== "ACTIVE") return;
-  const others = await prisma.user.count({
-    where: { id: { not: target.id }, status: "ACTIVE", deletedAt: null, role: { isSuperAdmin: true, isActive: true } },
-  });
-  if (others === 0) throw forbidden("This is the last active Super Admin. Assign another Super Admin first.");
+  if (!target.isSuperAdmin || target.status !== "ACTIVE") return;
+  const others = await prisma.user.count({ where: { id: { not: target.id }, status: "ACTIVE", deletedAt: null, isSuperAdmin: true } });
+  if (others === 0) throw forbidden("This is the last active Super Admin. Give another person the Super Admin Access first.");
 }
 
 function validateOverrides(overrides: OverrideInput[]) {
@@ -107,9 +71,7 @@ function validateOverrides(overrides: OverrideInput[]) {
     if (seen.has(key)) throw badRequest(`Duplicate permission: ${key}`);
     seen.add(key);
   }
-  // Granting edit/create/... implies view
-  const allowKeys = withImpliedView(overrides.filter(o => o.effect === "ALLOW").map(o => permissionKey(o.module, o.action)));
-  return { allowKeys, overrides };
+  return { overrides };
 }
 
 function assertStrongPassword(password: string) {
@@ -149,9 +111,11 @@ const targetSelect = {
   email: true,
   status: true,
   isAdmin: true,
+  isSuperAdmin: true,
+  accessId: true,
   deletedAt: true,
   roleId: true,
-  role: { select: { id: true, name: true, isSuperAdmin: true } },
+  role: { select: { id: true, name: true } },
   employee: {
     select: {
       id: true,
@@ -159,6 +123,7 @@ const targetSelect = {
       designation: true,
       contactNumber: true,
       departmentId: true,
+      customFields: true,
       permissionOverrides: { select: { effect: true, permission: { select: { module: true, action: true, isLegacy: true } } } },
     },
   },
@@ -196,49 +161,39 @@ async function ensureEmployeeCodeFree(code: string, exceptEmployeeId?: string) {
 // Create user
 // ---------------------------------------------------------------------------
 export type CreateUserInput = {
-  employeeId?: string | null; // link to an existing employee that has no login yet
   fullName: string;
   employeeCode?: string | null;
   email: string;
   phone?: string | null;
   departmentId?: string | null;
   designation?: string | null;
-  roleId: string;
-  isAdmin?: boolean;
-  overrides?: OverrideInput[];
+  customFields?: Record<string, unknown>; // values of the fields added with New Field
+  accessId: string; // Details → Access: "super_admin", or one of the access levels (which gives the role)
   password: string;
 };
 
 export async function createUser(actor: AuthContext, input: CreateUserInput) {
-  if (!hasPermission(actor.permissions, "users", "create")) throw forbidden("You do not have permission to create users.");
-  if (input.isAdmin && !actor.isSuperAdmin) throw forbidden("Only a Super Admin can grant Full Administrator Access.");
+  requireSuperAdmin(actor, "create users");
 
   const email = input.email.trim().toLowerCase();
-  const role = await loadRoleForAssignment(actor, input.roleId);
-  const { allowKeys, overrides } = validateOverrides(input.overrides ?? []);
-  assertGrantCeiling(actor, allowKeys);
-  if (overrides.length && !hasPermission(actor.permissions, "users", "edit")) {
-    throw forbidden("You need Users → Edit permission to set user-specific permissions.");
-  }
+  const access = await resolveAccess(input.accessId);
+  // Fields a Super Admin made required in Users → Edit Page Layout
+  const layoutProblem = await findUserLayoutProblem(input, "create");
+  if (layoutProblem) throw badRequest(layoutProblem);
+  const customValues = mergeCustomValues(null, await checkCustomValues(input.customFields, "create"));
   assertStrongPassword(input.password);
-  if (input.employeeCode) await ensureEmployeeCodeFree(input.employeeCode, input.employeeId ?? undefined);
   if (input.departmentId) {
     const dept = await prisma.department.findUnique({ where: { id: input.departmentId }, select: { id: true } });
     if (!dept) throw badRequest("Selected department does not exist.");
   }
 
-  let existingEmployee: { id: string; userId: string; user: { password: string | null; status: string; deletedAt: Date | null } } | null = null;
-  if (input.employeeId) {
-    existingEmployee = await prisma.employee.findUnique({
-      where: { id: input.employeeId },
-      select: { id: true, userId: true, user: { select: { password: true, status: true, deletedAt: true } } },
-    });
-    if (!existingEmployee) throw badRequest("Selected employee does not exist.");
-    if (existingEmployee.user.password && !existingEmployee.user.deletedAt) throw new ServiceError(409, "This employee already has a login account.");
-    await ensureEmailFree(email, existingEmployee.userId);
-  } else {
-    await ensureEmailFree(email);
-  }
+  // An employee added on the Team page has no login yet (no password): creating a user with that email completes the profile
+  const pending = await prisma.user.findFirst({
+    where: { email: { equals: email, mode: "insensitive" }, deletedAt: null, password: null },
+    select: { id: true, employee: { select: { id: true } } },
+  });
+  if (!pending) await ensureEmailFree(email);
+  if (input.employeeCode) await ensureEmployeeCodeFree(input.employeeCode, pending?.employee?.id);
 
   const passwordHash = await bcrypt.hash(input.password, BCRYPT_ROUNDS);
   const now = new Date();
@@ -248,8 +203,10 @@ export async function createUser(actor: AuthContext, input: CreateUserInput) {
       name: input.fullName.trim(),
       email,
       password: passwordHash,
-      roleId: role.id,
-      isAdmin: !!input.isAdmin,
+      roleId: access.roleId,
+      isSuperAdmin: access.isSuperAdmin,
+      accessId: access.accessId,
+      isAdmin: false,
       status: "ACTIVE",
       mustChangePassword: false,
       passwordChangedAt: now,
@@ -263,22 +220,19 @@ export async function createUser(actor: AuthContext, input: CreateUserInput) {
       contactNumber: input.phone?.trim() || null,
       designation: input.designation?.trim() || null,
       departmentId: input.departmentId || null,
+      customFields: Object.keys(customValues).length ? (customValues as Prisma.InputJsonObject) : undefined,
     };
 
     let userId: string;
-    let employeeId: string;
-    if (existingEmployee) {
-      await tx.user.update({ where: { id: existingEmployee.userId }, data: userData });
-      await tx.employee.update({ where: { id: existingEmployee.id }, data: employeeData });
-      userId = existingEmployee.userId;
-      employeeId = existingEmployee.id;
+    if (pending) {
+      await tx.user.update({ where: { id: pending.id }, data: userData });
+      if (pending.employee) await tx.employee.update({ where: { id: pending.employee.id }, data: employeeData });
+      else await tx.employee.create({ data: { ...employeeData, userId: pending.id, joiningDate: now } });
+      userId = pending.id;
     } else {
-      const created = await tx.user.create({ data: { ...userData, employee: { create: { ...employeeData, joiningDate: now } } }, select: { id: true, employee: { select: { id: true } } } });
+      const created = await tx.user.create({ data: { ...userData, employee: { create: { ...employeeData, joiningDate: now } } }, select: { id: true } });
       userId = created.id;
-      employeeId = created.employee!.id;
     }
-
-    await replaceOverrides(tx, employeeId, overrides, actor.employeeId);
 
     await writeAudit({
       action: "USER_CREATED",
@@ -287,11 +241,10 @@ export async function createUser(actor: AuthContext, input: CreateUserInput) {
       newValue: {
         name: userData.name,
         email,
-        role: role.name,
-        isAdmin: userData.isAdmin,
+        access: access.label,
+        isSuperAdmin: access.isSuperAdmin,
         employeeCode: employeeData.employeeCode,
-        linkedExistingEmployee: !!existingEmployee,
-        overrides: overrides.map(o => `${o.effect} ${o.module}.${o.action}`),
+        linkedExistingEmployee: !!pending,
       },
     }, tx);
 
@@ -302,7 +255,7 @@ export async function createUser(actor: AuthContext, input: CreateUserInput) {
 }
 
 // ---------------------------------------------------------------------------
-// Update user details / role / admin flag
+// Update user details / access / admin flag
 // ---------------------------------------------------------------------------
 export type UpdateUserInput = {
   fullName?: string;
@@ -311,25 +264,24 @@ export type UpdateUserInput = {
   phone?: string | null;
   departmentId?: string | null;
   designation?: string | null;
-  roleId?: string;
+  customFields?: Record<string, unknown>; // values of the fields added with New Field (a null clears one)
+  accessId?: string; // Details → Access: "super_admin", or one of the access levels
   isAdmin?: boolean;
 };
 
 export async function updateUser(actor: AuthContext, id: string, input: UpdateUserInput) {
-  if (!hasPermission(actor.permissions, "users", "edit")) throw forbidden("You do not have permission to edit users.");
+  requireSuperAdmin(actor, "edit users");
   const target = await loadTarget(id);
-  await assertCanManage(actor, target);
+  assertCanManage(target);
+  const layoutProblem = await findUserLayoutProblem(input, "update");
+  if (layoutProblem) throw badRequest(layoutProblem);
+  const customValues = input.customFields !== undefined ? mergeCustomValues(target.employee?.customFields, await checkCustomValues(input.customFields, "update")) : undefined;
 
-  const changingRole = input.roleId !== undefined && input.roleId !== target.roleId;
+  const access = input.accessId !== undefined ? await resolveAccess(input.accessId) : null;
+  const changingAccess = !!access && (access.isSuperAdmin !== target.isSuperAdmin || (!access.isSuperAdmin && (access.accessId !== target.accessId || access.roleId !== target.roleId)));
   const changingAdmin = input.isAdmin !== undefined && input.isAdmin !== target.isAdmin;
-  if (changingRole || changingAdmin) assertNotSelf(actor, id, "change the role or administrator access of");
-  if (changingAdmin && !actor.isSuperAdmin) throw forbidden("Only a Super Admin can change Full Administrator Access.");
-
-  let newRole: Awaited<ReturnType<typeof loadRoleForAssignment>> | null = null;
-  if (changingRole) {
-    newRole = await loadRoleForAssignment(actor, input.roleId!);
-    if (target.role?.isSuperAdmin && !newRole.isSuperAdmin) await assertNotLastSuperAdmin(target);
-  }
+  if (changingAccess || changingAdmin) assertNotSelf(actor, id, "change the Access or administrator access of");
+  if (changingAccess && target.isSuperAdmin && !access!.isSuperAdmin) await assertNotLastSuperAdmin(target);
 
   const email = input.email?.trim().toLowerCase();
   if (email && email !== target.email?.toLowerCase()) await ensureEmailFree(email, id);
@@ -339,15 +291,17 @@ export async function updateUser(actor: AuthContext, id: string, input: UpdateUs
     if (!dept) throw badRequest("Selected department does not exist.");
   }
 
+  const accessBefore = target.isSuperAdmin ? "Super Admin" : target.role?.name ?? null;
   const before = {
     name: target.name,
     email: target.email,
-    role: target.role?.name ?? null,
+    access: accessBefore,
     isAdmin: target.isAdmin,
     employeeCode: target.employee?.employeeCode ?? null,
     phone: target.employee?.contactNumber ?? null,
     designation: target.employee?.designation ?? null,
     departmentId: target.employee?.departmentId ?? null,
+    customFields: (target.employee?.customFields ?? null) as Prisma.InputJsonValue | null,
   };
 
   await prisma.$transaction(async tx => {
@@ -356,7 +310,7 @@ export async function updateUser(actor: AuthContext, id: string, input: UpdateUs
       data: {
         ...(input.fullName !== undefined ? { name: input.fullName.trim() } : {}),
         ...(email ? { email } : {}),
-        ...(changingRole ? { roleId: newRole!.id } : {}),
+        ...(changingAccess ? { isSuperAdmin: access!.isSuperAdmin, roleId: access!.roleId, accessId: access!.accessId } : {}),
         ...(changingAdmin ? { isAdmin: input.isAdmin } : {}),
       },
     });
@@ -365,6 +319,7 @@ export async function updateUser(actor: AuthContext, id: string, input: UpdateUs
       ...(input.phone !== undefined ? { contactNumber: input.phone?.trim() || null } : {}),
       ...(input.designation !== undefined ? { designation: input.designation?.trim() || null } : {}),
       ...(input.departmentId !== undefined ? { departmentId: input.departmentId || null } : {}),
+      ...(customValues ? { customFields: Object.keys(customValues).length ? (customValues as Prisma.InputJsonObject) : Prisma.DbNull } : {}),
     };
     if (Object.keys(employeeData).length) {
       if (target.employee) await tx.employee.update({ where: { id: target.employee.id }, data: employeeData });
@@ -375,16 +330,17 @@ export async function updateUser(actor: AuthContext, id: string, input: UpdateUs
       ...before,
       ...(input.fullName !== undefined ? { name: input.fullName.trim() } : {}),
       ...(email ? { email } : {}),
-      ...(changingRole ? { role: newRole!.name } : {}),
+      ...(changingAccess ? { access: access!.label } : {}),
       ...(changingAdmin ? { isAdmin: input.isAdmin } : {}),
       ...(input.employeeCode !== undefined ? { employeeCode: input.employeeCode } : {}),
       ...(input.phone !== undefined ? { phone: input.phone } : {}),
       ...(input.designation !== undefined ? { designation: input.designation } : {}),
       ...(input.departmentId !== undefined ? { departmentId: input.departmentId } : {}),
+      ...(customValues ? { customFields: customValues } : {}),
     };
     await writeAudit({ action: "USER_UPDATED", actorUserId: actor.userId, targetUserId: id, oldValue: before, newValue: after }, tx);
-    if (changingRole) {
-      await writeAudit({ action: "ROLE_CHANGED", actorUserId: actor.userId, targetUserId: id, oldValue: { role: before.role }, newValue: { role: newRole!.name } }, tx);
+    if (changingAccess) {
+      await writeAudit({ action: "ACCESS_CHANGED", actorUserId: actor.userId, targetUserId: id, oldValue: { access: accessBefore }, newValue: { access: access!.label } }, tx);
     }
   });
 }
@@ -393,12 +349,11 @@ export async function updateUser(actor: AuthContext, id: string, input: UpdateUs
 // User-specific permissions
 // ---------------------------------------------------------------------------
 export async function setUserPermissions(actor: AuthContext, id: string, input: OverrideInput[]) {
-  if (!hasPermission(actor.permissions, "users", "edit")) throw forbidden("You do not have permission to edit user permissions.");
+  requireSuperAdmin(actor, "change user permissions");
   assertNotSelf(actor, id, "change the permissions of");
   const target = await loadTarget(id);
-  await assertCanManage(actor, target);
-  const { allowKeys, overrides } = validateOverrides(input);
-  assertGrantCeiling(actor, allowKeys);
+  assertCanManage(target);
+  const { overrides } = validateOverrides(input);
 
   const before = overridesOf(target).map(o => `${o.effect} ${o.module}.${o.action}`).sort();
   await prisma.$transaction(async tx => {
@@ -419,11 +374,11 @@ export async function setUserPermissions(actor: AuthContext, id: string, input: 
 // Status (activate / deactivate / suspend / pending)
 // ---------------------------------------------------------------------------
 export async function setUserStatus(actor: AuthContext, id: string, status: UserStatus) {
-  if (!hasPermission(actor.permissions, "users", "edit")) throw forbidden("You do not have permission to change account status.");
+  requireSuperAdmin(actor, "change account status");
   if (!USER_STATUSES.includes(status)) throw badRequest("Invalid status.");
   assertNotSelf(actor, id, "change the status of");
   const target = await loadTarget(id);
-  await assertCanManage(actor, target);
+  assertCanManage(target);
   if (target.status === status) return;
   if (status !== "ACTIVE") await assertNotLastSuperAdmin(target);
   if (status === "ACTIVE") {
@@ -449,10 +404,10 @@ export async function setUserStatus(actor: AuthContext, id: string, status: User
 // Admin password reset → temporary password, forced change, sessions ended
 // ---------------------------------------------------------------------------
 export async function resetUserPassword(actor: AuthContext, id: string, requested?: string) {
-  if (!hasPermission(actor.permissions, "users", "edit")) throw forbidden("You do not have permission to reset passwords.");
+  requireSuperAdmin(actor, "reset passwords");
   assertNotSelf(actor, id, "reset the password of (use Change Password instead)");
   const target = await loadTarget(id);
-  await assertCanManage(actor, target);
+  assertCanManage(target);
 
   const temporaryPassword = requested || generateStrongPassword();
   assertStrongPassword(temporaryPassword);
@@ -481,10 +436,10 @@ export async function resetUserPassword(actor: AuthContext, id: string, requeste
 // Soft delete
 // ---------------------------------------------------------------------------
 export async function softDeleteUser(actor: AuthContext, id: string) {
-  if (!hasPermission(actor.permissions, "users", "delete")) throw forbidden("You do not have permission to delete users.");
+  requireSuperAdmin(actor, "delete users");
   assertNotSelf(actor, id, "delete");
   const target = await loadTarget(id);
-  await assertCanManage(actor, target);
+  assertCanManage(target);
   await assertNotLastSuperAdmin(target);
 
   await prisma.$transaction(async tx => {
@@ -525,24 +480,26 @@ export async function changeOwnPassword(actor: AuthContext, currentPassword: str
 }
 
 // ---------------------------------------------------------------------------
-// Roles
+// Roles (the permission sets that access levels are linked to)
 // ---------------------------------------------------------------------------
 function slugify(name: string) {
   return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_|_$/g, "") || "role";
 }
 
 async function loadRoleForEdit(actor: AuthContext, roleId: string) {
-  if (!hasPermission(actor.permissions, "users", "edit")) throw forbidden("You do not have permission to manage roles.");
-  const role = await prisma.role.findUnique({ where: { id: roleId }, select: { id: true, name: true, description: true, isActive: true, isSuperAdmin: true, isSystem: true, _count: { select: { users: true } } } });
+  requireSuperAdmin(actor, "manage roles");
+  const role = await prisma.role.findUnique({ where: { id: roleId }, select: { id: true, name: true, description: true, isActive: true, isSystem: true, _count: { select: { users: true } } } });
   if (!role) throw notFound("Role not found");
-  if (role.isSuperAdmin && !actor.isSuperAdmin) throw forbidden("Only a Super Admin can change the Super Admin role.");
-  // Editing your own role would let you raise your own permissions
-  if (actor.roleId === role.id && !actor.isSuperAdmin) throw forbidden("You cannot change the role assigned to yourself.");
   return role;
 }
 
+// The access level (Users → Edit Page Layout → Access) that gives this role, if any
+async function accessLevelUsing(roleId: string) {
+  return readAccess(await readStored()).find(l => l.roleId === roleId) ?? null;
+}
+
 export async function createRole(actor: AuthContext, input: { name: string; description?: string | null }) {
-  if (!hasPermission(actor.permissions, "users", "edit")) throw forbidden("You do not have permission to manage roles.");
+  requireSuperAdmin(actor, "manage roles");
   const name = input.name.trim();
   if (await prisma.role.findFirst({ where: { name: { equals: name, mode: "insensitive" } } })) throw new ServiceError(409, "A role with this name already exists.");
   let key = slugify(name);
@@ -556,6 +513,10 @@ export async function updateRole(actor: AuthContext, roleId: string, input: { na
   const role = await loadRoleForEdit(actor, roleId);
   if (role.isSystem && (input.name !== undefined && input.name.trim() !== role.name)) throw forbidden("System roles cannot be renamed.");
   if (role.isSystem && input.isActive === false) throw forbidden("System roles cannot be deactivated.");
+  if (input.isActive === false) {
+    const level = await accessLevelUsing(roleId);
+    if (level) throw badRequest(`The access level "${level.label}" gives this role. Pick another role for that access level first.`);
+  }
   if (input.name && input.name.trim() !== role.name) {
     const clash = await prisma.role.findFirst({ where: { name: { equals: input.name.trim(), mode: "insensitive" }, id: { not: roleId } } });
     if (clash) throw new ServiceError(409, "A role with this name already exists.");
@@ -579,13 +540,11 @@ export async function updateRole(actor: AuthContext, roleId: string, input: { na
 
 export async function setRolePermissions(actor: AuthContext, roleId: string, keys: string[]) {
   const role = await loadRoleForEdit(actor, roleId);
-  if (role.isSuperAdmin) throw badRequest("The Super Admin role always has every permission.");
   for (const k of keys) {
     const [m, a] = k.split(".");
     if (!m || !a || !isModuleKey(m) || !isAction(a)) throw badRequest(`Invalid permission: ${k}`);
   }
   const allowKeys = withImpliedView(keys);
-  assertGrantCeiling(actor, allowKeys);
 
   const ids = await permissionIdMap();
   const before = await prisma.rolePermission.findMany({ where: { roleId, permission: { isLegacy: false } }, select: { effect: true, permission: { select: { module: true, action: true } } } });
@@ -609,7 +568,9 @@ export async function setRolePermissions(actor: AuthContext, roleId: string, key
 
 export async function deleteRole(actor: AuthContext, roleId: string) {
   const role = await loadRoleForEdit(actor, roleId);
-  if (role.isSystem || role.isSuperAdmin) throw forbidden("System roles cannot be deleted.");
+  if (role.isSystem) throw forbidden("System roles cannot be deleted.");
+  const level = await accessLevelUsing(roleId);
+  if (level) throw badRequest(`The access level "${level.label}" gives this role. Pick another role for that access level first.`);
   if (role._count.users > 0) throw badRequest(`This role is assigned to ${role._count.users} user(s). Reassign them first.`);
   await prisma.role.delete({ where: { id: roleId } });
   await writeAudit({ action: "ROLE_DELETED", actorUserId: actor.userId, oldValue: { role: role.name } });

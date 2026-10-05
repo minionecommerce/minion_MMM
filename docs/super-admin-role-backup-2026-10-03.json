@@ -1,0 +1,68 @@
+{
+  "takenAt": "2026-10-03T17:12:41Z",
+  "note": "Backup before the Super Admin role was removed. Super Admin is now a per-user setting chosen in Users -> Create / Edit User -> Details -> Access (columns User.isSuperAdmin and User.accessId).",
+  "roles": [
+    {
+      "id": "cmunxsdk7000011c3sso6gk2g",
+      "key": "super_admin",
+      "name": "SUPER_ADMIN",
+      "description": null,
+      "isActive": true,
+      "isSuperAdmin": true,
+      "isSystem": true,
+      "permissionCount": 282,
+      "permissionsNote": "This role short-circuited to every permission, so its stored rows carry no extra meaning: module.action for all 40 modules and 6 actions, plus legacy upper-case rows (CRM.*, Finance.*, Learning.*, My Work.*, Parks.*, Projects.*, Reports.*, Resources.*, Rewards.*, Settings.*, Tasks.*, Team.*)."
+    },
+    {
+      "id": "cmufw1f960000uqtc0s60lske",
+      "key": "merged_super_admin",
+      "name": "Super Admin (merged, unused)",
+      "description": "Merged into SUPER_ADMIN on 2026-10-02. Safe to delete.",
+      "isActive": false,
+      "isSuperAdmin": false,
+      "isSystem": false,
+      "permissionCount": 4,
+      "permissions": ["dashboard.view", "my_work.create", "my_work.edit", "my_work.view"]
+    }
+  ],
+  "usersOnThoseRoles": [
+    { "id": "cmupqg8b0000594473m6chph3", "name": "Rikash", "email": "rikash.minion011@gmail.com", "roleId": "cmunxsdk7000011c3sso6gk2g", "isAdmin": true, "deleted": false },
+    { "id": "cmuqohym6000813w4sljlvbie", "name": "Sivabalan S", "email": "sivabalan.minion001@gmail.com", "roleId": "cmunxsdk7000011c3sso6gk2g", "isAdmin": false, "deleted": false },
+    { "id": "cmufxmn3w0002h1mjx5vejokw", "name": "Dinesh", "email": "(deleted account)", "roleId": "cmunxsdk7000011c3sso6gk2g", "isAdmin": false, "deleted": true },
+    { "id": "cmufw1fx00003uqtcudy1hquf", "name": "Dinesh Admin", "email": "(deleted account)", "roleId": "cmunxsdk7000011c3sso6gk2g", "isAdmin": false, "deleted": true }
+  ],
+  "fullAdministratorUsers": [
+    { "id": "cmupqg8b0000594473m6chph3", "name": "Rikash", "role": "SUPER_ADMIN" },
+    { "id": "cmurvqzt2004v28o6ynnz2bws", "name": "Selva Kumar", "role": "Employee" },
+    { "id": "cmurvn87a004p28o6z86kuhh7", "name": "Prasanna R K", "role": "Employee" },
+    { "id": "cmurvjulc004j28o6n95eu507", "name": "Jaya Jothi M", "role": "Employee" },
+    { "id": "cmurvl8yb004m28o6kv9di3ym", "name": "Dinesh S", "role": "Manager" },
+    { "id": "cmuqocv39000213w45fjl518e", "name": "Mukesh V", "role": "Manager" }
+  ],
+  "usersLayoutRowBeforeMigration": {
+    "custom": [
+      { "key": "cf_07c985ec8c", "type": "NUMBER", "label": "Total Leave (Per Month)", "options": [], "required": false, "defaultValue": null },
+      { "key": "cf_ff7049d8c7", "type": "NUMBER", "label": "Salary", "options": [], "required": true, "defaultValue": null },
+      { "key": "cf_35e0c3c47e", "type": "DATE", "label": "Join Date", "options": [], "required": true, "defaultValue": null },
+      {
+        "key": "cf_1247904eff", "type": "DROPDOWN", "label": "Role", "required": true, "defaultValue": null,
+        "options": [
+          { "id": "o_6b5ded2018", "label": "Technical" }, { "id": "o_8ef32c0422", "label": "Site Supervisor" }, { "id": "o_b5a43b9cdc", "label": "Site Surveyor" },
+          { "id": "o_5307c873f4", "label": "Interior Designer" }, { "id": "o_b93b21971d", "label": "Project Manager" }, { "id": "o_3802ac5ea4", "label": "Sales Person" },
+          { "id": "o_d0222c52c2", "label": "Content Manager" }, { "id": "o_7bb6a4b7a9", "label": "2D/3D Designor" }, { "id": "o_459f73d676", "label": "Architect" },
+          { "id": "o_1c5b90f6f1", "label": "Procurement Manager" }, { "id": "o_c650cde89a", "label": "Accountant" }, { "id": "o_ee42f01e7d", "label": "Landscapping Manager" },
+          { "id": "o_cd52d22f66", "label": "Automation Manager" }, { "id": "o_637f80f718", "label": "Webstie Developer" }
+        ]
+      },
+      {
+        "key": "cf_20d91a01cb", "type": "DROPDOWN", "label": "Access", "required": true, "defaultValue": "o_67502fba71",
+        "options": [
+          { "id": "o_936576ffdb", "label": "Super Admin" }, { "id": "o_50a690d177", "label": "Manager" }, { "id": "o_ea2cc581f6", "label": "Team Leader" },
+          { "id": "o_67502fba71", "label": "Staff" }, { "id": "o_fe04ac9318", "label": "HR" }
+        ]
+      }
+    ],
+    "fields": { "departmentId": { "label": "Position", "required": true } }
+  },
+  "howToRestore": "To restore the old role: INSERT the two roles above (with isSuperAdmin = true on SUPER_ADMIN, which needs the old Role.isSuperAdmin column), point Rikash and Sivabalan S back at it with User.roleId, and re-add the Access dropdown to the layout row. The application code no longer reads the role flag."
+}

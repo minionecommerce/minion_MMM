@@ -18,3 +18,12 @@ export class ApiError extends Error {
     super(message);
   }
 }
+
+// PUT a file straight to Supabase Storage using a signed upload URL the server issued (no file bytes pass through our server)
+export async function uploadToSignedUrl(url: string, blob: Blob) {
+  const form = new FormData();
+  form.append('cacheControl', '3600');
+  form.append('', blob);
+  const res = await fetch(url, { method: 'PUT', body: form, headers: { 'x-upsert': 'false' } });
+  if (!res.ok) throw new Error(`Upload failed (${res.status})`);
+}

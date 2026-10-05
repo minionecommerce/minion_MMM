@@ -1,0 +1,12 @@
+// The Deal icon (public/icons/deal.png, a handshake) is a black picture on a transparent background. Used as a mask it takes the colour of
+// the text around it, like the Convert icon.
+export default function DealIcon({ className = 'w-4 h-4' }: { className?: string }) {
+  const image = 'url(/icons/deal.png)';
+  return (
+    <span
+      aria-hidden="true"
+      className={`inline-block shrink-0 bg-current ${className}`}
+      style={{ WebkitMaskImage: image, maskImage: image, WebkitMaskRepeat: 'no-repeat', maskRepeat: 'no-repeat', WebkitMaskPosition: 'center', maskPosition: 'center', WebkitMaskSize: 'contain', maskSize: 'contain' }}
+    />
+  );
+}

@@ -26,6 +26,7 @@ export async function createTask(formData: FormData) {
 
     await prisma.task.create({
       data: {
+        taskType: projectId ? 'project' : 'task',
         title,
         description,
         priority: priority || 'Medium',

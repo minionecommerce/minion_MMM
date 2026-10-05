@@ -17,7 +17,7 @@ export async function getRewardsData() {
         orderBy: { createdAt: 'desc' }
       }),
       prisma.deal.findMany({
-        where: { stage: 'Won' },
+        where: { stage: 'Won', deletedAt: null },
         select: { value: true }
       })
     ]);

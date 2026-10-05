@@ -1,9 +1,17 @@
 import { NextResponse } from "next/server";
 import { readJson, withAuthRoute } from "@/lib/api";
 import { followUpCompleteSchema, followUpSchema } from "@/lib/leads/schemas";
-import { finishFollowUp, startFollowUp } from "@/lib/leads/service";
+import { finishFollowUp, listLeadFollowUps, startFollowUp } from "@/lib/leads/service";
 
 type Params = { params: Promise<{ id: string }> };
+
+// GET /api/leads/:id/follow-ups — requires leads.view: the lead's follow-ups (oldest first) with signed links to their proof files
+export async function GET(request: Request, { params }: Params) {
+  return withAuthRoute(request, async ctx => {
+    const { id } = await params;
+    return NextResponse.json(await listLeadFollowUps(ctx, id));
+  });
+}
 
 // POST /api/leads/:id/follow-ups — step 1: validate, record the follow-up, return signed upload URLs for the proof files
 export async function POST(request: Request, { params }: Params) {

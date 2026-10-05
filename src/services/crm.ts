@@ -77,13 +77,13 @@ async function loadCRMDashboardData() {
         }
       }),
       prisma.siteVisit.count({ where: { status: { in: ['Scheduled', 'Confirmed'] } } }),
-      prisma.deal.count({ where: { status: { notIn: ['Won', 'Lost', 'Cancelled'] } } }),
+      prisma.deal.count({ where: { deletedAt: null, status: { notIn: ['Won', 'Lost', 'Cancelled'] } } }),
       prisma.deal.findMany({
-        where: { status: 'Won', wonAt: { gte: startOfMonth, lte: endOfMonth } },
+        where: { deletedAt: null, status: 'Won', wonAt: { gte: startOfMonth, lte: endOfMonth } },
         select: { value: true }
       }),
       prisma.deal.aggregate({
-        where: { status: { notIn: ['Won', 'Lost', 'Cancelled'] } },
+        where: { deletedAt: null, status: { notIn: ['Won', 'Lost', 'Cancelled'] } },
         _sum: { value: true }
       }),
       prisma.lead.groupBy({
@@ -154,10 +154,10 @@ async function loadCRMAnalyticsData() {
       prisma.siteVisit.count({ where: { status: 'Completed', updatedAt: { gte: startOfMonth, lte: endOfMonth } } }),
       prisma.quote.count({ where: { createdAt: { gte: startOfMonth, lte: endOfMonth } } }),
       prisma.quote.count({ where: { status: 'Accepted', updatedAt: { gte: startOfMonth, lte: endOfMonth } } }),
-      prisma.deal.count({ where: { createdAt: { gte: startOfMonth, lte: endOfMonth } } }),
-      prisma.deal.count({ where: { status: 'Won', wonAt: { gte: startOfMonth, lte: endOfMonth } } }),
+      prisma.deal.count({ where: { deletedAt: null, createdAt: { gte: startOfMonth, lte: endOfMonth } } }),
+      prisma.deal.count({ where: { deletedAt: null, status: 'Won', wonAt: { gte: startOfMonth, lte: endOfMonth } } }),
       prisma.deal.aggregate({
-        where: { status: { notIn: ['Won', 'Lost', 'Cancelled'] } },
+        where: { deletedAt: null, status: { notIn: ['Won', 'Lost', 'Cancelled'] } },
         _sum: { value: true }
       }),
     ]);

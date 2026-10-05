@@ -7,6 +7,8 @@ import { USER_STATUSES } from "./service";
 
 const optionalText = (max: number) => z.string().trim().max(max).nullable().optional();
 const id = z.string().min(1).max(64);
+// Values of the fields added with New Field, by field key; the service checks them against the current layout
+const customFields = z.record(z.string().max(64), z.union([z.string().max(5000), z.number(), z.boolean(), z.null()]));
 
 export const overrideSchema = z.object({
   module: z.enum(MODULE_KEYS as [string, ...string[]]),
@@ -15,16 +17,14 @@ export const overrideSchema = z.object({
 }).strict();
 
 export const createUserSchema = z.object({
-  employeeId: id.nullable().optional(),
   fullName: z.string().trim().min(2, "Full name is required").max(120),
   employeeCode: optionalText(40),
   email: z.string().trim().toLowerCase().email("Enter a valid email").max(254),
   phone: optionalText(30),
   departmentId: id.nullable().optional(),
   designation: optionalText(120),
-  roleId: id,
-  isAdmin: z.boolean().optional(),
-  overrides: z.array(overrideSchema).max(500).optional(),
+  customFields: customFields.optional(),
+  accessId: id, // Details → Access: "super_admin" or one of the access levels
   password: z.string().min(1).max(PASSWORD_MAX_LENGTH),
 }).strict();
 
@@ -35,7 +35,8 @@ export const updateUserSchema = z.object({
   phone: optionalText(30),
   departmentId: id.nullable().optional(),
   designation: optionalText(120),
-  roleId: id.optional(),
+  customFields: customFields.optional(),
+  accessId: id.optional(),
   isAdmin: z.boolean().optional(),
 }).strict();
 

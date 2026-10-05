@@ -6,8 +6,10 @@ import { useEffect, useState, useTransition } from 'react';
 import { Search, ArrowUpDown, ChevronLeft, ChevronRight, Users as UsersIcon, Loader2, Crown, ShieldCheck } from 'lucide-react';
 import { StatusBadge, UserActionsMenu, useUserActionDialogs } from '@/components/users/UserActions';
 import type { UserListParams, listUsers } from '@/lib/users/queries';
+import { COLUMN_FIELD, USER_COLUMNS, accessLabel, type UserColumnId, type UserLayout } from '@/lib/users/layout-shared';
 
 type Data = Awaited<ReturnType<typeof listUsers>>;
+type Row = Data['users'][number];
 
 const fmtDate = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—');
 const fmtDateTime = (iso: string | null) => (iso ? new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'Never');
@@ -22,10 +24,10 @@ function SortHeader({ col, label, params, onSort }: { col: SortCol; label: strin
   );
 }
 
-export default function UsersClient({ data, params, roles, currentUserId, abilities }: {
+export default function UsersClient({ data, params, currentUserId, abilities, layout }: {
+  layout: UserLayout; // column order and field labels from Users → Edit Page Layout
   data: Data;
   params: UserListParams;
-  roles: { id: string; name: string }[];
   currentUserId: string;
   abilities: { canEdit: boolean; canDelete: boolean; isSuperAdmin: boolean };
 }) {
@@ -59,6 +61,66 @@ export default function UsersClient({ data, params, roles, currentUserId, abilit
   };
 
 
+  // The header of a column that shows a form field follows that field's label
+  const colLabel = (id: UserColumnId) => {
+    const key = COLUMN_FIELD[id];
+    return (key && layout.fields.find(f => f.key === key)?.label) || USER_COLUMNS.find(c => c.id === id)!.label;
+  };
+
+  const header = (id: UserColumnId) => {
+    switch (id) {
+      case 'user': return <th key={id} className="px-3 py-3"><SortHeader col="name" label={colLabel(id)} params={params} onSort={sortBy} /></th>;
+      case 'email': return <th key={id} className="px-3 py-3"><SortHeader col="email" label={colLabel(id)} params={params} onSort={sortBy} /></th>;
+      case 'status': return <th key={id} className="px-3 py-3"><SortHeader col="status" label={colLabel(id)} params={params} onSort={sortBy} /></th>;
+      case 'lastLogin': return <th key={id} className="px-3 py-3"><SortHeader col="lastLoginAt" label={colLabel(id)} params={params} onSort={sortBy} /></th>;
+      case 'created': return <th key={id} className="px-3 py-3"><SortHeader col="createdAt" label={colLabel(id)} params={params} onSort={sortBy} /></th>;
+      case 'department': return <th key={id} className="px-3 py-3 font-semibold hidden 2xl:table-cell">{colLabel(id)}</th>;
+      default: return <th key={id} className="px-3 py-3 font-semibold">{colLabel(id)}</th>;
+    }
+  };
+
+  const cell = (id: UserColumnId, u: Row) => {
+    switch (id) {
+      case 'user': return (
+        <td key={id} className="px-3 py-3">
+          <Link href={`/users/${u.id}`} className="flex items-center gap-3 group">
+            <div className="w-8 h-8 rounded-full bg-[#3B2E15] flex items-center justify-center shrink-0 text-[12px] font-bold text-yellow-400">
+              {(u.name || u.email || '?')[0].toUpperCase()}
+            </div>
+            <div className="min-w-0">
+              <div className="font-semibold text-white group-hover:text-yellow-400 truncate flex items-center gap-1.5">
+                {u.name || '—'}
+                {u.id === currentUserId && <span className="text-[10px] text-gray-500 font-medium">(you)</span>}
+              </div>
+              <div className="text-[11px] text-gray-500 truncate">{u.designation || ''}<span className="2xl:hidden">{u.designation && u.department ? ' · ' : ''}{u.department || ''}</span></div>
+            </div>
+          </Link>
+        </td>
+      );
+      case 'employeeCode': return <td key={id} className="px-3 py-3 text-gray-400 font-mono text-[12px]">{u.employeeCode || '—'}</td>;
+      case 'email': return <td key={id} className="px-3 py-3 text-gray-300">{u.email}</td>;
+      case 'role': return (
+        <td key={id} className="px-3 py-3">
+          <span className="inline-flex items-center gap-1.5 text-gray-200">
+            {u.isSuperAdmin && <Crown className="w-3.5 h-3.5 text-yellow-400" aria-label="Super Admin" />}
+            {accessLabel(layout, u)}
+          </span>
+        </td>
+      );
+      case 'department': return <td key={id} className="px-3 py-3 text-gray-400 hidden 2xl:table-cell">{u.department || '—'}</td>;
+      case 'status': return <td key={id} className="px-3 py-3"><StatusBadge status={u.status} /></td>;
+      case 'lastLogin': return <td key={id} className="px-3 py-3 text-gray-400 whitespace-nowrap">{fmtDateTime(u.lastLoginAt)}</td>;
+      case 'created': return <td key={id} className="px-3 py-3 text-gray-400 whitespace-nowrap">{fmtDate(u.createdAt)}</td>;
+      case 'permissions': return (
+        <td key={id} className="px-3 py-3 text-[12px] whitespace-nowrap">
+          {u.isSuperAdmin ? <span className="text-yellow-400 font-semibold">All (Super Admin)</span> :
+           u.isAdmin ? <span className="text-yellow-400 font-semibold flex items-center gap-1"><ShieldCheck className="w-3.5 h-3.5" /> Full Administrator</span> :
+           <span className="text-gray-400">By access level{u.overrideCount ? <span className="text-green-400"> + {u.overrideCount} custom</span> : ''}</span>}
+        </td>
+      );
+    }
+  };
+
   const selectClass = 'bg-[#151619] border border-[#292B30] rounded-lg px-3 py-2.5 text-[13px] text-gray-200 focus:border-yellow-500 focus:outline-none';
 
   return (
@@ -75,9 +137,9 @@ export default function UsersClient({ data, params, roles, currentUserId, abilit
             className="w-full bg-[#151619] border border-[#292B30] rounded-lg pl-10 pr-4 py-2.5 text-[13px] text-white placeholder-gray-500 focus:border-yellow-500 focus:outline-none"
           />
         </div>
-        <select aria-label="Filter by role" value={params.roleId ?? ''} onChange={e => setParam({ role: e.target.value || undefined })} className={selectClass}>
-          <option value="">All roles</option>
-          {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+        <select aria-label={`Filter by ${colLabel('role').toLowerCase()}`} value={params.access ?? ''} onChange={e => setParam({ access: e.target.value || undefined })} className={selectClass}>
+          <option value="">All {colLabel('role').toLowerCase()}</option>
+          {(layout.fields.find(x => x.key === 'access')?.options ?? []).map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
         </select>
         <select aria-label="Filter by status" value={params.status ?? ''} onChange={e => setParam({ status: e.target.value || undefined })} className={selectClass}>
           <option value="">All statuses</option>
@@ -103,52 +165,14 @@ export default function UsersClient({ data, params, roles, currentUserId, abilit
             <table className="w-full text-left text-[13px]">
               <thead className="bg-[#111113] border-b border-[#292B30] text-gray-400 text-[12px]">
                 <tr>
-                  <th className="px-3 py-3"><SortHeader col="name" label="User" params={params} onSort={sortBy} /></th>
-                  <th className="px-3 py-3 font-semibold">Employee ID</th>
-                  <th className="px-3 py-3"><SortHeader col="email" label="Email / Username" params={params} onSort={sortBy} /></th>
-                  <th className="px-3 py-3 font-semibold">Role</th>
-                  <th className="px-3 py-3 font-semibold hidden 2xl:table-cell">Department</th>
-                  <th className="px-3 py-3"><SortHeader col="status" label="Status" params={params} onSort={sortBy} /></th>
-                  <th className="px-3 py-3"><SortHeader col="lastLoginAt" label="Last Login" params={params} onSort={sortBy} /></th>
-                  <th className="px-3 py-3"><SortHeader col="createdAt" label="Created" params={params} onSort={sortBy} /></th>
-                  <th className="px-3 py-3 font-semibold">Permissions</th>
+                  {layout.columns.map(header)}
                   <th className="px-3 py-3 font-semibold text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-[#1e2025]">
                 {data.users.map(u => (
                   <tr key={u.id} className="hover:bg-[#1a1b1e]">
-                    <td className="px-3 py-3">
-                      <Link href={`/users/${u.id}`} className="flex items-center gap-3 group">
-                        <div className="w-8 h-8 rounded-full bg-[#3B2E15] flex items-center justify-center shrink-0 text-[12px] font-bold text-yellow-400">
-                          {(u.name || u.email || '?')[0].toUpperCase()}
-                        </div>
-                        <div className="min-w-0">
-                          <div className="font-semibold text-white group-hover:text-yellow-400 truncate flex items-center gap-1.5">
-                            {u.name || '—'}
-                            {u.id === currentUserId && <span className="text-[10px] text-gray-500 font-medium">(you)</span>}
-                          </div>
-                          <div className="text-[11px] text-gray-500 truncate">{u.designation || ''}<span className="2xl:hidden">{u.designation && u.department ? ' · ' : ''}{u.department || ''}</span></div>
-                        </div>
-                      </Link>
-                    </td>
-                    <td className="px-3 py-3 text-gray-400 font-mono text-[12px]">{u.employeeCode || '—'}</td>
-                    <td className="px-3 py-3 text-gray-300">{u.email}</td>
-                    <td className="px-3 py-3">
-                      <span className="inline-flex items-center gap-1.5 text-gray-200">
-                        {u.isSuperAdmin && <Crown className="w-3.5 h-3.5 text-yellow-400" aria-label="Super Admin" />}
-                        {u.roleName || <span className="text-gray-500">No role</span>}
-                      </span>
-                    </td>
-                    <td className="px-3 py-3 text-gray-400 hidden 2xl:table-cell">{u.department || '—'}</td>
-                    <td className="px-3 py-3"><StatusBadge status={u.status} /></td>
-                    <td className="px-3 py-3 text-gray-400 whitespace-nowrap">{fmtDateTime(u.lastLoginAt)}</td>
-                    <td className="px-3 py-3 text-gray-400 whitespace-nowrap">{fmtDate(u.createdAt)}</td>
-                    <td className="px-3 py-3 text-[12px] whitespace-nowrap">
-                      {u.isSuperAdmin ? <span className="text-yellow-400 font-semibold">All (Super Admin)</span> :
-                       u.isAdmin ? <span className="text-yellow-400 font-semibold flex items-center gap-1"><ShieldCheck className="w-3.5 h-3.5" /> Full Administrator</span> :
-                       <span className="text-gray-400">Role{u.overrideCount ? <span className="text-green-400"> + {u.overrideCount} custom</span> : ''}</span>}
-                    </td>
+                    {layout.columns.map(id => cell(id, u))}
                     <td className="px-3 py-3 text-right">
                       <UserActionsMenu
                         actions={actions}

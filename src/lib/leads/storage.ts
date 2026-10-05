@@ -27,18 +27,21 @@ function admin() {
   return client;
 }
 
-export async function createUploadUrl(path: string) {
-  const { data, error } = await admin().storage.from(BUCKET).createSignedUploadUrl(path);
-  if (error || !data) throw new ServiceError(502, "Could not prepare the upload. Please try again.");
+export async function createUploadUrl(path: string, bucket = BUCKET) {
+  const { data, error } = await admin().storage.from(bucket).createSignedUploadUrl(path);
+  if (error || !data) {
+    console.error("Storage createSignedUploadUrl failed:", error?.message);
+    throw new ServiceError(502, "Could not prepare the upload. Please try again.");
+  }
   return data.signedUrl;
 }
 
 // Returns what Storage actually holds (not what the browser claimed), or null if missing
-export async function statObject(path: string): Promise<{ size: number; mimeType: string } | null> {
+export async function statObject(path: string, bucket = BUCKET): Promise<{ size: number; mimeType: string } | null> {
   const slash = path.lastIndexOf("/");
   const dir = path.slice(0, slash);
   const name = path.slice(slash + 1);
-  const { data, error } = await admin().storage.from(BUCKET).list(dir, { search: name, limit: 5 });
+  const { data, error } = await admin().storage.from(bucket).list(dir, { search: name, limit: 5 });
   if (error) throw new ServiceError(502, "Could not verify the upload. Please try again.");
   const item = data?.find(o => o.name === name);
   if (!item) return null;
@@ -46,16 +49,25 @@ export async function statObject(path: string): Promise<{ size: number; mimeType
   return { size: Number(meta.size ?? 0), mimeType: String(meta.mimetype ?? "") };
 }
 
-export async function removeObjects(paths: string[]) {
+// First bytes of a stored object (a short range request), used to confirm an upload really is the image it claims to be
+export async function readHead(path: string, bytes = 32, bucket = BUCKET): Promise<Uint8Array> {
+  const { data, error } = await admin().storage.from(bucket).createSignedUrl(path, 60);
+  if (error || !data) throw new ServiceError(502, "Could not verify the upload. Please try again.");
+  const res = await fetch(data.signedUrl, { headers: { Range: `bytes=0-${bytes - 1}` }, cache: "no-store" });
+  if (!res.ok) throw new ServiceError(502, "Could not verify the upload. Please try again.");
+  return new Uint8Array((await res.arrayBuffer()).slice(0, bytes));
+}
+
+export async function removeObjects(paths: string[], bucket = BUCKET) {
   if (!paths.length) return;
-  const { error } = await admin().storage.from(BUCKET).remove(paths);
+  const { error } = await admin().storage.from(bucket).remove(paths);
   if (error) console.error("Failed to remove storage objects", error.message);
 }
 
-export async function createReadUrls(paths: string[]): Promise<Map<string, string>> {
+export async function createReadUrls(paths: string[], bucket = BUCKET): Promise<Map<string, string>> {
   const out = new Map<string, string>();
   if (!paths.length || !isStorageConfigured()) return out;
-  const { data, error } = await admin().storage.from(BUCKET).createSignedUrls(paths, READ_URL_SECONDS);
+  const { data, error } = await admin().storage.from(bucket).createSignedUrls(paths, READ_URL_SECONDS);
   if (error || !data) return out;
   for (const item of data) if (item.path && item.signedUrl) out.set(item.path, item.signedUrl);
   return out;

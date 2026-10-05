@@ -1,27 +1,25 @@
 import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
-import { COLUMN_FILTER_KEYS, COLUMN_FILTER_MAX_VALUES, LEAD_FILTERS, OPTION_TYPES, PAGE_SIZE, SORT_KEYS, type ColumnFilters, type EmployeeOptionDto, type LeadFilterId, type LeadFormOptions, type LeadOptionDto, type LeadSortKey, type OptionType } from "./constants";
+import { COLUMN_FILTER_KEYS, COLUMN_FILTER_MAX_VALUES, LEAD_FILTERS, leadStatusText, OPTION_TYPES, PAGE_SIZE, SORT_KEYS, type ColumnFilters, type EmployeeOptionDto, type LeadFilterId, type LeadFormOptions, type LeadOptionDto, type LeadSortKey, type OptionType } from "./constants";
 import { formatDate, formatTime, todayBounds } from "./format";
 import { getColumnOrder, getLayout } from "./layout";
 
 export type LeadListParams = {
   q?: string;
-  filter?: LeadFilterId | "repeated";
+  filter?: LeadFilterId;
   sort?: LeadSortKey;
   dir?: "asc" | "desc";
   page?: number;
-  statusId?: string;
-  sourceId?: string;
-  assigneeId?: string;
-  from?: string; // YYYY-MM-DD, created date range in the CRM time zone
+  from?: string; // YYYY-MM-DD, first and last day of the calendar range, in the CRM time zone
   to?: string;
+  dateBy?: "last" | "next" | "validity"; // the date the range applies to: the last / next follow-up (or, on the Deals page, the Deal Validity). Absent = Assigned Date (when the lead was created and assigned), or the Deal Created date
   cols?: ColumnFilters; // column header tick-box filters; several values in one column = OR, different columns = AND
 };
 
-const personSelect = { id: true, designation: true, user: { select: { name: true } } } as const;
-const optionSelect = { id: true, label: true, key: true } as const;
+export const personSelect = { id: true, designation: true, user: { select: { name: true } } } as const;
+export const optionSelect = { id: true, label: true, key: true } as const;
 
-const rowSelect = {
+export const rowSelect = {
   id: true,
   leadSeq: true,
   leadCode: true,
@@ -50,6 +48,8 @@ const rowSelect = {
   categoryId: true,
   subcategoryId: true,
   leadStatusId: true,
+  closedAt: true,
+  convertedAt: true,
   leadTypeId: true,
   salesExecutiveId: true,
   leadPersonId: true,
@@ -66,14 +66,14 @@ const rowSelect = {
   leadStatus: { select: optionSelect },
   leadType: { select: optionSelect },
   leadFollowUps: { where: { completedAt: { not: null } }, orderBy: { completedAt: "desc" }, take: 1, select: { completedAt: true, nextAt: true } },
-  _count: { select: { attachments: { where: { status: "READY", deletedAt: null, followUpId: null } }, leadFollowUps: { where: { completedAt: { not: null } } } } },
+  _count: { select: { attachments: { where: { status: "READY", deletedAt: null, followUpId: null, closureId: null } }, leadFollowUps: { where: { completedAt: { not: null } } } } },
 } satisfies Prisma.LeadSelect;
 
-type RowRecord = Prisma.LeadGetPayload<{ select: typeof rowSelect }>;
+export type RowRecord = Prisma.LeadGetPayload<{ select: typeof rowSelect }>;
 
 export type LeadRow = ReturnType<typeof toRow>;
 
-function person(p: RowRecord["salesExecutive"]) {
+export function person(p: RowRecord["salesExecutive"]) {
   return p ? { id: p.id, name: p.user?.name ?? "—", designation: p.designation } : null;
 }
 
@@ -94,6 +94,9 @@ export function toRow(l: RowRecord) {
     taskPerson: person(l.salesExecutive),
     leadPerson: person(l.leadPerson),
     leadStatus: l.leadStatus ? { id: l.leadStatus.id, label: l.leadStatus.label, key: l.leadStatus.key } : null,
+    isClosed: l.closedAt !== null, // closed through Close Lead: the Status column says Closed and the reason is on record
+    isConverted: l.convertedAt !== null, // converted to a deal (Convert): it left the Leads list and lives on the Deals page
+    status: leadStatusText(l.closedAt !== null, l._count.leadFollowUps), // what the Status column shows: Open / Follow-up / Closed
     notes: l.notes,
     conventionalRate: l.conventionalRate !== null ? Number(l.conventionalRate) : null,
     sourceLabel: l.sourceOption?.label ?? l.source ?? null,
@@ -126,24 +129,12 @@ export function toRow(l: RowRecord) {
   };
 }
 
-// Phone numbers that appear on more than one (non-deleted) lead
-async function repeatedNumbers(limit = 5000): Promise<string[]> {
-  const groups = await prisma.lead.groupBy({
-    by: ["contactNumber"],
-    where: { deletedAt: null, contactNumber: { not: null } },
-    having: { contactNumber: { _count: { gt: 1 } } },
-    orderBy: { contactNumber: "asc" },
-    take: limit,
-  });
-  return groups.map(g => g.contactNumber!).filter(Boolean);
-}
-
 function orderBy(sort: LeadSortKey | undefined, dir: "asc" | "desc"): Prisma.LeadOrderByWithRelationInput[] {
   const tie: Prisma.LeadOrderByWithRelationInput[] = [{ createdAt: "desc" }, { id: "desc" }];
   switch (sort) {
     case "customer": return [{ customerName: { sort: dir, nulls: "last" } }, ...tie];
     case "requirement": return [{ exactRequirement: { sort: dir, nulls: "last" } }, ...tie];
-    case "assigned": return [{ salesExecutive: { user: { name: dir } } }, ...tie];
+    case "assigned": return [{ leadPerson: { user: { name: dir } } }, ...tie]; // the Staff Assignment column shows the Lead Person first
     case "status": return [{ leadStatus: { label: dir } }, ...tie];
     case "source": return [{ sourceOption: { label: dir } }, ...tie];
     case "category": return [{ mainCategory: { label: dir } }, ...tie];
@@ -158,8 +149,11 @@ export function parseListParams(sp: Record<string, string | string[] | undefined
   const one = (k: string) => (typeof sp[k] === "string" ? (sp[k] as string) : undefined);
   const filter = one("filter");
   const sort = one("sort");
-  const id = (k: string) => { const v = one(k); return v && /^[A-Za-z0-9_-]{1,64}$/.test(v) ? v : undefined; };
   const day = (k: string) => { const v = one(k); return v && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(Date.parse(v)) ? v : undefined; };
+  const dateBy = one("dateBy");
+  let from = day("from");
+  let to = day("to");
+  if (from && to && from > to) [from, to] = [to, from]; // a reversed range is put in order
   const cols: ColumnFilters = {};
   for (const k of COLUMN_FILTER_KEYS) {
     const raw = one(`f_${k}`);
@@ -173,77 +167,108 @@ export function parseListParams(sp: Record<string, string | string[] | undefined
   }
   return {
     cols,
-    statusId: id("status"),
-    sourceId: id("source"),
-    assigneeId: id("assignee"),
-    from: day("from"),
-    to: day("to"),
+    from,
+    to,
+    dateBy: dateBy === "last" || dateBy === "next" || dateBy === "validity" ? dateBy : undefined,
     q: one("q")?.trim().slice(0, 100) || undefined,
-    filter: filter === "repeated" || LEAD_FILTERS.some(f => f.id === filter) ? (filter as LeadListParams["filter"]) : undefined,
+    filter: LEAD_FILTERS.some(f => f.id === filter) ? (filter as LeadListParams["filter"]) : undefined,
     sort: (SORT_KEYS as readonly string[]).includes(sort ?? "") ? (sort as LeadSortKey) : undefined,
     dir: one("dir") === "asc" ? "asc" : "desc",
     page: Math.max(1, Number(one("page")) || 1),
   };
 }
 
-async function buildWhere(params: LeadListParams): Promise<Prisma.LeadWhereInput> {
-  const and: Prisma.LeadWhereInput[] = [{ deletedAt: null }];
-
-  if (params.q) {
-    const q = params.q;
-    const contains = { contains: q, mode: "insensitive" as const };
-    const digits = q.replace(/\D/g, "");
-    and.push({
-      OR: [
-        { leadCode: contains },
-        { leadNumber: contains },
-        { customerName: contains },
-        { contactNumber: contains },
-        ...(digits.length >= 3 ? [{ contactNumber: { contains: digits } }] : []),
-        { exactRequirement: contains },
-        { requirement: contains },
-        { requirementOption: { label: contains } },
-        { salesExecutive: { user: { name: contains } } },
-        { leadPerson: { user: { name: contains } } },
-        { sourceOption: { label: contains } },
-        { source: contains },
-        { mainCategory: { label: contains } },
-        { category: { label: contains } },
-        { subcategory: { label: contains } },
-        { location: contains },
-        { exactLocation: contains },
-        { siteLocation: contains },
-        { leadStatus: { label: contains } },
-        { customer: { name: contains } },
-        { customer: { phone: contains } },
-      ],
-    });
+// The rules behind the Status column (see leadStatusText), used by its column filter and by the quick filter buttons
+function statusWhere(status: string): Prisma.LeadWhereInput | null {
+  switch (status) {
+    case "open": return { closedAt: null, leadFollowUps: { none: { completedAt: { not: null } } } };
+    case "follow_up": return { closedAt: null, leadFollowUps: { some: { completedAt: { not: null } } } };
+    case "closed": return { closedAt: { not: null } };
+    default: return null;
   }
+}
+
+export type ListScope = "lead" | "deal";
+
+// What the search box looks for in a lead. The Deals page does not look at the Lead Status (a deal has its own status)
+export function searchTerms(q: string, scope: ListScope = "lead"): Prisma.LeadWhereInput[] {
+  const contains = { contains: q, mode: "insensitive" as const };
+  const digits = q.replace(/\D/g, "");
+  return [
+    { leadCode: contains },
+    { leadNumber: contains },
+    { customerName: contains },
+    { contactNumber: contains },
+    ...(digits.length >= 3 ? [{ contactNumber: { contains: digits } }] : []),
+    { exactRequirement: contains },
+    { requirement: contains },
+    { requirementOption: { label: contains } },
+    { salesExecutive: { user: { name: contains } } },
+    { leadPerson: { user: { name: contains } } },
+    { sourceOption: { label: contains } },
+    { source: contains },
+    { mainCategory: { label: contains } },
+    { category: { label: contains } },
+    { subcategory: { label: contains } },
+    { location: contains },
+    { exactLocation: contains },
+    { siteLocation: contains },
+    ...(scope === "lead" ? [{ leadStatus: { label: contains } }] : []),
+    { customer: { name: contains } },
+    { customer: { phone: contains } },
+  ];
+}
+
+// The calendar's From / To as whole days in the CRM time zone (null when no range is set)
+export function dateRange(params: Pick<LeadListParams, "from" | "to">): { gte?: Date; lt?: Date } | null {
+  if (!params.from && !params.to) return null;
+  return {
+    ...(params.from ? { gte: todayBounds(new Date(`${params.from}T12:00:00Z`))[0] } : {}),
+    ...(params.to ? { lt: todayBounds(new Date(`${params.to}T12:00:00Z`))[1] } : {}),
+  };
+}
+
+// One list builder for both pages. The Leads page lists the leads that were not converted; the Deals page lists the converted ones
+// (its rows are deals, which add their own search, Deal Status, Deal Created and Deal Validity conditions on top of what is built here).
+export async function buildWhere(params: Pick<LeadListParams, "q" | "cols" | "from" | "to" | "dateBy" | "filter">, scope: ListScope = "lead"): Promise<Prisma.LeadWhereInput> {
+  const and: Prisma.LeadWhereInput[] = [scope === "deal" ? { deletedAt: null, convertedAt: { not: null } } : { deletedAt: null, convertedAt: null }];
+
+  if (params.q && scope === "lead") and.push({ OR: searchTerms(params.q, scope) });
 
   const c = params.cols ?? {};
   if (c.customer) and.push({ customerName: { in: c.customer } });
   if (c.requirement) and.push({ exactRequirement: { in: c.requirement } });
   if (c.assigned) and.push({ salesExecutiveId: { in: c.assigned } });
   if (c.leadPerson) and.push({ leadPersonId: { in: c.leadPerson } });
-  if (c.status) and.push({ leadStatusId: { in: c.status } });
+  if (c.status && scope === "lead") and.push({ leadStatusId: { in: c.status } }); // on the Deals page this column is the Deal Status, a field of the deal
+  // Status column: any of the ticked values. Values that are not one of the three match nothing, like an unknown id in the other columns
+  // (an empty OR is not used for that: the query engine treats it as "no condition")
+  if (c.state) {
+    const any = c.state.flatMap(v => { const w = statusWhere(v); return w ? [w] : []; });
+    and.push(any.length ? { OR: any } : { id: "" });
+  }
   if (c.source) and.push({ sourceId: { in: c.source } });
   if (c.category) and.push({ mainCategoryId: { in: c.category } });
   if (c.location) and.push({ location: { in: c.location } });
 
-  if (params.statusId) and.push({ leadStatusId: params.statusId });
-  if (params.sourceId) and.push({ sourceId: params.sourceId });
-  if (params.assigneeId) and.push({ salesExecutiveId: params.assigneeId });
-  if (params.from) and.push({ createdAt: { gte: todayBounds(new Date(`${params.from}T12:00:00Z`))[0] } });
-  if (params.to) and.push({ createdAt: { lt: todayBounds(new Date(`${params.to}T12:00:00Z`))[1] } });
+  // Calendar range, whole days in the CRM time zone. The funnel chooses the date it applies to: when the lead was assigned
+  // (created), its recorded last follow-up, or its recorded next follow-up. A lead without that date never matches a range.
+  const range = dateRange(params);
+  if (range) {
+    if (params.dateBy === "last") and.push({ lastContactedAt: range });
+    else if (params.dateBy === "next") and.push({ nextActionDate: range });
+    else if (scope === "lead") and.push({ createdAt: range });
+  }
 
-  if (params.filter === "repeated") {
-    and.push({ contactNumber: { in: await repeatedNumbers() } });
-  } else if (params.filter === "today_followup") {
+  if (params.filter === "today_followup") {
     const [start, end] = todayBounds();
     and.push({ nextActionDate: { gte: start, lt: end } });
   } else if (params.filter) {
-    const f = LEAD_FILTERS.find(x => x.id === params.filter);
-    if (f?.statusKey) and.push({ leadStatus: { key: f.statusKey } });
+    const f = LEAD_FILTERS.find(x => x.id === params.filter); // the Deals page uses the same ids (its buttons are only named differently)
+    // Same rules as the Status column: Closed, else Follow-up once a follow-up is finished, else Open
+    const byStatus = f?.status ? statusWhere(f.status) : null;
+    if (byStatus) and.push(byStatus);
+    else if (f?.statusKey) and.push({ leadStatus: { key: f.statusKey } });
   }
   return { AND: and };
 }
@@ -251,7 +276,7 @@ async function buildWhere(params: LeadListParams): Promise<Prisma.LeadWhereInput
 export async function listLeads(params: LeadListParams) {
   const page = params.page ?? 1;
   const where = await buildWhere(params);
-  const [rows, filteredTotal, total, repeated] = await Promise.all([
+  const [rows, filteredTotal, total] = await Promise.all([
     prisma.lead.findMany({
       where,
       select: rowSelect,
@@ -260,12 +285,11 @@ export async function listLeads(params: LeadListParams) {
       take: PAGE_SIZE,
     }),
     prisma.lead.count({ where }),
-    prisma.lead.count({ where: { deletedAt: null } }),
-    repeatedNumbers().then(r => r.length),
+    prisma.lead.count({ where: { deletedAt: null, convertedAt: null } }),
   ]);
   return {
     rows: rows.map(toRow),
-    summary: { total, showing: filteredTotal, repeated },
+    summary: { total, showing: filteredTotal },
     page,
     pageCount: Math.max(1, Math.ceil(filteredTotal / PAGE_SIZE)),
     pageSize: PAGE_SIZE,
@@ -297,9 +321,9 @@ export async function getFormOptions(): Promise<LeadFormOptions> {
       select: { id: true, designation: true, user: { select: { name: true } } },
     }),
     getLayout(),
-    prisma.lead.findMany({ where: { deletedAt: null, customerName: { not: null } }, distinct: ["customerName"], select: { customerName: true }, orderBy: { customerName: "asc" }, take: 1000 }),
-    prisma.lead.findMany({ where: { deletedAt: null, location: { not: null } }, distinct: ["location"], select: { location: true }, orderBy: { location: "asc" }, take: 1000 }),
-    prisma.lead.findMany({ where: { deletedAt: null, exactRequirement: { not: null } }, distinct: ["exactRequirement"], select: { exactRequirement: true }, orderBy: { exactRequirement: "asc" }, take: 1000 }),
+    prisma.lead.findMany({ where: { deletedAt: null, convertedAt: null, customerName: { not: null } }, distinct: ["customerName"], select: { customerName: true }, orderBy: { customerName: "asc" }, take: 1000 }),
+    prisma.lead.findMany({ where: { deletedAt: null, convertedAt: null, location: { not: null } }, distinct: ["location"], select: { location: true }, orderBy: { location: "asc" }, take: 1000 }),
+    prisma.lead.findMany({ where: { deletedAt: null, convertedAt: null, exactRequirement: { not: null } }, distinct: ["exactRequirement"], select: { exactRequirement: true }, orderBy: { exactRequirement: "asc" }, take: 1000 }),
     getColumnOrder(),
   ]);
   const customOptions: Record<string, LeadOptionDto[]> = {};
@@ -315,6 +339,7 @@ export async function getFormOptions(): Promise<LeadFormOptions> {
     categories: of("CATEGORY"),
     subcategories: of("SUBCATEGORY"),
     leadStatuses: of("LEAD_STATUS"),
+    dealStatuses: of("DEAL_STATUS"),
     leadTypes: of("LEAD_TYPE"),
     employees: emp,
     exactRequirements: requirementTexts.map(r => r.exactRequirement!).filter(Boolean),

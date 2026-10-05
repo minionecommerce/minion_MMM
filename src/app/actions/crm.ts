@@ -134,9 +134,10 @@ export async function getCRMStats(dateRange?: { from: Date; to: Date }) {
       }
     }),
     prisma.siteVisit.count({ where: { status: { in: ['Scheduled', 'Confirmed'] } } }),
-    prisma.deal.count({ where: { status: { notIn: ['Won', 'Lost', 'Cancelled'] } } }),
+    prisma.deal.count({ where: { deletedAt: null, status: { notIn: ['Won', 'Lost', 'Cancelled'] } } }),
     prisma.deal.findMany({
       where: {
+        deletedAt: null,
         status: 'Won',
         wonAt: { gte: from, lte: to }
       },
@@ -148,7 +149,7 @@ export async function getCRMStats(dateRange?: { from: Date; to: Date }) {
 
   // Pipeline value (sum of active deal values)
   const activeDealsValue = await prisma.deal.aggregate({
-    where: { status: { notIn: ['Won', 'Lost', 'Cancelled'] } },
+    where: { deletedAt: null, status: { notIn: ['Won', 'Lost', 'Cancelled'] } },
     _sum: { value: true }
   });
   const pipelineValue = Number(activeDealsValue._sum.value || 0);
@@ -192,10 +193,10 @@ export async function getCRMAnalytics(dateRange?: { from: Date; to: Date }) {
     prisma.siteVisit.count({ where: { status: 'Completed', createdAt: { gte: from, lte: to } } }),
     prisma.quote.count({ where: { createdAt: { gte: from, lte: to } } }),
     prisma.quote.count({ where: { status: 'Accepted', createdAt: { gte: from, lte: to } } }),
-    prisma.deal.count({ where: { createdAt: { gte: from, lte: to } } }),
-    prisma.deal.count({ where: { status: 'Won', wonAt: { gte: from, lte: to } } }),
+    prisma.deal.count({ where: { deletedAt: null, createdAt: { gte: from, lte: to } } }),
+    prisma.deal.count({ where: { deletedAt: null, status: 'Won', wonAt: { gte: from, lte: to } } }),
     prisma.deal.aggregate({
-      where: { status: { notIn: ['Won', 'Lost', 'Cancelled'] } },
+      where: { deletedAt: null, status: { notIn: ['Won', 'Lost', 'Cancelled'] } },
       _sum: { value: true }
     }),
   ]);
@@ -224,7 +225,7 @@ export async function getCRMPipelineStats() {
 
   const dealGroups = await prisma.deal.groupBy({
     by: ['stage'],
-    where: { status: { notIn: ['Lost', 'Cancelled'] } },
+    where: { deletedAt: null, status: { notIn: ['Lost', 'Cancelled'] } },
     _count: { _all: true },
     _sum: { value: true },
   });
@@ -780,7 +781,7 @@ export async function getDeals(params?: {
   const { employee } = await getCurrentEmployee();
   const isSalesOnly = isSalesOnlyRole(employee?.user?.role?.name);
 
-  const where: any = {};
+  const where: any = { deletedAt: null };
   if (isSalesOnly && employee) where.salesExecutiveId = employee.id;
   if (params?.status) where.status = params.status;
   if (params?.stage) where.stage = params.stage;
@@ -892,9 +893,10 @@ export async function updateDealStage(dealId: string, newStage: string, data?: {
     const managers = await prisma.employee.findMany({
       where: {
         user: {
-          role: {
-            name: { in: ['Sales Manager', 'Director', 'Super Admin', 'CEO / Founder'] }
-          }
+          OR: [
+            { isSuperAdmin: true },
+            { role: { name: { in: ['Sales Manager', 'Director', 'CEO / Founder'] } } },
+          ],
         }
       },
       select: { id: true }
@@ -1006,6 +1008,7 @@ export async function convertDealToProject(dealId: string, projectData: {
       await tx.task.create({
         data: {
           title: `Project Kickoff — ${projectData.name}`,
+          taskType: 'project',
           description: `Initialize project for deal ${deal.dealNumber}`,
           projectId: proj.id,
           assigneeId: projectData.managerId,

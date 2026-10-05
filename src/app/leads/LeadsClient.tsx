@@ -3,11 +3,12 @@
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
-import type { ColumnFilterKey, LeadFilterId, LeadFormOptions, LeadSortKey } from '@/lib/leads/constants';
+import { FOLLOWUP_NEEDED_MESSAGE, MIN_FOLLOWUPS_TO_CONVERT, STATUS_FILTER_ITEMS, type ColumnFilterKey, type LeadFilterId, type LeadFormOptions, type LeadSortKey } from '@/lib/leads/constants';
 import type { LeadListParams, LeadRow } from '@/lib/leads/queries';
 import { callApi } from '@/lib/leads/client';
 import { useToast } from '@/components/ui/Toast';
 import LeadHeader from './components/LeadHeader';
+import LeadToolbar from './components/LeadToolbar';
 import LeadSummary from './components/LeadSummary';
 import LeadSearch from './components/LeadSearch';
 import LeadFilters from './components/LeadFilters';
@@ -16,23 +17,26 @@ import AddLeadModal from './components/AddLeadModal';
 import ViewLeadModal from './components/ViewLeadModal';
 import PageLayoutEditor from './components/PageLayoutEditor';
 import FollowUpModal from './components/FollowUpModal';
+import FollowUpFilesModal from './components/FollowUpFilesModal';
+import CloseLeadModal from './components/CloseLeadModal';
+import ConvertLeadModal from './components/ConvertLeadModal';
 
 type Data = {
   rows: LeadRow[];
-  summary: { total: number; showing: number; repeated: number };
+  summary: { total: number; showing: number };
   page: number;
   pageCount: number;
   pageSize: number;
 };
 
-type Dialog = { kind: 'add' } | { kind: 'edit'; row: LeadRow } | { kind: 'view'; row: LeadRow } | { kind: 'delete'; row: LeadRow } | { kind: 'duplicate'; row: LeadRow } | { kind: 'layout' } | { kind: 'followup'; row: LeadRow } | null;
+type Dialog = { kind: 'add' } | { kind: 'edit'; row: LeadRow } | { kind: 'view'; row: LeadRow } | { kind: 'delete'; row: LeadRow } | { kind: 'duplicate'; row: LeadRow } | { kind: 'layout' } | { kind: 'followup'; row: LeadRow } | { kind: 'followups'; row: LeadRow } | { kind: 'close'; row: LeadRow } | { kind: 'reopen'; row: LeadRow } | { kind: 'convert'; row: LeadRow } | { kind: 'needFollowUp'; row: LeadRow } | null;
 
 export default function LeadsClient({ data, params, options, currentEmployeeId, abilities, storageReady }: {
   data: Data;
   params: LeadListParams;
   options: LeadFormOptions;
   currentEmployeeId: string | null;
-  abilities: { create: boolean; edit: boolean; delete: boolean; export: boolean; layout: boolean };
+  abilities: { create: boolean; edit: boolean; delete: boolean; convert: boolean; export: boolean; layout: boolean };
   storageReady: boolean;
 }) {
   const router = useRouter();
@@ -81,6 +85,10 @@ export default function LeadsClient({ data, params, options, currentEmployeeId, 
   const handlersFor = (row: LeadRow) => ({
     onView: () => setDialog({ kind: 'view', row }),
     onEdit: () => setDialog({ kind: 'edit', row }),
+    // A lead has to be followed up first (the number in its Follow-up column): without that another popup explains it
+    onConvert: () => setDialog({ kind: row.followUpCount >= MIN_FOLLOWUPS_TO_CONVERT ? 'convert' : 'needFollowUp', row }),
+    onCloseLead: () => setDialog({ kind: 'close', row }),
+    onReopen: () => setDialog({ kind: 'reopen', row }),
     onDuplicate: () => setDialog({ kind: 'duplicate', row }),
     onDelete: () => setDialog({ kind: 'delete', row }),
   });
@@ -90,14 +98,29 @@ export default function LeadsClient({ data, params, options, currentEmployeeId, 
   const filterGroups = {
     customer: [group('customer', 'Customer details', options.customerNames.map(n => ({ value: n, label: n })))],
     requirement: [group('requirement', 'Requirements', options.exactRequirements.map(t => ({ value: t, label: t })))],
-    assigned: [group('assigned', 'Task Assigned Person', people), group('leadPerson', 'Lead Person', people)],
+    assigned: [group('leadPerson', 'Lead Person', people), group('assigned', 'Task Assigned Person', people)],
     status: [group('status', 'Lead Status', options.leadStatuses.map(o => ({ value: o.id, label: o.label })))],
+    state: [group('state', 'Status', STATUS_FILTER_ITEMS.map(o => ({ value: o.value, label: o.label })))],
     source: [group('source', 'Source', options.sources.map(o => ({ value: o.id, label: o.label })))],
     category: [group('category', 'Categories', options.mainCategories.map(o => ({ value: o.id, label: o.label })))],
     location: [group('location', 'Location', options.locations.map(l => ({ value: l, label: l })))],
   };
 
-  // Clears the search, every filter and the sorting, then reloads the list
+  // Emptying the Lead Person filter is written as [] instead of leaving it out of the address: a bare address means "start with my own leads"
+  const onFilter = (next: Partial<Record<ColumnFilterKey, string[]>>) =>
+    setParams(Object.fromEntries(Object.entries(next).map(([k, v]) => [`f_${k}`, v && v.length ? JSON.stringify(v) : k === 'leadPerson' ? '[]' : undefined])));
+
+  // Click on the Total Leads number: show every lead. The search, quick filters, column filters and dates are dropped (the sorting
+  // stays) and the Lead Person filter is switched off explicitly, so it does not start again with the signed-in person's leads.
+  const showAll = () => {
+    resetting.current = true;
+    setQ('');
+    const next = new URLSearchParams({ f_leadPerson: '[]' });
+    for (const k of ['sort', 'dir']) { const v = search.get(k); if (v) next.set(k, v); }
+    startTransition(() => { router.push(`/leads?${next}`); router.refresh(); });
+  };
+
+  // Clears the search, every filter and the sorting, then reloads the list (it starts again with the signed-in person's own leads)
   const clearAll = () => {
     resetting.current = true;
     setQ('');
@@ -108,30 +131,25 @@ export default function LeadsClient({ data, params, options, currentEmployeeId, 
   return (
     <div data-light-native className="w-full min-h-screen bg-white text-[#333] font-sans">
       <div className="px-4 sm:px-5 pt-6 pb-10 max-w-[2000px] mx-auto">
-        <LeadHeader
-          options={options}
-          params={params}
-          canCreate={abilities.create}
-          canExport={abilities.export}
-          canEditLayout={abilities.layout}
-          refreshing={pending}
-          onAdd={() => setDialog({ kind: 'add' })}
-          onEditLayout={() => setDialog({ kind: 'layout' })}
-          onRefresh={clearAll}
-          onParams={setParams}
-          exportHref={exportHref}
-        />
+        <LeadHeader />
 
         <div className="mt-6 flex flex-col lg:flex-row lg:flex-wrap lg:items-center gap-x-5 gap-y-3 pb-5 border-b-[3px] border-gray-200">
-          <LeadSummary
-            total={data.summary.total}
-            showing={data.summary.showing}
-            repeated={data.summary.repeated}
-            repeatedActive={params.filter === 'repeated'}
-            onRepeated={() => setParams({ filter: params.filter === 'repeated' ? undefined : 'repeated' })}
-          />
+          <LeadSummary total={data.summary.total} showing={data.summary.showing} onShowAll={showAll} />
           <LeadSearch value={q} onChange={setQ} />
           <LeadFilters active={params.filter} onChange={(id: LeadFilterId | undefined) => setParams({ filter: id })} />
+          <LeadToolbar
+            className="self-end lg:self-auto lg:ml-auto"
+            params={params}
+            canCreate={abilities.create}
+            canExport={abilities.export}
+            canEditLayout={abilities.layout}
+            refreshing={pending}
+            onAdd={() => setDialog({ kind: 'add' })}
+            onEditLayout={() => setDialog({ kind: 'layout' })}
+            onRefresh={clearAll}
+            onParams={setParams}
+            exportHref={exportHref}
+          />
         </div>
 
         <div className="mt-4">
@@ -143,10 +161,21 @@ export default function LeadsClient({ data, params, options, currentEmployeeId, 
             loading={pending}
             columnOrder={options.columnOrder}
             filterGroups={filterGroups}
-            onFilter={next => setParams(Object.fromEntries(Object.entries(next).map(([k, v]) => [`f_${k}`, v && v.length ? JSON.stringify(v) : undefined])))}
+            onFilter={onFilter}
             onSort={(k: LeadSortKey, d) => setParams({ sort: k, dir: d })}
             onReset={clearAll}
             onFollowUp={row => setDialog({ kind: 'followup', row })}
+            onViewFollowUps={row => setDialog({ kind: 'followups', row })}
+            inline={{
+              leadStatuses: options.leadStatuses,
+              required: {
+                amount: !!options.fields.find(f => f.key === 'amount')?.required,
+                leadStatusId: !!options.fields.find(f => f.key === 'leadStatusId')?.required,
+                location: !!options.fields.find(f => f.key === 'location')?.required,
+                exactLocation: !!options.fields.find(f => f.key === 'exactLocation')?.required,
+              },
+              onSaved: () => router.refresh(),
+            }}
             handlersFor={handlersFor}
           />
         </div>
@@ -167,23 +196,46 @@ export default function LeadsClient({ data, params, options, currentEmployeeId, 
         <PageLayoutEditor initialFields={options.fields} columnOrder={options.columnOrder} onClose={changed => { setDialog(null); if (changed) router.refresh(); }} />
       )}
       {dialog?.kind === 'followup' && abilities.edit && (
-        <FollowUpModal row={dialog.row} onClose={() => setDialog(null)} onSaved={() => afterSave(`Follow-up saved for ${dialog.row.code}`)} />
+        <FollowUpModal key={dialog.row.id} row={dialog.row} onClose={() => setDialog(null)} onSaved={() => afterSave(`Follow-up saved for ${dialog.row.code}`)} />
+      )}
+      {dialog?.kind === 'followups' && <FollowUpFilesModal row={dialog.row} onClose={() => setDialog(null)} />}
+      {dialog?.kind === 'close' && abilities.edit && (
+        <CloseLeadModal key={dialog.row.id} row={dialog.row} onClose={() => setDialog(null)} onSaved={() => afterSave(`Lead ${dialog.row.code} closed`)} />
+      )}
+      {dialog?.kind === 'convert' && abilities.convert && (
+        <ConvertLeadModal key={dialog.row.id} row={dialog.row} onClose={() => setDialog(null)} onSaved={result => afterSave(`Lead ${dialog.row.code} converted to deal ${result.dealNumber}`)} />
+      )}
+      {dialog?.kind === 'needFollowUp' && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-4" onMouseDown={e => { if (e.target === e.currentTarget) setDialog(null); }}>
+          <div role="alertdialog" aria-modal="true" aria-labelledby="needfu-title" aria-describedby="needfu-text" onKeyDown={e => { if (e.key === 'Escape') setDialog(null); }} className="bg-white rounded-lg shadow-2xl p-6 w-full max-w-sm">
+            <h3 id="needfu-title" className="text-[17px] font-bold text-[#333]">Follow-up needed</h3>
+            <p id="needfu-text" className="text-[14px] text-gray-600 mt-2">{FOLLOWUP_NEEDED_MESSAGE}</p>
+            <div className="flex justify-end mt-5">
+              <button autoFocus onClick={() => setDialog(null)} className="px-5 h-[38px] rounded-md bg-black text-white text-[14px]">OK</button>
+            </div>
+          </div>
+        </div>
       )}
       {dialog?.kind === 'view' && <ViewLeadModal leadId={dialog.row.id} options={options} onClose={() => setDialog(null)} />}
+      {!dialog && search.get('view') && <ViewLeadModal key={search.get('view')} leadId={search.get('view')!} options={options} onClose={() => setParams({ view: undefined }, true)} />}
 
-      {(dialog?.kind === 'delete' || dialog?.kind === 'duplicate') && (
+      {(dialog?.kind === 'delete' || dialog?.kind === 'duplicate' || dialog?.kind === 'reopen') && (
         <div className="fixed inset-0 z-[90] flex items-center justify-center bg-black/40 p-4">
           <div role="alertdialog" aria-modal="true" aria-labelledby="confirm-title" className="bg-white rounded-lg shadow-2xl p-6 w-full max-w-sm">
-            <h3 id="confirm-title" className="text-[17px] font-bold text-[#333]">{dialog.kind === 'delete' ? 'Delete lead?' : 'Duplicate lead?'}</h3>
+            <h3 id="confirm-title" className="text-[17px] font-bold text-[#333]">{dialog.kind === 'delete' ? 'Delete lead?' : dialog.kind === 'reopen' ? 'Reopen lead?' : 'Duplicate lead?'}</h3>
             <p className="text-[14px] text-gray-600 mt-2">
               {dialog.kind === 'delete'
                 ? <>Lead <b>{dialog.row.code}</b> ({dialog.row.customerName}) will be removed from the list. Its Lead ID is never reused.</>
-                : <>A new lead with a new Lead ID will be created from <b>{dialog.row.code}</b>. Files are not copied.</>}
+                : dialog.kind === 'reopen'
+                  ? <>Lead <b>{dialog.row.code}</b> ({dialog.row.customerName}) will show as Open again. Why it was closed, and its files, stay in its history.</>
+                  : <>A new lead with a new Lead ID will be created from <b>{dialog.row.code}</b>. Files are not copied.</>}
             </p>
             <div className="flex justify-end gap-3 mt-5">
               <button disabled={busy} onClick={() => setDialog(null)} className="px-4 h-[38px] rounded-md bg-gray-200 text-gray-800 text-[14px] disabled:opacity-60">Cancel</button>
               {dialog.kind === 'delete' ? (
                 <button disabled={busy} onClick={() => run(() => callApi(`/api/leads/${dialog.row.id}`, 'DELETE').then(() => {}), `Lead ${dialog.row.code} deleted`)} className="px-4 h-[38px] rounded-md bg-[#d9232b] text-white text-[14px] disabled:opacity-60">{busy ? 'Deleting…' : 'Delete'}</button>
+              ) : dialog.kind === 'reopen' ? (
+                <button disabled={busy} onClick={() => run(() => callApi(`/api/leads/${dialog.row.id}/reopen`, 'POST').then(() => {}), `Lead ${dialog.row.code} reopened`)} className="px-4 h-[38px] rounded-md bg-black text-white text-[14px] disabled:opacity-60">{busy ? 'Reopening…' : 'Reopen'}</button>
               ) : (
                 <button disabled={busy} onClick={() => run(async () => { await callApi(`/api/leads/${dialog.row.id}/duplicate`, 'POST'); }, 'Lead duplicated')} className="px-4 h-[38px] rounded-md bg-black text-white text-[14px] disabled:opacity-60">{busy ? 'Duplicating…' : 'Duplicate'}</button>
               )}

@@ -67,12 +67,12 @@ export async function loadAuthState(userId: string): Promise<AuthState | null> {
       sessionVersion: true,
       mustChangePassword: true,
       isAdmin: true,
+      isSuperAdmin: true,
       roleId: true,
       role: {
         select: {
           name: true,
           isActive: true,
-          isSuperAdmin: true,
           permissions: { select: { effect: true, permission: { select: { module: true, action: true, isLegacy: true } } } },
         },
       },
@@ -95,7 +95,7 @@ export async function loadAuthState(userId: string): Promise<AuthState | null> {
 
   const roleActive = !!user.role?.isActive;
   const permissions = resolvePermissions({
-    isSuperAdmin: roleActive && !!user.role?.isSuperAdmin,
+    isSuperAdmin: user.isSuperAdmin, // chosen in Create / Edit User → Details → Access
     isAdmin: user.isAdmin,
     roleGrants: roleActive ? user.role!.permissions.map(rp => ({ ...rp.permission, effect: rp.effect })) : [],
     userOverrides: (user.employee?.permissionOverrides ?? []).map(o => ({ ...o.permission, effect: o.effect, expiresAt: o.expiresAt })),
@@ -110,9 +110,9 @@ export async function loadAuthState(userId: string): Promise<AuthState | null> {
     sessionVersion: user.sessionVersion,
     mustChangePassword: user.mustChangePassword,
     isAdmin: user.isAdmin,
-    isSuperAdmin: roleActive && !!user.role?.isSuperAdmin,
+    isSuperAdmin: user.isSuperAdmin,
     roleId: user.roleId,
-    roleName: user.role?.name ?? null,
+    roleName: user.isSuperAdmin ? "Super Admin" : user.role?.name ?? null,
     employeeId: user.employee?.id ?? null,
     department: user.employee?.departmentRef?.name || user.employee?.department || null,
     permissions,
