@@ -6,14 +6,14 @@
 // What it does:
 //   1. Upserts every catalog permission (module.action) and flags older rows as legacy
 //   2. Translates legacy role/user grants (e.g. "CRM.VIEW") to catalog keys (once)
-//   3. Marks Super Admin roles (SUPER_ADMIN, "Super Admin") as Super Admin / system
+//   3. Gives every role a stable key
 //   4. Gives every role Dashboard + My Work (they used to be visible to everyone)
 //   5. Creates starter roles that do not exist yet (existing roles are never changed)
 //   6. Sets accounts without a password to PENDING
-import { PrismaClient } from "@prisma/client";
+import { createPrismaClient } from "../src/lib/prisma-factory";
 import { ACTIONS, CRM_MODULES, LEGACY_ACTION_MAP, LEGACY_MODULE_MAP, MODULES, permissionKey, type Action } from "../src/lib/rbac/catalog";
 
-const prisma = new PrismaClient();
+const prisma = createPrismaClient();
 
 const ALL = [...ACTIONS];
 const VCE: Action[] = ["view", "create", "edit"];
@@ -87,16 +87,6 @@ async function main() {
   }
   console.log(`Translated ${translated} legacy grants`);
 
-  // 3. Super Admin role(s): "SUPER_ADMIN", "Super Admin", ... all keep full access
-  const superRoles = (await prisma.role.findMany()).filter(r => r.key === "super_admin" || slug(r.name) === "super_admin");
-  for (const [i, r] of superRoles.entries()) {
-    const keyTaken = i > 0 || (r.key !== "super_admin" && (await prisma.role.findUnique({ where: { key: "super_admin" } })));
-    await prisma.role.update({
-      where: { id: r.id },
-      data: { isSuperAdmin: true, isSystem: true, ...(keyTaken ? {} : { key: "super_admin" }) },
-    });
-  }
-
   // Keys for any role without one
   for (const r of await prisma.role.findMany({ where: { key: null } })) {
     let key = slug(r.name) || "role";
@@ -104,9 +94,9 @@ async function main() {
     await prisma.role.update({ where: { id: r.id }, data: { key } });
   }
 
-  // 4. Dashboard + My Work for every non-super role (previous default behaviour)
+  // 4. Dashboard + My Work for every role (previous default behaviour; Super Admin is a setting of the user, not a role)
   const baseline = ["dashboard.view", "my_work.view", "my_work.create", "my_work.edit"];
-  for (const r of await prisma.role.findMany({ where: { isSuperAdmin: false } })) {
+  for (const r of await prisma.role.findMany()) {
     for (const key of baseline) {
       const permissionId = idByKey.get(key)!;
       const exists = await prisma.rolePermission.findUnique({ where: { roleId_permissionId: { roleId: r.id, permissionId } } });

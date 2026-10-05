@@ -1,5 +1,5 @@
 import { notFound } from 'next/navigation';
-import { can, requirePageAccess } from '@/lib/auth';
+import { requirePageAccess } from '@/lib/auth';
 import { listRolesWithPermissions } from '@/lib/users/queries';
 import { PageShell } from '../../UsersNav';
 import RoleEditor from './RoleEditor';
@@ -12,12 +12,12 @@ export default async function RoleDetailPage({ params }: { params: Promise<{ rol
   const role = (await listRolesWithPermissions()).find(r => r.id === roleId);
   if (!role) notFound();
 
-  // Same rules as the server: no editing the Super Admin role unless Super Admin, never your own role
-  const editable = can(ctx, 'users', 'edit') && (ctx.isSuperAdmin || (!role.isSuperAdmin && ctx.roleId !== role.id));
+  // Same rule as the server: roles and their permissions are changed by Super Admins only
+  const editable = ctx.isSuperAdmin;
 
   return (
     <PageShell title={role.name} subtitle={role.description ?? undefined}>
-      <RoleEditor role={role} editable={editable} grantable={ctx.permissions} ownRole={ctx.roleId === role.id} />
+      <RoleEditor role={role} editable={editable} grantable={ctx.permissions} />
     </PageShell>
   );
 }

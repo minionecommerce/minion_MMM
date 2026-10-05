@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Home, Briefcase, Target, LayoutGrid, TreePine, CheckCircle2, Users, UserCog, BookOpen, Gift, Library, Search, Bell, ChevronUp, LogOut, Menu, X, PanelLeftClose, KeyRound, ClipboardList, type LucideIcon } from 'lucide-react';
+import { Home, Briefcase, Target, LayoutGrid, TreePine, CheckCircle2, Users, UserCog, BookOpen, Gift, Library, Search, Bell, ChevronUp, LogOut, Menu, X, PanelLeftClose, KeyRound, ClipboardList, Handshake, Boxes, Wrench, Wallet, HandCoins, type LucideIcon } from 'lucide-react';
 import { NAV_ITEMS, snapshotCanViewAny } from '@/lib/rbac/catalog';
 import { useSession, signOut } from 'next-auth/react';
 import { useEffect, useState, useSyncExternalStore } from 'react';
@@ -11,6 +11,11 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/": Home,
   "/my-work": Briefcase,
   "/leads": ClipboardList,
+  "/deals": Handshake,
+  "/material-vendors": Boxes,
+  "/service-vendors": Wrench,
+  "/pre-payments": Wallet,
+  "/payment-collections": HandCoins,
   "/crm": Target,
   "/projects": LayoutGrid,
   "/parks": TreePine,
@@ -164,7 +169,7 @@ export default function GlobalNavbar() {
               aria-current={isActive ? 'page' : undefined}
               onClick={() => setMobileOpen(false)}
               className={`relative flex items-center gap-3 rounded-lg transition-colors group ${
-                isCompact ? 'justify-center h-11' : 'px-3 h-11'
+                isCompact ? 'justify-center h-11' : 'px-3 min-h-11 py-1'
               } ${
                 isActive ? 'bg-yellow-400/10 text-yellow-400' : 'text-gray-400 hover:text-gray-200 hover:bg-[#1a1b1e]'
               }`}
@@ -173,7 +178,7 @@ export default function GlobalNavbar() {
                 <div className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-6 bg-yellow-400 rounded-r-full" />
               )}
               <Icon className={`w-5 h-5 shrink-0 ${isActive ? 'text-yellow-400' : 'text-gray-400 group-hover:text-gray-200'} transition-colors`} />
-              {!isCompact && <span className="text-[12px] font-bold tracking-wider truncate">{item.label}</span>}
+              {!isCompact && <span className="text-[12px] font-bold tracking-wider leading-tight">{item.label}</span>}
             </Link>
           );
         })}
@@ -280,14 +285,15 @@ export default function GlobalNavbar() {
         </div>
       )}
 
-      {/* Desktop, hidden: only a small menu icon is left at the bottom; clicking it brings the icon strip back */}
+      {/* Desktop, hidden: only a small menu icon is left; clicking it brings the icon strip back.
+          It sits at the same height as "Hide menu" does above the profile avatar (77px profile block + 8px gap + half of the 32px button = 101px from the bottom; the 24px button needs 89px under it) */}
       {hidden && (
         <div data-sidebar className="hidden lg:flex flex-col justify-end sticky top-0 h-screen w-7 shrink-0 z-40 bg-[#111113]">
           <button
             onClick={e => { setHoldClosed({ x: e.clientX, y: e.clientY }); setHiddenPreference(false); }}
             aria-label="Show menu"
             title="Show menu"
-            className="mb-3 mx-auto w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-white hover:bg-[#1a1b1e] transition-colors"
+            className="mb-[89px] mx-auto w-6 h-6 flex items-center justify-center rounded text-gray-400 hover:text-white hover:bg-[#1a1b1e] transition-colors"
           >
             <PanelLeftClose className="w-4 h-4" />
           </button>

@@ -2,12 +2,13 @@ import type { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import { loadAuthState } from "@/lib/auth";
 import { permissionKey } from "@/lib/rbac/catalog";
+import { getDepartmentOrder, sortDepartments } from "./layout";
 
 export const PAGE_SIZE = 20;
 
 export type UserListParams = {
   q?: string;
-  roleId?: string;
+  access?: string; // "super_admin" or the id of an access level
   status?: string;
   sort?: "name" | "email" | "createdAt" | "lastLoginAt" | "status";
   dir?: "asc" | "desc";
@@ -25,7 +26,11 @@ export async function listUsers(params: UserListParams) {
       { employee: { employeeCode: { contains: q, mode: "insensitive" } } },
     ];
   }
-  if (params.roleId) where.roleId = params.roleId;
+  if (params.access === "super_admin") where.isSuperAdmin = true;
+  else if (params.access) {
+    where.isSuperAdmin = false;
+    where.accessId = params.access;
+  }
   if (params.status) where.status = params.status;
 
   const dir = params.dir === "asc" ? "asc" : "desc";
@@ -49,9 +54,11 @@ export async function listUsers(params: UserListParams) {
         email: true,
         status: true,
         isAdmin: true,
+        isSuperAdmin: true,
+        accessId: true,
         lastLoginAt: true,
         createdAt: true,
-        role: { select: { id: true, name: true, isSuperAdmin: true, _count: { select: { permissions: true } } } },
+        role: { select: { id: true, name: true, _count: { select: { permissions: true } } } },
         employee: {
           select: {
             employeeCode: true,
@@ -71,7 +78,8 @@ export async function listUsers(params: UserListParams) {
     email: u.email,
     status: u.status,
     isAdmin: u.isAdmin,
-    isSuperAdmin: !!u.role?.isSuperAdmin,
+    isSuperAdmin: u.isSuperAdmin,
+    accessId: u.accessId,
     lastLoginAt: u.lastLoginAt?.toISOString() ?? null,
     createdAt: u.createdAt.toISOString(),
     roleId: u.role?.id ?? null,
@@ -101,7 +109,9 @@ export async function getUserProfile(id: string) {
       passwordChangedAt: true,
       createdAt: true,
       deletedAt: true,
-      role: { select: { id: true, name: true, isSuperAdmin: true } },
+      isSuperAdmin: true,
+      accessId: true,
+      role: { select: { id: true, name: true } },
       employee: {
         select: {
           id: true,
@@ -112,6 +122,7 @@ export async function getUserProfile(id: string) {
           departmentId: true,
           departmentRef: { select: { name: true } },
           joiningDate: true,
+          customFields: true,
           permissionOverrides: { select: { effect: true, permission: { select: { module: true, action: true, isLegacy: true } } } },
         },
       },
@@ -143,7 +154,8 @@ export async function getUserProfile(id: string) {
     image: u.image,
     status: u.status,
     isAdmin: u.isAdmin,
-    isSuperAdmin: !!u.role?.isSuperAdmin,
+    isSuperAdmin: u.isSuperAdmin,
+    accessId: u.accessId,
     mustChangePassword: u.mustChangePassword,
     lastLoginAt: u.lastLoginAt?.toISOString() ?? null,
     lockedUntil: u.lockedUntil && u.lockedUntil > new Date() ? u.lockedUntil.toISOString() : null,
@@ -158,6 +170,7 @@ export async function getUserProfile(id: string) {
     departmentId: u.employee?.departmentId ?? null,
     department: u.employee?.departmentRef?.name || u.employee?.department || null,
     joiningDate: u.employee?.joiningDate?.toISOString() ?? null,
+    customFields: ((u.employee?.customFields ?? {}) as Record<string, string | number | boolean>),
     effectivePermissions: state?.permissions ?? [],
     rolePermissions: rolePerms.map(r => permissionKey(r.permission.module, r.permission.action)),
     overrides: (u.employee?.permissionOverrides ?? [])
@@ -178,13 +191,12 @@ export type UserProfile = NonNullable<Awaited<ReturnType<typeof getUserProfile>>
 
 export async function listRolesWithPermissions() {
   const roles = await prisma.role.findMany({
-    orderBy: [{ isSuperAdmin: "desc" }, { name: "asc" }],
+    orderBy: { name: "asc" },
     select: {
       id: true,
       name: true,
       description: true,
       isActive: true,
-      isSuperAdmin: true,
       isSystem: true,
       _count: { select: { users: { where: { deletedAt: null } } } },
       permissions: { where: { effect: "ALLOW", permission: { isLegacy: false } }, select: { permission: { select: { module: true, action: true } } } },
@@ -195,7 +207,6 @@ export async function listRolesWithPermissions() {
     name: r.name,
     description: r.description,
     isActive: r.isActive,
-    isSuperAdmin: r.isSuperAdmin,
     isSystem: r.isSystem,
     userCount: r._count.users,
     permissions: r.permissions.map(p => permissionKey(p.permission.module, p.permission.action)),
@@ -204,37 +215,10 @@ export async function listRolesWithPermissions() {
 
 export type RoleSummary = Awaited<ReturnType<typeof listRolesWithPermissions>>[number];
 
+// In the order a Super Admin set in Users → Edit Page Layout (by name until then)
 export async function listDepartments() {
-  return prisma.department.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } });
-}
-
-// Employees that do not yet have a usable login
-export async function listEmployeesWithoutLogin() {
-  const rows = await prisma.employee.findMany({
-    where: { user: { password: null, deletedAt: null } },
-    orderBy: { createdAt: "desc" },
-    take: 200,
-    select: {
-      id: true,
-      employeeCode: true,
-      designation: true,
-      contactNumber: true,
-      departmentId: true,
-      department: true,
-      departmentRef: { select: { name: true } },
-      user: { select: { name: true, email: true } },
-    },
-  });
-  return rows.map(e => ({
-    id: e.id,
-    name: e.user.name ?? "",
-    email: e.user.email && !e.user.email.startsWith("emp.") ? e.user.email : "",
-    employeeCode: e.employeeCode ?? "",
-    designation: e.designation ?? "",
-    phone: e.contactNumber ?? "",
-    departmentId: e.departmentId ?? "",
-    department: e.departmentRef?.name || e.department || "",
-  }));
+  const [rows, saved] = await Promise.all([prisma.department.findMany({ orderBy: { name: "asc" }, select: { id: true, name: true } }), getDepartmentOrder()]);
+  return sortDepartments(rows, saved);
 }
 
 export async function listAuditLog(params: { action?: string; page?: number }) {

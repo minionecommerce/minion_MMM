@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Crown, Lock, Plus, Shield, Loader2 } from 'lucide-react';
+import { Lock, Plus, Shield, Loader2 } from 'lucide-react';
 import { callApi } from '@/components/users/UserActions';
 import { useToast } from '@/components/ui/Toast';
 import type { RoleSummary } from '@/lib/users/queries';
@@ -49,7 +49,7 @@ export default function RolesList({ roles, canEdit }: { roles: RoleSummary[]; ca
           <Link key={r.id} href={`/users/roles/${r.id}`} className="bg-[#151619] border border-[#292B30] rounded-xl p-5 hover:border-yellow-400/40 transition-colors">
             <div className="flex items-start justify-between gap-3">
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg bg-[#292B30] flex items-center justify-center">{r.isSuperAdmin ? <Crown className="w-4 h-4 text-yellow-400" /> : <Shield className="w-4 h-4 text-yellow-500" />}</div>
+                <div className="w-9 h-9 rounded-lg bg-[#292B30] flex items-center justify-center"><Shield className="w-4 h-4 text-yellow-500" /></div>
                 <div>
                   <div className="text-[15px] font-bold flex items-center gap-1.5">{r.name}{r.isSystem && <Lock className="w-3 h-3 text-gray-500" aria-label="System role" />}</div>
                   <div className="text-[11px] text-gray-500">{r.userCount} user{r.userCount === 1 ? '' : 's'}</div>
@@ -58,7 +58,7 @@ export default function RolesList({ roles, canEdit }: { roles: RoleSummary[]; ca
               {!r.isActive && <span className="px-2 py-0.5 rounded-full border border-gray-500/30 text-gray-400 text-[10px] font-bold">INACTIVE</span>}
             </div>
             <p className="text-[12px] text-gray-400 mt-3 line-clamp-2">{r.description || 'No description'}</p>
-            <div className="text-[12px] mt-3 text-yellow-400/80 font-semibold">{r.isSuperAdmin ? 'Every permission' : `${r.permissions.length} permissions`}</div>
+            <div className="text-[12px] mt-3 text-yellow-400/80 font-semibold">{r.permissions.length} permissions</div>
           </Link>
         ))}
       </div>

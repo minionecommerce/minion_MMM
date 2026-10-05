@@ -123,6 +123,7 @@ export async function createProjectTask(formData: FormData) {
 
     const task = await prisma.task.create({
       data: {
+        taskType: "project",
         projectId,
         title,
         description: description || null,

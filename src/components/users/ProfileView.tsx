@@ -1,22 +1,24 @@
 'use client';
 
 import Link from 'next/link';
-import { Crown, ShieldCheck, Mail, Phone, Building2, Briefcase, IdCard, Calendar, Clock, KeyRound, Lock, Pencil, Shield, UserX, UserCheck } from 'lucide-react';
+import { Crown, ShieldCheck, Mail, Phone, Building2, Briefcase, IdCard, Calendar, Clock, KeyRound, Lock, Pencil, Shield, UserX, UserCheck, Tag } from 'lucide-react';
 import { PermissionMatrix } from '@/components/users/PermissionMatrix';
 import { StatusBadge, useUserActionDialogs } from '@/components/users/UserActions';
 import type { UserProfile } from '@/lib/users/queries';
+import { accessLabel, displayCustomValue, renamedLabel, type UserLayout } from '@/lib/users/layout-shared';
 
 const fmt = (iso: string | null, withTime = false) =>
   iso ? new Date(iso).toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', ...(withTime ? { hour: '2-digit', minute: '2-digit' } : {}) }) : '—';
 
 const ACTION_LABEL: Record<string, string> = {
-  USER_CREATED: 'Account created', USER_UPDATED: 'Details updated', ROLE_CHANGED: 'Role changed', PERMISSIONS_CHANGED: 'Permissions changed',
+  USER_CREATED: 'Account created', USER_UPDATED: 'Details updated', ROLE_CHANGED: 'Role changed', ACCESS_CHANGED: 'Access changed', PERMISSIONS_CHANGED: 'Permissions changed',
   PASSWORD_RESET: 'Password reset by admin', PASSWORD_CHANGED: 'Password changed', USER_ACTIVATED: 'Account activated',
   USER_DEACTIVATED: 'Account deactivated', USER_SUSPENDED: 'Account suspended', USER_DELETED: 'Account deleted', LOGIN: 'Signed in',
   LOGOUT: 'Signed out', FAILED_LOGIN: 'Failed sign-in', ACCOUNT_LOCKED: 'Account locked', ACCESS_DENIED: 'Access denied',
 };
 
-export function ProfileView({ profile, isSelf, abilities }: {
+export function ProfileView({ profile, isSelf, abilities, layout }: {
+  layout?: UserLayout; // field names from Users → Edit Page Layout
   profile: UserProfile;
   isSelf: boolean;
   abilities?: { canEdit: boolean; canDelete: boolean; isSuperAdmin: boolean };
@@ -27,11 +29,13 @@ export function ProfileView({ profile, isSelf, abilities }: {
   const btn = 'flex items-center gap-2 px-3.5 py-2 rounded-lg border border-[#292B30] text-[12px] font-semibold text-gray-200 hover:bg-[#1a1b1e]';
 
   const fields = [
-    { icon: IdCard, label: 'Employee ID', value: profile.employeeCode },
-    { icon: Mail, label: 'Email', value: profile.email },
-    { icon: Phone, label: 'Phone', value: profile.phone },
-    { icon: Building2, label: 'Department', value: profile.department },
-    { icon: Briefcase, label: 'Designation', value: profile.designation },
+    { icon: IdCard, label: renamedLabel(layout, 'employeeCode', 'Employee ID'), value: profile.employeeCode },
+    { icon: Mail, label: renamedLabel(layout, 'email', 'Email'), value: profile.email },
+    { icon: Phone, label: renamedLabel(layout, 'phone', 'Phone'), value: profile.phone },
+    { icon: Building2, label: renamedLabel(layout, 'departmentId', 'Department'), value: profile.department },
+    { icon: Briefcase, label: renamedLabel(layout, 'designation', 'Designation'), value: profile.designation },
+    // The fields added with New Field, in the order set in Edit Page Layout
+    ...(layout?.fields ?? []).filter(f => !f.isSystem).map(f => ({ icon: Tag, label: f.label, value: displayCustomValue(f, profile.customFields[f.key]) })),
     { icon: Calendar, label: 'Created', value: fmt(profile.createdAt) },
     { icon: Clock, label: 'Last login', value: profile.lastLoginAt ? fmt(profile.lastLoginAt, true) : 'Never' },
     { icon: KeyRound, label: 'Password changed', value: fmt(profile.passwordChangedAt, true) },
@@ -52,7 +56,7 @@ export function ProfileView({ profile, isSelf, abilities }: {
             {profile.mustChangePassword && <span className="px-2 py-0.5 rounded-full border border-blue-500/30 bg-blue-500/10 text-blue-400 text-[10px] font-bold">MUST CHANGE PASSWORD</span>}
           </div>
           <div className="text-[13px] text-gray-400 mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
-            <span className="flex items-center gap-1.5">{profile.isSuperAdmin && <Crown className="w-3.5 h-3.5 text-yellow-400" />}{profile.roleName || 'No role'}</span>
+            <span className="flex items-center gap-1.5">{profile.isSuperAdmin && <Crown className="w-3.5 h-3.5 text-yellow-400" />}{accessLabel(layout, profile)}</span>
             {profile.isAdmin && <span className="flex items-center gap-1 text-yellow-400"><ShieldCheck className="w-3.5 h-3.5" /> Full Administrator</span>}
           </div>
         </div>
@@ -79,7 +83,7 @@ export function ProfileView({ profile, isSelf, abilities }: {
           <div className="bg-[#151619] border border-[#292B30] rounded-xl p-5 space-y-4">
             <h3 className="text-[14px] font-bold">Effective Permissions</h3>
             {profile.effectivePermissions.includes('*') ? (
-              <div className="p-4 rounded-lg bg-yellow-400/5 border border-yellow-400/20 text-[13px] text-yellow-200">Every permission ({profile.isSuperAdmin ? 'Super Admin role' : 'Full Administrator Access'}).</div>
+              <div className="p-4 rounded-lg bg-yellow-400/5 border border-yellow-400/20 text-[13px] text-yellow-200">Every permission ({profile.isSuperAdmin ? 'Super Admin Access' : 'Full Administrator Access'}).</div>
             ) : (
               <PermissionMatrix mode="readonly" effective={profile.effectivePermissions} />
             )}

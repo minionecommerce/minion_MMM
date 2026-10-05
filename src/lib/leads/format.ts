@@ -29,6 +29,21 @@ export function formatDate(date: Date, timeZone = crmTimeZone()) {
   return new Intl.DateTimeFormat("en-GB", { timeZone, day: "2-digit", month: "2-digit", year: "numeric" }).format(date);
 }
 
+// 12-02-2026 (the Deals page writes dates with dashes)
+export function formatDashDate(date: Date, timeZone = crmTimeZone()) {
+  return formatDate(date, timeZone).replace(/\//g, "-");
+}
+
+// 04-10-2026, 06:30 PM: when a deal was created, or a lead
+export function formatDealStamp(date: Date, timeZone = crmTimeZone()) {
+  return `${formatDashDate(date, timeZone)}, ${formatTime(date, timeZone)}`;
+}
+
+// A deal's Closing Date (its validity) is a calendar day stored at midnight UTC, so it is written in UTC, not in the CRM time zone
+export function formatDealValidity(date: Date) {
+  return formatDashDate(date, "UTC");
+}
+
 // 10:07 AM (newer ICU versions insert a narrow no-break space before AM/PM)
 export function formatTime(date: Date, timeZone = crmTimeZone()) {
   return new Intl.DateTimeFormat("en-US", { timeZone, hour: "2-digit", minute: "2-digit", hour12: true })
@@ -39,6 +54,26 @@ export function formatTime(date: Date, timeZone = crmTimeZone()) {
 export function formatRupees(value: number | null | undefined) {
   const n = Number(value ?? 0);
   return "₹" + new Intl.NumberFormat("en-IN", { maximumFractionDigits: 2 }).format(n);
+}
+
+// Today as a calendar day in the CRM time zone: 2026-10-04
+export function todayDay(now = new Date(), timeZone = crmTimeZone()) {
+  return new Intl.DateTimeFormat("en-CA", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).format(now);
+}
+
+// The Closing Date the Convert popup starts with: two weeks from today, moved to the Monday when that day is a Sunday
+export function defaultClosingDay(today = todayDay()) {
+  const d = new Date(`${today}T00:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + 14);
+  if (d.getUTCDay() === 0) d.setUTCDate(d.getUTCDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+// True only for a real calendar day written as YYYY-MM-DD ("2026-02-31" is not one)
+export function isRealDay(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const d = new Date(`${value}T00:00:00Z`);
+  return !Number.isNaN(d.getTime()) && d.toISOString().slice(0, 10) === value;
 }
 
 // How far the time zone is ahead of UTC at a given instant, in minutes

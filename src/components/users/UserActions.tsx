@@ -12,7 +12,7 @@ export type ActionTarget = {
   name: string | null;
   status: string;
   isSelf: boolean;
-  privileged: boolean; // Super Admin role or Full Administrator
+  privileged: boolean; // Super Admin or Full Administrator
 };
 
 type Abilities = { canEdit: boolean; canDelete: boolean; isSuperAdmin: boolean };

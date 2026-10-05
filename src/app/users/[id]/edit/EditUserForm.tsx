@@ -7,21 +7,29 @@ import { Loader2, Save } from 'lucide-react';
 import { callApi } from '@/components/users/UserActions';
 import { useToast } from '@/components/ui/Toast';
 import type { UserProfile } from '@/lib/users/queries';
+import { SUPER_ADMIN_ACCESS_ID, customFromForm, customToForm, fieldLabel, firstMissingField, type UserFieldKey, type UserLayout } from '@/lib/users/layout-shared';
+import UserFormFields from '../../components/UserFormFields';
 
-const inputClass = 'w-full bg-[#0D0D0F] border border-[#292B30] rounded-lg px-4 py-2.5 text-sm text-white focus:border-yellow-500 focus:outline-none disabled:opacity-50';
-const labelClass = 'block text-[12px] font-semibold text-gray-400 mb-1.5';
+// The Access level a person has now, as an option id of the Access field. Accounts that predate access levels have none
+// saved: the first level that gives their role is shown instead.
+function currentAccess(profile: UserProfile, layout: UserLayout) {
+  if (profile.isSuperAdmin) return SUPER_ADMIN_ACCESS_ID;
+  const options = layout.fields.find(f => f.key === 'access')?.options ?? [];
+  if (profile.accessId && options.some(o => o.id === profile.accessId)) return profile.accessId;
+  return options.find(o => !o.locked && o.roleId && o.roleId === profile.roleId)?.id ?? '';
+}
 
-export default function EditUserForm({ profile, roles, departments, isSelf, actorIsSuperAdmin }: {
+export default function EditUserForm({ profile, departments, isSelf, layout }: {
+  layout: UserLayout; // field order, labels, required flags and the Access levels from Users → Edit Page Layout
   profile: UserProfile;
-  roles: { id: string; name: string }[];
   departments: { id: string; name: string }[];
   isSelf: boolean;
-  actorIsSuperAdmin: boolean;
 }) {
   const router = useRouter();
   const toast = useToast();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
+  const startAccess = currentAccess(profile, layout);
   const [form, setForm] = useState({
     fullName: profile.name ?? '',
     email: profile.email ?? '',
@@ -29,13 +37,19 @@ export default function EditUserForm({ profile, roles, departments, isSelf, acto
     phone: profile.phone ?? '',
     departmentId: profile.departmentId ?? '',
     designation: profile.designation ?? '',
-    roleId: profile.roleId ?? '',
+    access: startAccess,
     isAdmin: profile.isAdmin,
   });
   const set = (k: keyof typeof form, v: string | boolean) => setForm(f => ({ ...f, [k]: v }));
+  // The fields added with New Field (a checkbox is "true" when ticked)
+  const [custom, setCustom] = useState<Record<string, string>>(() =>
+    Object.fromEntries(layout.fields.filter(f => !f.isSystem).map(f => [f.key, customToForm(profile.customFields[f.key])])));
 
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!form.access) { setError(`${fieldLabel(layout, 'access')} is required.`); return; }
+    const missing = firstMissingField(layout.fields, form, custom);
+    if (missing) { setError(missing); return; }
     setSaving(true);
     setError('');
     try {
@@ -46,9 +60,10 @@ export default function EditUserForm({ profile, roles, departments, isSelf, acto
         phone: form.phone || null,
         departmentId: form.departmentId || null,
         designation: form.designation || null,
+        customFields: Object.fromEntries(layout.fields.filter(f => !f.isSystem).map(f => [f.key, customFromForm(f, custom[f.key])])),
         // Only send what may change; the server rejects the rest anyway
-        ...(!isSelf && form.roleId && form.roleId !== profile.roleId ? { roleId: form.roleId } : {}),
-        ...(!isSelf && actorIsSuperAdmin && form.isAdmin !== profile.isAdmin ? { isAdmin: form.isAdmin } : {}),
+        ...(!isSelf && form.access !== startAccess ? { accessId: form.access } : {}),
+        ...(!isSelf && form.isAdmin !== profile.isAdmin ? { isAdmin: form.isAdmin } : {}),
       });
       toast.success('User updated');
       router.push(`/users/${profile.id}`);
@@ -63,33 +78,13 @@ export default function EditUserForm({ profile, roles, departments, isSelf, acto
   return (
     <form onSubmit={save} className="bg-[#151619] border border-[#292B30] rounded-xl p-5 sm:p-6 space-y-6 max-w-3xl">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div><label className={labelClass}>Full Name</label><input className={inputClass} value={form.fullName} onChange={e => set('fullName', e.target.value)} required minLength={2} /></div>
-        <div><label className={labelClass}>Employee ID</label><input className={inputClass} value={form.employeeCode} onChange={e => set('employeeCode', e.target.value)} /></div>
-        <div><label className={labelClass}>Email / Username</label><input type="email" className={inputClass} value={form.email} onChange={e => set('email', e.target.value)} required /></div>
-        <div><label className={labelClass}>Phone Number</label><input className={inputClass} value={form.phone} onChange={e => set('phone', e.target.value)} /></div>
-        <div>
-          <label className={labelClass}>Department</label>
-          <select className={inputClass} value={form.departmentId} onChange={e => set('departmentId', e.target.value)}>
-            <option value="">— None —</option>
-            {departments.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-          </select>
-        </div>
-        <div><label className={labelClass}>Designation</label><input className={inputClass} value={form.designation} onChange={e => set('designation', e.target.value)} /></div>
-        <div>
-          <label className={labelClass}>Role</label>
-          <select className={inputClass} value={form.roleId} onChange={e => set('roleId', e.target.value)} disabled={isSelf}>
-            {!profile.roleId && <option value="">— No role —</option>}
-            {profile.roleId && !roles.some(r => r.id === profile.roleId) && <option value={profile.roleId}>{profile.roleName}</option>}
-            {roles.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-          </select>
-          {isSelf && <p className="text-[11px] text-gray-500 mt-1">You cannot change your own role.</p>}
-        </div>
-        {actorIsSuperAdmin && (
-          <label className={`flex items-start gap-3 mt-6 ${isSelf ? 'opacity-50' : 'cursor-pointer'}`}>
-            <input type="checkbox" checked={form.isAdmin} disabled={isSelf} onChange={e => set('isAdmin', e.target.checked)} className="mt-1 w-4 h-4 accent-yellow-400" />
-            <span><span className="text-[13px] font-semibold">Full Administrator Access</span><span className="block text-[11px] text-gray-500">Every module, including Users and Settings.</span></span>
-          </label>
-        )}
+        <UserFormFields idPrefix="edit-user" fields={layout.fields} values={form} custom={custom} departments={departments}
+          disabledKeys={isSelf ? ['access'] : []} hints={isSelf ? { access: 'You cannot change your own Access.' } : {}}
+          onChange={(f, v) => (f.isSystem ? set(f.key as UserFieldKey, v) : setCustom(c => ({ ...c, [f.key]: v })))} />
+        <label className={`flex items-start gap-3 mt-6 ${isSelf ? 'opacity-50' : 'cursor-pointer'}`}>
+          <input type="checkbox" checked={form.isAdmin} disabled={isSelf} onChange={e => set('isAdmin', e.target.checked)} className="mt-1 w-4 h-4 accent-yellow-400" />
+          <span><span className="text-[13px] font-semibold">Full Administrator Access</span><span className="block text-[11px] text-gray-500">Every module, but none of the Super Admin features (accounts, credentials, roles, page layout).</span></span>
+        </label>
       </div>
       {error && <div className="p-3 rounded-lg bg-red-500/10 border border-red-500/30 text-[13px] text-red-300" role="alert">{error}</div>}
       <div className="flex justify-end gap-3">

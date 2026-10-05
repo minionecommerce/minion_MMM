@@ -1,7 +1,7 @@
 // Seeds the starter Leads dropdown values. Safe to re-run: existing rows are never changed.
 //   npx tsx scripts/leads-seed.ts          # write to the database in DATABASE_URL
 //   npx tsx scripts/leads-seed.ts --sql    # print the equivalent SQL instead
-import { PrismaClient } from "@prisma/client";
+import { createPrismaClient } from "../src/lib/prisma-factory";
 import { SEED_OPTIONS } from "../src/lib/leads/seed-data";
 
 const q = (s: string | undefined) => (s === undefined ? "NULL" : `'${s.replace(/'/g, "''")}'`);
@@ -12,7 +12,7 @@ async function main() {
     console.log(`INSERT INTO "LeadOption" ("id", "type", "key", "label", "parentId", "sortOrder", "createdAt", "updatedAt") VALUES\n${rows.join(",\n")}\nON CONFLICT ("id") DO NOTHING;`);
     return;
   }
-  const prisma = new PrismaClient();
+  const prisma = createPrismaClient();
   try {
     let created = 0;
     // Parents first (array order already guarantees this)

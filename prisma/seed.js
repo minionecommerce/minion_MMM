@@ -1,7 +1,9 @@
 const { PrismaClient } = require('@prisma/client');
+const { PrismaPg } = require('@prisma/adapter-pg');
 const bcrypt = require('bcryptjs');
 
-const prisma = new PrismaClient();
+// Rust-free client (engineType = "client") needs a driver adapter; see src/lib/prisma-factory.ts.
+const prisma = new PrismaClient({ adapter: new PrismaPg({ connectionString: process.env.DATABASE_URL }) });
 
 async function main() {
   console.log('Seeding database...');
@@ -26,15 +28,6 @@ async function main() {
   });
   
   // 2. Create Roles
-  const superAdminRole = await prisma.role.upsert({
-    where: { name: 'Super Admin' },
-    update: {},
-    create: {
-      name: 'Super Admin',
-      permissions: JSON.stringify(['all']),
-    },
-  });
-
   const employeeRole = await prisma.role.upsert({
     where: { name: 'Employee' },
     update: {},
@@ -54,7 +47,7 @@ async function main() {
       email: 'admin@minion.com',
       name: 'Dinesh Admin',
       password: hashedPassword,
-      roleId: superAdminRole.id,
+      isSuperAdmin: true, // Super Admin is a setting of the user (Details → Access), not a role
       employee: {
         create: {
           designation: 'CEO',

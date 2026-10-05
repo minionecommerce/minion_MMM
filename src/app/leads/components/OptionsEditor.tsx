@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowDown, ArrowUp, Check, Loader2, Pencil, Plus, Trash2, X } from 'lucide-react';
+import { Check, GripVertical, Loader2, Pencil, Plus, Trash2, X } from 'lucide-react';
 import type { LeadFieldDto } from '@/lib/leads/layout-shared';
 import { OPTION_LABEL_MAX } from '@/lib/leads/layout-shared';
 import { callApi } from '@/lib/leads/client';
@@ -13,11 +13,26 @@ type Option = { id: string; label: string; parentId: string | null; sortOrder: n
 const box = 'border border-gray-300 rounded px-2.5 h-[34px] text-[13px] text-gray-900 bg-white focus:outline-none focus:border-[#f5b800]';
 const ib = 'w-7 h-7 flex items-center justify-center rounded text-gray-500 hover:text-black hover:bg-gray-100 disabled:opacity-30 disabled:hover:bg-transparent';
 
+// The siblings of one list take the new order; each keeps the slot (position and sort value) the previous one held
+function applyOrder(list: Option[], ids: string[]): Option[] {
+  const slot = new Set(ids);
+  const byId = new Map(list.map(o => [o.id, o]));
+  const sorts = list.filter(o => slot.has(o.id)).map(o => o.sortOrder).sort((a, b) => a - b);
+  let n = 0;
+  return list.map(o => {
+    if (!slot.has(o.id)) return o;
+    const next = { ...byId.get(ids[n])!, sortOrder: sorts[n] };
+    n += 1;
+    return next;
+  });
+}
+
 // Add / rename / reorder / delete the options of a pick-list field. Every change is saved straight away.
-export default function OptionsEditor({ field, parentField, onChanged }: {
+export default function OptionsEditor({ field, parentField, onChanged, noun = 'lead' }: {
   field: LeadFieldDto;
   parentField: LeadFieldDto | null; // for levelled lists (Category under Main Category)
   onChanged: (options: Option[]) => void;
+  noun?: string; // what the options are used by: 'lead' (default) or 'deal'
 }) {
   const toast = useToast();
   const [options, setOptions] = useState<Option[] | null>(null);
@@ -28,6 +43,8 @@ export default function OptionsEditor({ field, parentField, onChanged }: {
   const [parentId, setParentId] = useState('');
   const [editing, setEditing] = useState<{ id: string; label: string } | null>(null);
   const [removing, setRemoving] = useState<{ option: Option; usage: number } | null>(null);
+  const [dragging, setDragging] = useState<string | null>(null);
+  const [over, setOver] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setError('');
@@ -77,15 +94,24 @@ export default function OptionsEditor({ field, parentField, onChanged }: {
     if (done) setEditing(null);
   };
 
-  const move = (o: Option, dir: -1 | 1) => {
-    if (!options) return;
-    const siblings = options.filter(x => x.parentId === o.parentId);
-    const i = siblings.findIndex(x => x.id === o.id);
-    const j = i + dir;
-    if (j < 0 || j >= siblings.length) return;
-    const ids = siblings.map(x => x.id);
-    [ids[i], ids[j]] = [ids[j], ids[i]];
-    act(() => callApi(`/api/leads/layout/fields/${field.id}/options/order`, 'PUT', { orderedIds: ids }));
+  // Drag a row (or press the arrow keys on its handle) to a new place among the options of the same list; saved straight away
+  const reorder = async (moved: Option, target: Option, keepFocus = false) => {
+    if (!options || moved.id === target.id || moved.parentId !== target.parentId) return;
+    const ids = options.filter(x => x.parentId === moved.parentId).sort((a, b) => a.sortOrder - b.sortOrder).map(x => x.id);
+    const to = ids.indexOf(target.id);
+    ids.splice(ids.indexOf(moved.id), 1);
+    ids.splice(to, 0, moved.id); // the dragged option takes the place of the one it is dropped on
+    setOptions(cur => (cur ? applyOrder(cur, ids) : cur));
+    setBusy(true);
+    try {
+      await callApi(`/api/leads/layout/fields/${field.id}/options/order`, 'PUT', { orderedIds: ids });
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : 'Could not save the order');
+    } finally {
+      await load();
+      setBusy(false);
+      if (keepFocus) requestAnimationFrame(() => document.querySelector<HTMLElement>(`[data-grip="${moved.id}"]`)?.focus());
+    }
   };
 
   const confirmRemove = async () => {
@@ -135,15 +161,34 @@ export default function OptionsEditor({ field, parentField, onChanged }: {
           : (
             <ul className="divide-y divide-gray-200">
               {rows.map(({ o, heading }) => {
-                const siblings = options.filter(x => x.parentId === o.parentId);
+                const siblings = options.filter(x => x.parentId === o.parentId).sort((a, b) => a.sortOrder - b.sortOrder);
                 const idx = siblings.findIndex(x => x.id === o.id);
                 const isEditing = editing?.id === o.id;
+                const dropHere = over === o.id && dragging !== null && dragging !== o.id;
+                const grab = (to: number) => { const t = siblings[to]; if (t) reorder(o, t, true); };
                 return (
                   <li key={o.id}>
                     {heading && <div className="px-3 py-1 bg-gray-100 text-[11px] font-bold tracking-wide text-gray-500">{heading}</div>}
-                    <div className="flex items-center gap-1 px-2 py-1.5 bg-white">
-                      <button type="button" className={ib} disabled={busy || idx === 0} onClick={() => move(o, -1)} aria-label={`Move ${o.label} up`}><ArrowUp className="w-3.5 h-3.5" /></button>
-                      <button type="button" className={ib} disabled={busy || idx === siblings.length - 1} onClick={() => move(o, 1)} aria-label={`Move ${o.label} down`}><ArrowDown className="w-3.5 h-3.5" /></button>
+                    <div
+                      draggable={!isEditing && !busy}
+                      onDragStart={e => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', o.id); setDragging(o.id); }}
+                      onDragOver={e => { if (dragging === null) return; const from = options.find(x => x.id === dragging); if (from && from.parentId === o.parentId) { e.preventDefault(); setOver(o.id); } }}
+                      onDragEnd={() => { setDragging(null); setOver(null); }}
+                      onDrop={e => { e.preventDefault(); const from = options.find(x => x.id === dragging); setDragging(null); setOver(null); if (from) reorder(from, o); }}
+                      className={`flex items-center gap-2 px-2 py-1.5 ${dropHere ? 'bg-[#fff8dc]' : 'bg-white'} ${dragging === o.id ? 'opacity-50' : ''}`}
+                    >
+                      <button
+                        type="button"
+                        data-grip={o.id}
+                        disabled={busy}
+                        onKeyDown={e => { if (e.key === 'ArrowUp') { e.preventDefault(); grab(idx - 1); } else if (e.key === 'ArrowDown') { e.preventDefault(); grab(idx + 1); } }}
+                        aria-label={`Reorder ${o.label}. Drag it, or press the up or down arrow key.`}
+                        title="Drag to reorder"
+                        className="shrink-0 w-5 h-7 flex items-center justify-center rounded text-gray-400 hover:text-gray-700 cursor-grab active:cursor-grabbing disabled:opacity-40"
+                      >
+                        <GripVertical className="w-4 h-4" aria-hidden />
+                      </button>
+                      <span className="w-5 text-[12px] text-gray-400 tabular-nums shrink-0" aria-hidden>{idx + 1}</span>
                       {isEditing ? (
                         <form className="flex-1 flex items-center gap-1 min-w-0" onSubmit={e => { e.preventDefault(); rename(o, editing.label); }}>
                           <input autoFocus value={editing.label} onChange={e => setEditing({ id: o.id, label: e.target.value })} maxLength={OPTION_LABEL_MAX} aria-label={`Label for ${o.label}`} className={`${box} flex-1 min-w-0`} />
@@ -153,7 +198,7 @@ export default function OptionsEditor({ field, parentField, onChanged }: {
                       ) : (
                         <>
                           <span className="flex-1 min-w-0 truncate text-[14px] text-gray-900 px-1">{o.label}</span>
-                          <span className="hidden sm:block text-[11px] text-gray-400 w-24 text-right shrink-0">{o.usage ? `Used by ${o.usage} lead${o.usage === 1 ? '' : 's'}` : 'Not in use'}</span>
+                          <span className="hidden sm:block text-[11px] text-gray-400 w-24 text-right shrink-0">{o.usage ? `Used by ${o.usage} ${noun}${o.usage === 1 ? '' : 's'}` : 'Not in use'}</span>
                           <button type="button" className={ib} disabled={busy} onClick={() => setEditing({ id: o.id, label: o.label })} aria-label={`Edit ${o.label}`} title="Change label"><Pencil className="w-3.5 h-3.5" /></button>
                           <button type="button" className={`${ib} hover:!text-[#d9232b]`} disabled={busy} onClick={() => setRemoving({ option: o, usage: o.usage ?? 0 })} aria-label={`Delete ${o.label}`} title="Delete"><Trash2 className="w-3.5 h-3.5" /></button>
                         </>
@@ -171,10 +216,10 @@ export default function OptionsEditor({ field, parentField, onChanged }: {
           {removing.usage > 0 ? (
             <>
               <p>This option is currently being used by existing records. Deleting it may affect existing data. Are you sure you want to continue?</p>
-              <p className="text-gray-500">“{removing.option.label}” is used by {removing.usage} lead{removing.usage === 1 ? '' : 's'}. This field will be cleared on those leads; the rest of each lead is not changed.</p>
+              <p className="text-gray-500">“{removing.option.label}” is used by {removing.usage} {noun}{removing.usage === 1 ? '' : 's'}. This field will be cleared on those {noun}s; the rest of each {noun} is not changed.</p>
             </>
           ) : (
-            <p>“{removing.option.label}” is not used by any lead. It will be removed from the list.</p>
+            <p>“{removing.option.label}” is not used by any {noun}. It will be removed from the list.</p>
           )}
         </LightConfirm>
       )}

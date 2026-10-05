@@ -87,14 +87,14 @@ body:not(:has([data-home])) .hover\:text-gray-600:hover:not([data-sidebar], [dat
 body:not(:has([data-home])) .group:hover .group-hover\:text-gray-600:not([data-sidebar], [data-sidebar] *, [data-light-native], [data-light-native] *) { color: #6B7280; }
 body:not(:has([data-home])) .focus\:text-gray-600:focus:not([data-sidebar], [data-sidebar] *, [data-light-native], [data-light-native] *) { color: #6B7280; }
 body:not(:has([data-home])) .text-gray-700:not([data-sidebar], [data-sidebar] *, [data-light-native], [data-light-native] *) { color: #9CA3AF; }
-body:not(:has([data-home])) .placeholder-gray-700::placeholder:not([data-sidebar], [data-sidebar] *, [data-light-native], [data-light-native] *) { color: #9CA3AF; }
-body:not(:has([data-home])) .placeholder-gray-600::placeholder:not([data-sidebar], [data-sidebar] *, [data-light-native], [data-light-native] *) { color: #9CA3AF; }
-body:not(:has([data-home])) .placeholder-gray-500::placeholder:not([data-sidebar], [data-sidebar] *, [data-light-native], [data-light-native] *) { color: #9CA3AF; }
+body:not(:has([data-home])) .placeholder-gray-700:not([data-sidebar], [data-sidebar] *, [data-light-native], [data-light-native] *)::placeholder { color: #9CA3AF; }
+body:not(:has([data-home])) .placeholder-gray-600:not([data-sidebar], [data-sidebar] *, [data-light-native], [data-light-native] *)::placeholder { color: #9CA3AF; }
+body:not(:has([data-home])) .placeholder-gray-500:not([data-sidebar], [data-sidebar] *, [data-light-native], [data-light-native] *)::placeholder { color: #9CA3AF; }
 body:not(:has([data-home])) .text-neutral-200:not([data-sidebar], [data-sidebar] *, [data-light-native], [data-light-native] *) { color: #1F2937; }
 body:not(:has([data-home])) .text-neutral-300:not([data-sidebar], [data-sidebar] *, [data-light-native], [data-light-native] *) { color: #374151; }
 body:not(:has([data-home])) .text-neutral-400:not([data-sidebar], [data-sidebar] *, [data-light-native], [data-light-native] *) { color: #4B5563; }
 body:not(:has([data-home])) .text-neutral-500:not([data-sidebar], [data-sidebar] *, [data-light-native], [data-light-native] *) { color: #6B7280; }
-body:not(:has([data-home])) .placeholder-neutral-500::placeholder:not([data-sidebar], [data-sidebar] *, [data-light-native], [data-light-native] *) { color: #9CA3AF; }
+body:not(:has([data-home])) .placeholder-neutral-500:not([data-sidebar], [data-sidebar] *, [data-light-native], [data-light-native] *)::placeholder { color: #9CA3AF; }
 body:not(:has([data-home])) .text-yellow-300:not([data-sidebar], [data-sidebar] *, [data-light-native], [data-light-native] *) { color: #A16207; }
 body:not(:has([data-home])) .hover\:text-yellow-300:hover:not([data-sidebar], [data-sidebar] *, [data-light-native], [data-light-native] *) { color: #A16207; }
 body:not(:has([data-home])) .group:hover .group-hover\:text-yellow-300:not([data-sidebar], [data-sidebar] *, [data-light-native], [data-light-native] *) { color: #A16207; }

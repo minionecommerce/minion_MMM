@@ -61,7 +61,6 @@ export const SYSTEM_FIELDS: SystemDef[] = [
   { key: "productOrServiceId", label: "Product or Service", type: "DROPDOWN", required: true, optionType: "PRODUCT_OR_SERVICE", defaultable: true },
   { key: "exactRequirement", label: "Exact Requirement", type: "TEXT", required: false, defaultable: true },
   { key: "modeOfCustomerId", label: "Mode of Customer", type: "DROPDOWN", required: true, optionType: "MODE_OF_CUSTOMER", defaultable: true },
-  { key: "sourceId", label: "Source", type: "DROPDOWN", required: false, optionType: "SOURCE", defaultable: true },
   { key: "location", label: "Location", type: "TEXT", required: true, defaultable: true },
   { key: "exactLocation", label: "Exact Location", type: "TEXT", required: false, defaultable: true },
   { key: "locationLink", label: "Location Link", type: "URL", required: false, defaultable: true },

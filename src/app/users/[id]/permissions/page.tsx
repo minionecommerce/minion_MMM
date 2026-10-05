@@ -12,10 +12,11 @@ export default async function UserPermissionsPage({ params }: { params: Promise<
   const { id } = await params;
   const profile = await getUserProfile(id);
   if (!profile) notFound();
-  if (profile.id === ctx.userId || ((profile.isSuperAdmin || profile.isAdmin) && !ctx.isSuperAdmin)) redirect(`/users/${id}`);
+  // Changing a person's permissions is a Super Admin feature, and never on your own account
+  if (profile.id === ctx.userId || !ctx.isSuperAdmin) redirect(`/users/${id}`);
 
   return (
-    <PageShell title="Edit Permissions" subtitle={`${profile.name ?? profile.email} · Role: ${profile.roleName ?? 'none'}`}>
+    <PageShell title="Edit Permissions" subtitle={`${profile.name ?? profile.email} · ${profile.isSuperAdmin ? 'Super Admin' : `Role: ${profile.roleName ?? 'none'}`}`}>
       <UserPermissionsEditor
         userId={profile.id}
         privileged={profile.isSuperAdmin || profile.isAdmin}

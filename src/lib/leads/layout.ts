@@ -3,9 +3,9 @@ import type { Prisma } from "@prisma/client";
 import { ZodError, type ZodIssue } from "zod";
 import { prisma } from "@/lib/db";
 import type { AuthContext } from "@/lib/auth";
-import { writeAudit } from "@/lib/audit";
+import { writeAudit, type SecurityAction } from "@/lib/audit";
 import { ServiceError } from "@/lib/users/service";
-import { CONVENTIONAL_RATES, LEAD_COLUMNS, type LeadColumnId } from "./constants";
+import { CONVENTIONAL_RATES, DEAL_COLUMNS, LEAD_COLUMNS, type DealColumnId, type LeadColumnId } from "./constants";
 import { isHttpUrl, normalizePhone } from "./format";
 import {
   CUSTOM_TYPE_SET,
@@ -85,7 +85,7 @@ export async function getLayout(): Promise<LeadFieldDto[]> {
     await createMissingSystemFields(have);
     rows = await loadFields();
   }
-  // Fields that are no longer part of the form (e.g. the old Requirements pick list) stay in the table but are not shown or enforced
+  // Fields that are no longer part of the form (e.g. the old Requirements and Source pick lists) stay in the table but are not shown or enforced
   const known = new Set(SYSTEM_FIELDS.map(d => d.key));
   return rows.filter(r => !r.isSystem || known.has(r.key)).map(toDto);
 }
@@ -232,27 +232,47 @@ export async function deleteField(ctx: AuthContext, id: string, confirm: boolean
 // Order of the Leads table columns (stored as one small setting)
 // ---------------------------------------------------------------------------
 const COLUMN_ORDER_KEY = "columnOrder";
+const DEAL_COLUMN_ORDER_KEY = "dealColumnOrder";
 const DEFAULT_COLUMNS = LEAD_COLUMNS.map(c => c.id) as LeadColumnId[];
+const DEFAULT_DEAL_COLUMNS = DEAL_COLUMNS.map(c => c.id) as DealColumnId[];
 
 // Always returns every column exactly once: saved order first, then anything not mentioned
-export async function getColumnOrder(): Promise<LeadColumnId[]> {
-  const row = await prisma.leadSetting.findUnique({ where: { key: COLUMN_ORDER_KEY }, select: { value: true } });
-  const saved = Array.isArray(row?.value) ? (row!.value as unknown[]).filter((v): v is LeadColumnId => DEFAULT_COLUMNS.includes(v as LeadColumnId)) : [];
+async function readColumnOrder<T extends string>(key: string, defaults: T[]): Promise<T[]> {
+  const row = await prisma.leadSetting.findUnique({ where: { key }, select: { value: true } });
+  const saved = Array.isArray(row?.value) ? (row!.value as unknown[]).filter((v): v is T => defaults.includes(v as T)) : [];
   const seen = new Set<string>();
   const ordered = saved.filter(id => (seen.has(id) ? false : (seen.add(id), true)));
-  return [...ordered, ...DEFAULT_COLUMNS.filter(id => !seen.has(id))];
+  return [...ordered, ...defaults.filter(id => !seen.has(id))];
 }
 
-export async function setColumnOrder(ctx: AuthContext, ids: string[]) {
+async function writeColumnOrder(ctx: AuthContext, key: string, defaults: string[], ids: string[], action: SecurityAction) {
   assertSuperAdmin(ctx);
-  if (ids.length !== DEFAULT_COLUMNS.length || new Set(ids).size !== ids.length || !ids.every(id => DEFAULT_COLUMNS.includes(id as LeadColumnId))) {
+  if (ids.length !== defaults.length || new Set(ids).size !== ids.length || !ids.every(id => defaults.includes(id))) {
     throw new ServiceError(400, "The new column order must list every column exactly once.");
   }
   await prisma.$transaction(async tx => {
-    await tx.leadSetting.upsert({ where: { key: COLUMN_ORDER_KEY }, create: { key: COLUMN_ORDER_KEY, value: ids }, update: { value: ids } });
-    await writeAudit({ action: "LEAD_COLUMNS_REORDERED", actorUserId: ctx.userId, metadata: { order: ids } }, tx);
+    await tx.leadSetting.upsert({ where: { key }, create: { key, value: ids }, update: { value: ids } });
+    await writeAudit({ action, actorUserId: ctx.userId, metadata: { order: ids } }, tx);
   });
   return { ok: true };
+}
+
+export const getColumnOrder = () => readColumnOrder<LeadColumnId>(COLUMN_ORDER_KEY, DEFAULT_COLUMNS);
+export const setColumnOrder = (ctx: AuthContext, ids: string[]) => writeColumnOrder(ctx, COLUMN_ORDER_KEY, DEFAULT_COLUMNS, ids, "LEAD_COLUMNS_REORDERED");
+
+// The Deals table has its own column order (Edit Deal Layout)
+export const getDealColumnOrder = () => readColumnOrder<DealColumnId>(DEAL_COLUMN_ORDER_KEY, DEFAULT_DEAL_COLUMNS);
+export const setDealColumnOrder = (ctx: AuthContext, ids: string[]) => writeColumnOrder(ctx, DEAL_COLUMN_ORDER_KEY, DEFAULT_DEAL_COLUMNS, ids, "DEAL_COLUMNS_REORDERED");
+
+// The Deal Status pick-list is edited with the same editor as the lead form's lists; this is the field row that editor works on.
+// It is not part of the lead form (getLayout only returns the fields the form knows).
+export async function getDealStatusField(): Promise<LeadFieldDto> {
+  const row = await prisma.leadField.upsert({
+    where: { key: "dealStatusId" },
+    update: {},
+    create: { key: "dealStatusId", label: "Deal Status", fieldType: "DROPDOWN", isSystem: true, requiredLocked: true, optionType: "DEAL_STATUS", sortOrder: 1000 },
+  });
+  return toDto(row);
 }
 
 // Reorders the form fields (system and custom). Fields not in the list keep their places.
@@ -295,6 +315,7 @@ async function pickListField(fieldId: string) {
 }
 
 async function countOptionUsage(optionType: string, fieldKey: string, optionId: string): Promise<number> {
+  if (optionType === "DEAL_STATUS") return prisma.deal.count({ where: { dealStatusId: optionId, deletedAt: null } });
   const ref = (REFERENCE_FIELDS as Record<string, ReferenceField>)[optionType];
   if (ref) return prisma.lead.count({ where: { [ref]: optionId, deletedAt: null } });
   return customUsage(fieldKey, optionId);
@@ -383,7 +404,11 @@ export async function deleteOption(ctx: AuthContext, optionId: string, confirm: 
     if (usage > 0) {
       // Leads only hold a link to the option, so clear exactly that one field and write down which leads it was
       const ref = (REFERENCE_FIELDS as Record<string, ReferenceField>)[option.type];
-      if (ref) {
+      if (option.type === "DEAL_STATUS") {
+        const affected = await tx.deal.findMany({ where: { dealStatusId: optionId }, select: { id: true, dealNumber: true } });
+        await tx.deal.updateMany({ where: { dealStatusId: optionId }, data: { dealStatusId: null } });
+        cleared = affected.map(d => d.dealNumber ?? d.id);
+      } else if (ref) {
         const affected = await tx.lead.findMany({ where: { [ref]: optionId }, select: { id: true, leadCode: true } });
         await tx.lead.updateMany({ where: { [ref]: optionId }, data: { [ref]: null } });
         cleared = affected.map(l => l.leadCode ?? l.id);
@@ -435,14 +460,21 @@ function issue(path: (string | number)[], message: string): ZodIssue {
 
 export type CustomValues = Record<string, string | number | boolean>;
 
+// Inline edit of one system field in the Leads table: it may not be emptied when Edit Page Layout marks it required
+export async function checkFieldAgainstLayout(key: string, value: unknown): Promise<void> {
+  if (!isEmpty(value)) return;
+  const field = (await getLayout()).find(f => f.isSystem && f.key === key);
+  if (field && (field.required || field.requiredLocked)) throw new ServiceError(400, `${field.label} is required`);
+}
+
 // Throws a ZodError (same shape the form already understands) when something is missing or invalid.
 // Returns the custom values to store, trimmed and typed.
-export async function checkLeadAgainstLayout(input: Record<string, unknown> & { customFields?: Record<string, unknown> }): Promise<CustomValues> {
+export async function checkLeadAgainstLayout(input: Record<string, unknown> & { customFields?: Record<string, unknown> }, opts: { skip?: string[] } = {}): Promise<CustomValues> {
   const fields = await getLayout();
   const issues: ZodIssue[] = [];
 
   for (const f of fields) {
-    if (!f.isSystem || !f.required || f.requiredLocked) continue;
+    if (!f.isSystem || !f.required || f.requiredLocked || opts.skip?.includes(f.key)) continue;
     if (isEmpty(input[f.key])) issues.push(issue([f.key], `${f.label} is required`));
   }
 

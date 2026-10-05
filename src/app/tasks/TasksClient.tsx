@@ -1,249 +1,186 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-
-import TasksHeader from './components/TasksHeader';
-import TaskSummaryCards from './components/TaskSummaryCards';
-import TaskTabs from './components/TaskTabs';
-import TaskFilters from './components/TaskFilters';
-import TaskTable from './components/TaskTable';
-import TaskDetailDrawer from './components/TaskDetailDrawer';
+import { useEffect, useState, useTransition } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Check, ChevronLeft, ChevronRight, ClipboardList, X } from 'lucide-react';
+import { callApi } from '@/lib/leads/client';
+import { useToast } from '@/components/ui/Toast';
+import LightConfirm from '@/app/leads/components/LightConfirm';
+import { TASK_TYPES, TASK_VIEWS, type TaskListParams, type TaskSortKey, type TaskTypeId, type TaskViewId } from '@/lib/tasks/rules';
+import type { TaskDetail, TaskListResult, TaskOptions, TaskRow } from '@/lib/tasks/types';
 import CreateTaskModal from './components/CreateTaskModal';
-import BulkAssignModal from './components/BulkAssignModal';
-import { Task } from './data/mock';
+import TaskDetailsModal from './components/TaskDetailsModal';
+import TaskTable, { type RowAction } from './components/TaskTable';
+import TaskToolbar from './components/TaskToolbar';
 
-interface TasksClientProps {
-  initialTasks: any[];
-  employees?: any[];
-  projects?: any[];
-  landscapes?: any[];
-}
+type Dialog =
+  | { kind: 'create' }
+  | { kind: 'edit'; task: TaskDetail }
+  | { kind: 'details'; id: string; focus?: 'files' }
+  | { kind: 'delete'; row: TaskRow }
+  | null;
 
-export default function TasksClient({
-  initialTasks,
-  employees = [],
-  projects = [],
-  landscapes = []
-}: TasksClientProps) {
-  const [activeTab, setActiveTab] = useState('All Tasks');
-  const [search, setSearch] = useState('');
-  const [filters, setFilters] = useState<Record<string, string>>({});
-  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
+const typeLabel = (id: TaskTypeId) => TASK_TYPES.find(t => t.id === id)!.label;
+const viewMeta = (id: TaskViewId) => TASK_VIEWS.find(v => v.id === id)!;
 
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [showBulkAssignModal, setShowBulkAssignModal] = useState(false);
+export default function TasksClient({ data, params, options, canCreate, currentUserName }: {
+  data: TaskListResult;
+  params: TaskListParams;
+  options: TaskOptions;
+  canCreate: boolean;
+  currentUserName: string;
+}) {
+  const router = useRouter();
+  const search = useSearchParams();
+  const toast = useToast();
+  const [pending, startTransition] = useTransition();
+  const [q, setQ] = useState(params.q ?? '');
+  const [dialog, setDialog] = useState<Dialog>(null);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
-  const handleFilterChange = (key: string, value: string) => {
-    setFilters(prev => ({ ...prev, [key]: value }));
+  // Every filter lives in the address, so the server loads exactly the page that is shown (50 tasks) and links can be shared
+  const setParams = (updates: Record<string, string | undefined>, replace = false) => {
+    const next = new URLSearchParams(search.toString());
+    for (const [k, v] of Object.entries(updates)) {
+      if (v) next.set(k, v);
+      else next.delete(k);
+    }
+    if (!('page' in updates)) next.delete('page');
+    startTransition(() => (replace ? router.replace : router.push)(`/tasks${next.toString() ? `?${next}` : ''}`));
   };
 
-  const handleClearFilters = () => {
-    setFilters({});
-    setSearch('');
-  };
+  // Live search: results update shortly after typing stops, and the search respects the selected type and status
+  useEffect(() => {
+    if ((params.q ?? '') === q.trim()) return;
+    const t = setTimeout(() => setParams({ q: q.trim() || undefined }, true), 250);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q]);
 
-  const handleCardClick = (title: string) => {
-    if (title === 'MY TASKS') {
-      setActiveTab('My Tasks');
-    } else if (title === 'ALL TASKS') {
-      setActiveTab('All Tasks');
-      setFilters({});
-    } else if (title === 'IN PROGRESS') {
-      setActiveTab('All Tasks');
-      setFilters(prev => ({ ...prev, status: 'In Progress' }));
-    } else if (title === 'OVERDUE') {
-      setActiveTab('All Tasks');
-      setFilters(prev => ({ ...prev, status: 'Blocked' }));
-    } else if (title === 'COMPLETED') {
-      setActiveTab('Completed');
+  const refresh = () => router.refresh();
+
+  const act = async (row: TaskRow, action: RowAction) => {
+    setBusyId(row.id);
+    try {
+      const res = await callApi<{ starred?: boolean }>(`/api/tasks/${row.id}`, 'PATCH', { action });
+      toast.success(action === 'start' ? 'Task started' : action === 'complete' ? 'Task completed' : res.starred ? 'Added to favorites' : 'Removed from favorites');
+      refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : 'Something went wrong');
+    } finally {
+      setBusyId(null);
     }
   };
 
-  const exportCSV = () => {
-    if (initialTasks.length === 0) return alert('No tasks to export');
-    const headers = ['Task ID', 'Title', 'Project', 'Customer', 'Assigned To', 'Priority', 'Status', 'Due Date', 'Created Date'];
-    const rows = filteredTasks.map(t => [
-      t.id,
-      `"${(t.name || '').replace(/"/g, '""')}"`,
-      `"${(t.projectName || '').replace(/"/g, '""')}"`,
-      `"${(t.customerName || '').replace(/"/g, '""')}"`,
-      `"${(t.assignedTo || '').replace(/"/g, '""')}"`,
-      t.priority,
-      t.status,
-      t.dueDate,
-      t.createdDate
-    ]);
-    const csvContent = 'data:text/csv;charset=utf-8,' + [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
-    const encodedUri = encodeURI(csvContent);
-    const link = document.createElement('a');
-    link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `minion_tasks_${new Date().toISOString().split('T')[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  const openEdit = async (row: TaskRow) => {
+    try { setDialog({ kind: 'edit', task: (await callApi<{ task: TaskDetail }>(`/api/tasks/${row.id}`, 'GET')).task }); }
+    catch (err) { toast.error(err instanceof Error ? err.message : 'Could not open the task'); }
   };
 
-  const mappedTasks = useMemo(() => {
-    return initialTasks.map(dbTask => {
-      const isCompleted = dbTask.status === 'Completed' || dbTask.status === 'Verified' || dbTask.status === 'Closed';
-      
-      const checklists = (dbTask.checklists || []).map((c: any) => ({
-        id: c.id,
-        text: c.content,
-        completed: c.isCompleted
-      }));
+  const confirmDelete = async () => {
+    if (dialog?.kind !== 'delete') return;
+    setDeleting(true);
+    try { await callApi(`/api/tasks/${dialog.row.id}`, 'DELETE'); toast.success('Task deleted'); setDialog(null); refresh(); }
+    catch (err) { toast.error(err instanceof Error ? err.message : 'Could not delete the task'); }
+    finally { setDeleting(false); }
+  };
 
-      const checklistCompleted = checklists.filter((c: any) => c.completed).length;
-      const checklistTotal = checklists.length;
-      
-      // Calculate progress based on checklists if they exist, otherwise based on status
-      let progress = isCompleted ? 100 : (dbTask.status === 'In Progress' ? 50 : 0);
-      if (checklistTotal > 0) {
-        progress = Math.round((checklistCompleted / checklistTotal) * 100);
-      }
+  const onSort = (key: TaskSortKey) => {
+    if (params.sort === key) setParams({ sort: key, dir: params.dir === 'asc' ? 'desc' : 'asc' });
+    else setParams({ sort: key, dir: 'desc' });
+  };
 
-      const collaborators = [];
-      if (dbTask.secondaryAssignee) {
-        collaborators.push(dbTask.secondaryAssignee.user?.name || dbTask.secondaryAssignee.designation);
-      }
+  const filtersOn = !!(params.q || params.from || params.to);
+  const view = viewMeta(params.view);
+  const pageButtons = Array.from({ length: data.pageCount }, (_, i) => i + 1).filter(p => p === 1 || p === data.pageCount || Math.abs(p - data.page) <= 2);
+  const offset = (data.page - 1) * data.pageSize;
 
-      return {
-        id: dbTask.id,
-        name: dbTask.title,
-        projectId: dbTask.projectId || '',
-        projectName: dbTask.project?.name || (dbTask.landscape?.name ? `Park: ${dbTask.landscape.name}` : 'Internal'),
-        customerId: dbTask.project?.customerId || dbTask.customerId || '',
-        customerName: dbTask.project?.customer?.name || '-',
-        priority: dbTask.priority || 'Medium',
-        status: dbTask.status || 'Not Started',
-        dueDate: dbTask.dueDate ? new Date(dbTask.dueDate).toISOString().split('T')[0] : 'N/A',
-        startDate: dbTask.startDate ? new Date(dbTask.startDate).toISOString().split('T')[0] : undefined,
-        assignedTo: dbTask.assignee?.user?.name || dbTask.assignee?.designation || 'Unassigned',
-        assignedBy: dbTask.assignedBy?.user?.name || 'System',
-        type: 'Execution' as any,
-        progress,
-        alerts: [],
-        description: dbTask.description || '',
-        source: 'Internal' as any,
-        collaborators,
-        watchers: [],
-        milestoneId: undefined,
-        completionDate: dbTask.completedAt ? new Date(dbTask.completedAt).toISOString().split('T')[0] : undefined,
-        notes: dbTask.completionNotes || undefined,
-        attachments: [], // TBD link resources
-        checklist: checklists,
-        requiresCompletionProof: dbTask.requiresCompletionProof,
-        requiresVerification: dbTask.requiresVerification,
-        isRecurringInstance: dbTask.isRecurringInstance,
-        createdDate: dbTask.createdAt ? new Date(dbTask.createdAt).toISOString().split('T')[0] : 'N/A',
-        comments: (dbTask.comments || []).map((c: any) => ({
-          id: c.id,
-          user: c.author?.user?.name || 'User',
-          text: c.content,
-          timestamp: new Date(c.createdAt).toLocaleString()
-        })),
-        activities: (dbTask.auditLogs || []).map((a: any) => ({
-          id: a.id,
-          action: a.action,
-          user: a.employee?.user?.name || 'System',
-          date: new Date(a.createdAt).toLocaleString(),
-          details: `${a.oldValue ? `From ${a.oldValue} ` : ''}${a.newValue ? `To ${a.newValue}` : ''}`
-        }))
-      };
-    });
-  }, [initialTasks]);
-
-  const filteredTasks = useMemo(() => {
-    return mappedTasks.filter(task => {
-      // Search
-      if (search) {
-        const q = search.toLowerCase();
-        if (
-          !task.name.toLowerCase().includes(q) &&
-          !task.id.toLowerCase().includes(q) &&
-          !task.projectName?.toLowerCase().includes(q) &&
-          !task.customerName?.toLowerCase().includes(q) &&
-          !task.assignedTo.toLowerCase().includes(q)
-        ) return false;
-      }
-
-      // Advanced filters
-      if (filters.priority && task.priority !== filters.priority) return false;
-      if (filters.status && task.status !== filters.status) return false;
-
-      // Active Main Tab Logic
-      if (activeTab === 'Completed' && task.status !== 'Completed' && task.status !== 'Closed' && task.status !== 'Verified') {
-        return false;
-      }
-
-      return true;
-    });
-  }, [mappedTasks, search, filters, activeTab]);
+  const pill = (active: boolean) => `px-4 h-[38px] rounded-full border text-[13px] font-medium whitespace-nowrap transition-colors ${active ? 'bg-[#f5b800] border-[#f5b800] text-[#1f1f1f] font-semibold' : 'bg-white border-gray-300 text-gray-700 hover:bg-gray-50'}`;
 
   return (
-    <div className="w-full min-h-screen bg-[#0D0D0F] text-white font-sans selection:bg-yellow-400 selection:text-black flex flex-col relative overflow-x-hidden">
-      
-      <main className="flex-1 w-full max-w-[1700px] mx-auto">
-        <TasksHeader 
-          onNewTask={() => setShowCreateModal(true)}
-          onBulkAssign={() => setShowBulkAssignModal(true)}
-          onCreateTaskList={() => setShowCreateModal(true)}
-          onExport={exportCSV}
-          onFilter={() => {
-            const searchInput = document.querySelector('input[placeholder*="Search"]') as HTMLInputElement;
-            if (searchInput) searchInput.focus();
-          }}
-        />
-        
-        {(activeTab === 'My Tasks' || activeTab === 'All Tasks') && (
-          <TaskSummaryCards 
-            tasks={mappedTasks}
-            onCardClick={handleCardClick}
-          />
-        )}
-
-        <TaskTabs activeTab={activeTab} onTabChange={setActiveTab} />
-
-        <div className="px-6 py-8">
-          <TaskFilters 
-            search={search}
-            onSearchChange={setSearch}
-            filters={filters}
-            onFilterChange={handleFilterChange}
-            onClearFilters={handleClearFilters}
-          />
-          
-          <div className="mt-6">
-            <TaskTable 
-              tasks={filteredTasks} 
-              onTaskClick={setSelectedTask} 
-            />
+    <div data-light-native className="w-full min-h-screen bg-white text-[#333] font-sans">
+      <div className="px-4 sm:px-5 pt-6 pb-10 max-w-[2000px] mx-auto">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="flex items-center gap-3 min-w-0">
+            <span className="w-9 h-9 rounded-full bg-[#f5b800] flex items-center justify-center shrink-0"><Check className="w-5 h-5 text-white" strokeWidth={3} /></span>
+            <h1 className="text-[26px] sm:text-[30px] font-medium text-[#3a3a3a] leading-tight">Task Management</h1>
           </div>
+          <TaskToolbar params={params} q={q} onQ={setQ} canCreate={canCreate}
+            onType={t => setParams({ type: t })} onDates={u => setParams(u)} onAdd={() => setDialog({ kind: 'create' })} />
         </div>
-      </main>
 
-      <TaskDetailDrawer 
-        task={selectedTask}
-        onClose={() => setSelectedTask(null)}
-      />
+        <section aria-label="Task Type" className="mt-6 border border-gray-200 rounded-lg px-4 py-3">
+          <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-2">Task Type</h2>
+          <div className="flex flex-wrap gap-2">
+            {TASK_TYPES.map(t => <button key={t.id} type="button" aria-pressed={params.type === t.id} onClick={() => setParams({ type: t.id })} className={pill(params.type === t.id)}>{t.label}</button>)}
+          </div>
+        </section>
 
-      {showCreateModal && (
-        <CreateTaskModal
-          employees={employees}
-          projects={projects}
-          landscapes={landscapes}
-          onClose={() => setShowCreateModal(false)}
-        />
-      )}
+        <section aria-label="Task Status" className="mt-3 border border-gray-200 rounded-lg px-4 py-3">
+          <h2 className="text-[11px] font-bold uppercase tracking-wider text-gray-500 mb-2">Task Status</h2>
+          <div className="flex flex-wrap gap-2">
+            {TASK_VIEWS.map(v => (
+              <button key={v.id} type="button" aria-pressed={params.view === v.id} onClick={() => setParams({ view: v.id })} className={`${pill(params.view === v.id)} inline-flex items-center gap-2`}>
+                {v.label}
+                <span className={`min-w-[22px] px-1.5 h-[20px] rounded-full text-[11px] font-bold inline-flex items-center justify-center ${params.view === v.id ? 'bg-white/70 text-[#1f1f1f]' : 'bg-gray-100 text-gray-600'}`}>{data.counts[v.id]}</span>
+              </button>
+            ))}
+          </div>
+        </section>
 
-      {showBulkAssignModal && (
-        <BulkAssignModal
-          tasks={mappedTasks}
-          employees={employees}
-          onClose={() => setShowBulkAssignModal(false)}
-        />
+        <div className="mt-5 flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <p className="text-[13px] text-gray-500">{typeLabel(params.type)} <span aria-hidden>→</span><span className="sr-only">then</span> {view.label}</p>
+            <h2 className="text-[20px] font-semibold text-[#333]" aria-live="polite">{view.label} ({data.total})</h2>
+          </div>
+          {filtersOn && (
+            <div className="flex flex-wrap items-center gap-2 text-[12px]">
+              {params.q && <span className="inline-flex items-center gap-1 bg-gray-100 rounded-full pl-3 pr-1.5 py-1">Search: {params.q}<button type="button" aria-label="Clear search" onClick={() => { setQ(''); setParams({ q: undefined }); }}><X className="w-3.5 h-3.5" /></button></span>}
+              {(params.from || params.to) && <span className="inline-flex items-center gap-1 bg-gray-100 rounded-full pl-3 pr-1.5 py-1">{params.dateField ?? 'due'} date: {params.from ?? '…'} to {params.to ?? '…'}<button type="button" aria-label="Clear dates" onClick={() => setParams({ dateField: undefined, from: undefined, to: undefined })}><X className="w-3.5 h-3.5" /></button></span>}
+            </div>
+          )}
+        </div>
+
+        <div className={`mt-3 transition-opacity ${pending ? 'opacity-60' : ''}`} aria-busy={pending}>
+          {data.rows.length === 0 ? (
+            <div className="py-20 text-center text-gray-500 border border-dashed border-gray-300 rounded-lg">
+              <ClipboardList className="w-10 h-10 mx-auto text-gray-300" />
+              <div className="mt-2 text-[16px] font-semibold text-gray-700">{view.empty}</div>
+              <div className="text-[13px] mt-1">{filtersOn ? 'Try clearing the search or the date filter.' : `There are no ${typeLabel(params.type).toLowerCase()}s here right now.`}</div>
+            </div>
+          ) : (
+            <TaskTable rows={data.rows} view={params.view} offset={offset} sort={params.sort} dir={params.dir} busyId={busyId}
+              onSort={onSort} onAction={act} onDetails={(r, focus) => setDialog({ kind: 'details', id: r.id, focus })} onEdit={openEdit} onDelete={r => setDialog({ kind: 'delete', row: r })} />
+          )}
+        </div>
+
+        {data.total > 0 && (
+          <nav aria-label="Pagination" className="mt-4 flex flex-wrap items-center justify-between gap-3 text-[13px] text-gray-600">
+            <span>Showing {offset + 1}–{offset + data.rows.length} of {data.total}</span>
+            <div className="flex items-center gap-1">
+              <button type="button" disabled={data.page <= 1} onClick={() => setParams({ page: String(data.page - 1) })} aria-label="Previous page" className="w-9 h-9 rounded border border-gray-300 flex items-center justify-center hover:bg-gray-50 disabled:opacity-40"><ChevronLeft className="w-4 h-4" /></button>
+              {pageButtons.map((p, i) => (
+                <span key={p} className="flex items-center">
+                  {i > 0 && p - pageButtons[i - 1] > 1 && <span className="px-1">…</span>}
+                  <button type="button" onClick={() => setParams({ page: String(p) })} aria-current={p === data.page ? 'page' : undefined}
+                    className={`min-w-9 h-9 px-2 rounded border text-[13px] ${p === data.page ? 'bg-[#f5b800] border-[#f5b800] font-semibold text-[#1f1f1f]' : 'border-gray-300 hover:bg-gray-50'}`}>{p}</button>
+                </span>
+              ))}
+              <button type="button" disabled={data.page >= data.pageCount} onClick={() => setParams({ page: String(data.page + 1) })} aria-label="Next page" className="w-9 h-9 rounded border border-gray-300 flex items-center justify-center hover:bg-gray-50 disabled:opacity-40"><ChevronRight className="w-4 h-4" /></button>
+            </div>
+          </nav>
+        )}
+      </div>
+
+      {dialog?.kind === 'create' && <CreateTaskModal mode="create" task={null} options={options} currentUserName={currentUserName} defaultType={params.type} onClose={() => setDialog(null)} onSaved={m => { setDialog(null); toast.success(m); refresh(); }} />}
+      {dialog?.kind === 'edit' && <CreateTaskModal mode="edit" task={dialog.task} options={options} currentUserName={currentUserName} defaultType={params.type} onClose={() => setDialog(null)} onSaved={m => { setDialog(null); toast.success(m); refresh(); }} />}
+      {dialog?.kind === 'details' && <TaskDetailsModal key={dialog.id} taskId={dialog.id} focus={dialog.focus} onClose={() => setDialog(null)} onEdit={t => setDialog({ kind: 'edit', task: t })} onChanged={refresh} />}
+      {dialog?.kind === 'delete' && (
+        <LightConfirm title="Delete this task?" confirmLabel="Delete" danger busy={deleting} onConfirm={confirmDelete} onCancel={() => setDialog(null)}>
+          <p><b>{dialog.row.title}</b> will be deleted permanently, with its files and history.</p>
+        </LightConfirm>
       )}
     </div>
   );
 }
-

@@ -10,7 +10,7 @@ export async function POST(request: Request, { params }: Params) {
   return withAuthRoute(request, async ctx => {
     const { id } = await params;
     const { files } = await readJson(request, attachmentSignSchema);
-    return NextResponse.json({ uploads: await signAttachmentUploads(ctx, id, files) });
+    return NextResponse.json(await signAttachmentUploads(ctx, id, files));
   });
 }
 

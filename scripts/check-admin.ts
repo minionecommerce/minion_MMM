@@ -1,7 +1,7 @@
-import { PrismaClient } from "@prisma/client";
+import { createPrismaClient } from "../src/lib/prisma-factory";
 import bcrypt from "bcryptjs";
 
-const prisma = new PrismaClient();
+const prisma = createPrismaClient();
 
 async function main() {
   const user = await prisma.user.findUnique({

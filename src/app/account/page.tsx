@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation';
 import { getAuthContext } from '@/lib/auth';
 import { getUserProfile } from '@/lib/users/queries';
+import { getUserLayout } from '@/lib/users/layout';
 import { ProfileView } from '@/components/users/ProfileView';
 
 export const dynamic = 'force-dynamic';
@@ -10,7 +11,7 @@ export default async function AccountPage() {
   const ctx = await getAuthContext();
   if (!ctx) redirect('/login');
   if (ctx.mustChangePassword) redirect('/account/change-password');
-  const profile = await getUserProfile(ctx.userId);
+  const [profile, layout] = await Promise.all([getUserProfile(ctx.userId), getUserLayout()]);
   if (!profile) redirect('/login');
 
   return (
@@ -20,7 +21,7 @@ export default async function AccountPage() {
           <div className="text-[11px] font-bold tracking-wider text-yellow-400">MY ACCOUNT</div>
           <h1 className="text-[26px] font-black tracking-tight uppercase">My Profile</h1>
         </div>
-        <ProfileView profile={profile} isSelf />
+        <ProfileView profile={profile} isSelf layout={layout} />
       </div>
     </div>
   );
