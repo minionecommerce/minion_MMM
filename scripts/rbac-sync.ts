@@ -19,15 +19,16 @@ const ALL = [...ACTIONS];
 const VCE: Action[] = ["view", "create", "edit"];
 const BASE: [string[], Action[]] = [["dashboard"], ["view"]];
 const MY_WORK: [string[], Action[]] = [["my_work"], VCE];
+const ATTENDANCE: [string[], Action[]] = [["attendance"], ["view", "create"]]; // everyone marks their own attendance
 
 const STARTER_ROLES: { key: string; name: string; description: string; perms: [string[], Action[]][] }[] = [
   { key: "admin", name: "Admin", description: "All modules and actions. Cannot manage Super Admins.", perms: [[MODULES.map(m => m.key), ALL]] },
   { key: "manager", name: "Manager", description: "Runs day-to-day operations across CRM, delivery and finance.", perms: [[MODULES.map(m => m.key).filter(k => !["users", "settings", "hr"].includes(k)), ["view", "create", "edit", "approve", "export"]]] },
-  { key: "sales_executive", name: "Sales Executive", description: "Leads, customers, quotes, site visits and deals.", perms: [BASE, MY_WORK, [CRM_MODULES, VCE], [["tasks"], VCE], [["reports"], ["view"]]] },
-  { key: "project_manager", name: "Project Manager", description: "Projects, BOQ, tasks, vendors and site execution.", perms: [BASE, MY_WORK, [["projects", "boq", "tasks", "vendors", "site_visits", "purchase", "ppr"], ["view", "create", "edit", "approve"]], [["reports"], ["view", "export"]], [["customers", "parks"], ["view"]]] },
-  { key: "accountant", name: "Accountant", description: "Payments, invoices and finance.", perms: [BASE, MY_WORK, [["payments", "invoices", "finance"], ["view", "create", "edit", "export"]], [["projects", "vendors", "purchase"], ["view"]], [["reports"], ["view", "export"]]] },
-  { key: "hr", name: "HR", description: "Employees, HR, learning and rewards.", perms: [BASE, MY_WORK, [["employees", "hr", "learning", "rewards"], ["view", "create", "edit", "export"]], [["users"], ["view"]]] },
-  { key: "site_executive", name: "Site Executive", description: "Site visits and on-site task execution.", perms: [BASE, MY_WORK, [["site_visits"], VCE], [["tasks", "parks"], ["view", "edit"]], [["projects"], ["view"]]] },
+  { key: "sales_executive", name: "Sales Executive", description: "Leads, customers, quotes, site visits and deals.", perms: [BASE, MY_WORK, ATTENDANCE, [CRM_MODULES, VCE], [["tasks"], VCE], [["reports"], ["view"]]] },
+  { key: "project_manager", name: "Project Manager", description: "Projects, BOQ, tasks, vendors and site execution.", perms: [BASE, MY_WORK, ATTENDANCE, [["projects", "boq", "tasks", "vendors", "site_visits", "purchase", "ppr"], ["view", "create", "edit", "approve"]], [["reports"], ["view", "export"]], [["customers", "parks"], ["view"]]] },
+  { key: "accountant", name: "Accountant", description: "Payments, invoices and finance.", perms: [BASE, MY_WORK, ATTENDANCE, [["payments", "invoices", "finance"], ["view", "create", "edit", "export"]], [["projects", "vendors", "purchase"], ["view"]], [["reports"], ["view", "export"]]] },
+  { key: "hr", name: "HR", description: "Employees, HR, learning and rewards.", perms: [BASE, MY_WORK, ATTENDANCE, [["employees", "hr", "learning", "rewards"], ["view", "create", "edit", "export"]], [["users"], ["view"]]] },
+  { key: "site_executive", name: "Site Executive", description: "Site visits and on-site task execution.", perms: [BASE, MY_WORK, ATTENDANCE, [["site_visits"], VCE], [["tasks", "parks"], ["view", "edit"]], [["projects"], ["view"]]] },
 ];
 
 function slug(name: string) {
@@ -94,8 +95,9 @@ async function main() {
     await prisma.role.update({ where: { id: r.id }, data: { key } });
   }
 
-  // 4. Dashboard + My Work for every role (previous default behaviour; Super Admin is a setting of the user, not a role)
-  const baseline = ["dashboard.view", "my_work.view", "my_work.create", "my_work.edit"];
+  // 4. Dashboard + My Work for every role (previous default behaviour; Super Admin is a setting of the user, not a role),
+  //    and Attendance view + mark, so each employee can open their own attendance page
+  const baseline = ["dashboard.view", "my_work.view", "my_work.create", "my_work.edit", "attendance.view", "attendance.create"];
   for (const r of await prisma.role.findMany()) {
     for (const key of baseline) {
       const permissionId = idByKey.get(key)!;

@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Home, Briefcase, Target, LayoutGrid, TreePine, CheckCircle2, Users, UserCog, BookOpen, Gift, Library, Search, Bell, ChevronUp, LogOut, Menu, X, PanelLeftClose, KeyRound, ClipboardList, Handshake, Boxes, Wrench, Wallet, HandCoins, type LucideIcon } from 'lucide-react';
+import { Home, Briefcase, Target, LayoutGrid, TreePine, CheckCircle2, Users, UserCog, BookOpen, Gift, Library, Search, Bell, ChevronUp, LogOut, Menu, X, PanelLeftClose, KeyRound, ClipboardList, Handshake, FileText, Boxes, Wrench, Wallet, HandCoins, CalendarCheck, type LucideIcon } from 'lucide-react';
 import { NAV_ITEMS, snapshotCanViewAny } from '@/lib/rbac/catalog';
 import { useSession, signOut } from 'next-auth/react';
 import { useEffect, useState, useSyncExternalStore } from 'react';
@@ -12,10 +12,12 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/my-work": Briefcase,
   "/leads": ClipboardList,
   "/deals": Handshake,
+  "/quotes": FileText,
   "/material-vendors": Boxes,
   "/service-vendors": Wrench,
   "/pre-payments": Wallet,
   "/payment-collections": HandCoins,
+  "/attendance": CalendarCheck,
   "/crm": Target,
   "/projects": LayoutGrid,
   "/parks": TreePine,
@@ -119,7 +121,8 @@ export default function GlobalNavbar() {
     }
   }, [sessionInvalid, router]);
 
-  if (pathname === '/login' || pathname === '/unauthorized' || pathname === '/forgot-password' || pathname === '/account/change-password') {
+  // The page a customer opens with a quote's share link and the print page of a quote have no navigator
+  if (pathname === '/login' || pathname === '/unauthorized' || pathname === '/forgot-password' || pathname === '/account/change-password' || pathname?.startsWith('/q/') || /^\/quotes\/[^/]+\/print$/.test(pathname ?? '')) {
     return null;
   }
 
@@ -156,7 +159,7 @@ export default function GlobalNavbar() {
       </div>
 
       {/* Navigation Links */}
-      <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
+      <nav className="flex-1 overflow-y-auto no-scrollbar px-3 py-4 space-y-1">
         {visibleNavItems.map((item) => {
           const isActive = pathname === item.href || (item.href !== '/' && pathname?.startsWith(item.href));
           const Icon = item.icon;

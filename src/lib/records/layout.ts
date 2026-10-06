@@ -20,14 +20,17 @@ import { MODULES, type ModuleDef, type SystemField } from "./registry";
 import {
   CUSTOM_TYPE_SET, CURRENCY_CODES, DEFAULT_CURRENCY, FIELD_LABEL_MAX, MAX_CUSTOM_FIELDS, MAX_CUSTOM_SECTIONS, MAX_OPTIONS, OPTION_LABEL_MAX,
   SECTION_LABEL_MAX, TABLE_COLUMN_TYPES, typeChoicesFor,
-  type CustomFieldType, type FieldOption, type FieldType, type LayoutField, type LayoutSection, type ModuleId, type ModuleLayoutDto,
+  LOOKUP_TARGET_SET,
+  type CustomFieldType, type FieldOption, type FieldType, type LayoutField, type LayoutSection, type LookupKind, type ModuleId, type ModuleLayoutDto,
 } from "./types";
 import { cleanValue, plainField } from "./values";
 
 type Tx = Prisma.TransactionClient;
 type Db = Tx | typeof prisma;
 const TX = { maxWait: 10_000, timeout: 20_000 };
-export const ROW_PARENT_KEY = "vendorId"; // every table section's rows point to their record with this column
+export const ROW_PARENT_KEY = "vendorId"; // the rows of a table section point to their record with this column (unless the table says otherwise)
+const parentKeyOf = (t: { parentKey?: string }) => t.parentKey ?? ROW_PARENT_KEY;
+const parentRelationOf = (t: { parentRelation?: string }) => t.parentRelation ?? "vendor";
 
 // ---------------------------------------------------------------------------
 // What is stored
@@ -38,7 +41,7 @@ type StoredOverride = {
 };
 type StoredCustom = {
   key: string; label: string; type: CustomFieldType; section: string; required: boolean; enabled: boolean;
-  defaultValue: string | null; options: FieldOption[]; currency?: string; maxFiles?: number;
+  defaultValue: string | null; options: FieldOption[]; currency?: string; maxFiles?: number; lookup?: LookupKind;
 };
 type StoredSection = { id: string; label?: string; custom?: boolean };
 export type Stored = { sections?: StoredSection[]; fields?: Record<string, StoredOverride>; custom?: StoredCustom[]; order?: string[]; columns?: string[] };
@@ -87,6 +90,7 @@ export function buildLayout(def: ModuleDef, stored: Stored): ModuleLayoutDto {
   for (const id of known.keys()) if (!sectionOrder.includes(id)) sectionOrder.push(id);
   const sections = sectionOrder.map(id => known.get(id)!);
   const formIds = new Set(sections.filter(s => s.kind === "FORM").map(s => s.id));
+  const fixedIds = new Set(sections.filter(s => s.kind === "FIXED").map(s => s.id));
   const firstForm = sections.find(s => s.kind === "FORM")!.id;
   const tableSections = new Set(def.tables.map(t => t.section));
 
@@ -100,7 +104,7 @@ export function buildLayout(def: ModuleDef, stored: Stored): ModuleLayoutDto {
     const o = stored.fields?.[f.key] ?? {};
     const locked = !!f.requiredLocked;
     const type = f.type;
-    const section = table ? f.section : o.section && formIds.has(o.section) ? o.section : f.section;
+    const section = table || fixedIds.has(f.section) ? f.section : o.section && formIds.has(o.section) ? o.section : f.section;
     const options = type === "DROPDOWN" ? (Array.isArray(o.options) ? o.options : f.options ?? []) : [];
     const defaultable = !(type === "AUTO" || type === "LOOKUP" || type === "APPROVER" || type === "FILE" || f.readOnly);
     let defaultValue: string | null = defaultable ? (o.defaultValue !== undefined ? o.defaultValue : f.default ?? null) : f.readOnly ? f.default ?? null : null;
@@ -114,10 +118,10 @@ export function buildLayout(def: ModuleDef, stored: Stored): ModuleLayoutDto {
       section,
       required: locked ? !!f.required : o.required ?? !!f.required,
       requiredLocked: locked,
-      enabled: locked ? true : o.enabled ?? true,
+      enabled: locked ? true : o.enabled ?? !f.hidden,
       readOnly: !!f.readOnly,
       inList: false,
-      listable: !table && type !== "FILE" && type !== "AUTO",
+      listable: !table && !f.notListable && type !== "FILE" && (type !== "AUTO" || !!f.listed),
       defaultValue,
       defaultable,
       options,
@@ -149,9 +153,9 @@ export function buildLayout(def: ModuleDef, stored: Stored): ModuleLayoutDto {
       inList: false,
       listable: !inTable && c.type !== "FILE",
       defaultValue: c.type === "DROPDOWN" && c.defaultValue && !options.some(x => x.id === c.defaultValue) ? null : c.defaultValue ?? null,
-      defaultable: c.type !== "FILE",
+      defaultable: c.type !== "FILE" && c.type !== "LOOKUP",
       options,
-      lookup: null,
+      lookup: c.type === "LOOKUP" && c.lookup && LOOKUP_TARGET_SET.has(c.lookup) ? c.lookup : null,
       prefix: c.type === "CURRENCY" ? currency : null,
       currency,
       maxFiles: c.type === "FILE" ? c.maxFiles ?? 3 : 1,
@@ -168,7 +172,7 @@ export function buildLayout(def: ModuleDef, stored: Stored): ModuleLayoutDto {
   const ordered = keys.map(k => byKey.get(k)!);
 
   // list columns: the saved ones, or the standard ones; a hidden field keeps its place but is not shown
-  const defaultColumns = standard.filter(({ f, table }) => !table && f.listed).map(({ f }) => f.key);
+  const defaultColumns = def.defaultColumns ?? standard.filter(({ f, table }) => !table && f.listed).map(({ f }) => f.key);
   const columns = uniq(stored.columns ?? defaultColumns).filter(k => {
     const f = byKey.get(k);
     return !!f && f.listable && f.enabled;
@@ -289,12 +293,12 @@ export async function fieldUsage(moduleId: ModuleId, f: LayoutField, optionId?: 
     // A real column
     const where = optionId === undefined ? { [key]: { not: null } } : { [key]: optionId };
     const delegate = (prisma as unknown as Record<string, { count(args: unknown): Promise<number> }>)[table ? table.model : def.model];
-    return delegate.count({ where: table ? { ...where, vendor: { deletedAt: null } } : { ...where, deletedAt: null } });
+    return delegate.count({ where: table ? { ...where, [parentRelationOf(table)]: { deletedAt: null } } : { ...where, deletedAt: null } });
   }
   // Stored in customFields
   if (table) {
     const rowTable = Prisma.raw(`"${table.table}"`);
-    const fk = Prisma.raw(`r."${ROW_PARENT_KEY}"`);
+    const fk = Prisma.raw(`r."${parentKeyOf(table)}"`);
     const rows = optionId === undefined
       ? await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM ${rowTable} r JOIN ${parent} p ON p."id" = ${fk} WHERE p."deletedAt" IS NULL AND jsonb_exists(r."customFields", ${key}::text)`
       : await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM ${rowTable} r JOIN ${parent} p ON p."id" = ${fk} WHERE p."deletedAt" IS NULL AND r."customFields"->>${key}::text = ${optionId}`;
@@ -327,7 +331,7 @@ async function clearValues(tx: Tx, moduleId: ModuleId, f: LayoutField, optionId?
 // ---------------------------------------------------------------------------
 export type NewFieldInput = {
   label: string; type: string; section?: string; required?: boolean; defaultValue?: string | null;
-  options?: string[]; defaultOption?: number | null; currency?: string; maxFiles?: number; inList?: boolean;
+  options?: string[]; defaultOption?: number | null; currency?: string; maxFiles?: number; inList?: boolean; lookup?: string;
 };
 
 const cleanCurrency = (c: string | undefined) => {
@@ -345,11 +349,20 @@ export async function createField(ctx: AuthContext, moduleId: ModuleId, input: N
   assertSuperAdmin(ctx);
   if (!CUSTOM_TYPE_SET.has(input.type)) throw new ServiceError(400, "Choose a field type from the list.");
   const type = input.type as CustomFieldType;
+  if (type === "LOOKUP" && !MODULES[moduleId].allowLookupFields) throw new ServiceError(400, "Choose a field type from the list.");
   const layout = await getLayout(moduleId);
   const sectionId = input.section ?? layout.sections.find(s => s.kind === "FORM")!.id;
   const section = sectionOf(layout, sectionId);
   if (!section) throw new ServiceError(400, "Choose a section from the list.");
+  if (section.kind === "FIXED") throw new ServiceError(400, "Fields cannot be added to this section.");
   if (section.kind === "TABLE" && !TABLE_COLUMN_TYPES.has(type)) throw new ServiceError(400, "That field type cannot be a column of a table.");
+  let lookup: LookupKind | undefined;
+  if (type === "LOOKUP") {
+    if (!input.lookup || !LOOKUP_TARGET_SET.has(input.lookup)) throw new ServiceError(400, "Choose which list the lookup shows.");
+    lookup = input.lookup as LookupKind;
+  } else if (input.lookup) {
+    throw new ServiceError(400, "Only a lookup field has a list to show.");
+  }
   if (layout.fields.filter(f => !f.isSystem).length >= MAX_CUSTOM_FIELDS) throw new ServiceError(400, `You can add up to ${MAX_CUSTOM_FIELDS} new fields.`);
   const label = cleanLabel(input.label, layout);
 
@@ -365,13 +378,13 @@ export async function createField(ctx: AuthContext, moduleId: ModuleId, input: N
     if (input.required && options.length === 0) throw new ServiceError(400, `Add at least one option before making "${label}" required.`);
   } else {
     if (input.options?.length) throw new ServiceError(400, "Only a dropdown has options.");
-    defaultValue = await cleanDefault(type, [], input.defaultValue);
+    defaultValue = type === "LOOKUP" ? null : await cleanDefault(type, [], input.defaultValue);
   }
   const currency = type === "CURRENCY" ? cleanCurrency(input.currency) : undefined;
   const maxFiles = type === "FILE" ? cleanMaxFiles(input.maxFiles) : undefined;
   const field: StoredCustom = {
     key: newKey(), label, type, section: sectionId, required: !!input.required, enabled: true, defaultValue, options,
-    ...(currency ? { currency } : {}), ...(maxFiles ? { maxFiles } : {}),
+    ...(currency ? { currency } : {}), ...(maxFiles ? { maxFiles } : {}), ...(lookup ? { lookup } : {}),
   };
   const wantsColumn = !!input.inList && section.kind === "FORM" && type !== "FILE";
 
@@ -393,7 +406,7 @@ export async function updateField(ctx: AuthContext, moduleId: ModuleId, key: str
   assertSuperAdmin(ctx);
   const layout = await getLayout(moduleId);
   const f = fieldOf(layout, key);
-  const inTable = sectionOf(layout, f.section)?.kind === "TABLE";
+  const inTable = sectionOf(layout, f.section)?.kind !== "FORM"; // a column of a table, or a field of a fixed section: it stays where it is
 
   const change: StoredOverride = {};
   if (patch.label !== undefined) {
@@ -401,7 +414,7 @@ export async function updateField(ctx: AuthContext, moduleId: ModuleId, key: str
     if (label !== f.label) change.label = label;
   }
   if (patch.required !== undefined && patch.required !== f.required) {
-    if (f.requiredLocked) throw new ServiceError(400, "This property cannot be changed for this system field.");
+    if (f.requiredLocked || f.type === "CALC") throw new ServiceError(400, "This property cannot be changed for this system field.");
     if (patch.required && f.type === "DROPDOWN" && f.options.length === 0) throw new ServiceError(400, `Add at least one option before making "${f.label}" required.`);
     change.required = patch.required;
   }
@@ -414,7 +427,7 @@ export async function updateField(ctx: AuthContext, moduleId: ModuleId, key: str
     if (f.defaultable) change.defaultValue = await cleanDefault(f.type, f.options, patch.defaultValue);
   }
   if (patch.section !== undefined && patch.section !== f.section) {
-    if (inTable) throw new ServiceError(400, "A column cannot move out of its table.");
+    if (inTable) throw new ServiceError(400, "This field cannot move out of its section.");
     const target = sectionOf(layout, patch.section);
     if (!target || target.kind !== "FORM") throw new ServiceError(400, "Choose a section from the list.");
     change.section = patch.section;
@@ -627,9 +640,9 @@ export async function createSection(ctx: AuthContext, moduleId: ModuleId, rawLab
   const entry: StoredSection = { id: newSectionId(), label, custom: true };
   return saveLayout(ctx, moduleId, (s, current) => {
     const all = materializeSections(current);
-    let lastForm = -1;
-    current.sections.forEach((x, i) => { if (x.kind === "FORM") lastForm = i; });
-    all.splice(lastForm + 1, 0, entry); // after the last form section, before the tables
+    let at = current.sections.findIndex(x => x.kind !== "FORM");
+    if (at < 0) at = current.sections.length;
+    all.splice(at, 0, entry); // after the form sections that come first, before the first table or fixed section
     return { ...s, sections: all };
   }, { action: "MODULE_SECTION_CREATED", newValue: { id: entry.id, label } });
 }

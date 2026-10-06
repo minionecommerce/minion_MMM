@@ -10,7 +10,7 @@ import { LayoutButton } from './layout-editor/LayoutEditor';
 import FileField from './components/FileField';
 import { TwoColumns } from './components/RecordForm';
 
-const VENDOR_PAGE = { materialVendor: '/material-vendors', serviceVendor: '/service-vendors' } as const;
+const VENDOR_PAGE: Record<string, string> = { materialVendor: '/material-vendors', serviceVendor: '/service-vendors', customer: '/quotes?customer=', project: '/projects' };
 
 function Value({ f, raw, refs, slug, approvedAt }: { f: LayoutField; raw: unknown; refs: RecordRefs; slug: string; approvedAt?: string | null }) {
   if (f.type === 'FILE') return <FileField slug={slug} fieldKey={f.key} label={f.label} files={(raw as FileDto[]) ?? []} maxFiles={f.maxFiles} onChange={() => {}} readOnly />;

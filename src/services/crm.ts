@@ -34,7 +34,7 @@ export async function getLeads() {
         deals: { select: { id: true, status: true, value: true } },
         siteVisits: { select: { id: true, status: true, visitDate: true } },
         followUps: { select: { id: true, status: true, scheduledDate: true } },
-        quotes: { select: { id: true, status: true, amount: true, type: true } },
+        quotes: { where: { deletedAt: null }, select: { id: true, status: true, amount: true, type: true } },
       },
       orderBy: { updatedAt: 'desc' }
     });
@@ -152,8 +152,8 @@ async function loadCRMAnalyticsData() {
       prisma.followUp.count({ where: { status: 'Completed', updatedAt: { gte: startOfMonth, lte: endOfMonth } } }),
       prisma.siteVisit.count({ where: { createdAt: { gte: startOfMonth, lte: endOfMonth } } }),
       prisma.siteVisit.count({ where: { status: 'Completed', updatedAt: { gte: startOfMonth, lte: endOfMonth } } }),
-      prisma.quote.count({ where: { createdAt: { gte: startOfMonth, lte: endOfMonth } } }),
-      prisma.quote.count({ where: { status: 'Accepted', updatedAt: { gte: startOfMonth, lte: endOfMonth } } }),
+      prisma.quote.count({ where: { deletedAt: null, createdAt: { gte: startOfMonth, lte: endOfMonth } } }),
+      prisma.quote.count({ where: { deletedAt: null, status: 'Accepted', updatedAt: { gte: startOfMonth, lte: endOfMonth } } }),
       prisma.deal.count({ where: { deletedAt: null, createdAt: { gte: startOfMonth, lte: endOfMonth } } }),
       prisma.deal.count({ where: { deletedAt: null, status: 'Won', wonAt: { gte: startOfMonth, lte: endOfMonth } } }),
       prisma.deal.aggregate({

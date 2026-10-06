@@ -5,7 +5,8 @@ import { landingPath, modulesForPath, snapshotCanViewAny } from "@/lib/rbac/cata
 // Optimistic checks only (cookie/token, no database). Real authorization happens
 // in the Data Access Layer (src/lib/auth.ts) on every page, server action and API route.
 
-const PUBLIC_PATHS = ["/login", "/forgot-password", "/unauthorized"];
+// /q/<token> is the page a customer opens with the share link of a quote: it needs no sign-in and shows that one quote only
+const PUBLIC_PATHS = ["/login", "/forgot-password", "/unauthorized", "/q"];
 const PASSWORD_CHANGE_PATHS = ["/account/change-password", "/api/account/password"];
 
 function matches(pathname: string, paths: string[]) {

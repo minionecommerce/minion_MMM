@@ -4,7 +4,7 @@ import { Lock } from 'lucide-react';
 import { NOT_YET_APPROVED } from '@/lib/records/registry';
 import { lookupText, textLimit } from '@/lib/records/values';
 import type { FileDto, LayoutField, LookupItem, RecordRefs } from '@/lib/records/types';
-import { searchLookup } from '../client';
+import { searchLookup, type LookupKind } from '../client';
 import FileField from './FileField';
 import LookupSelect from './LookupSelect';
 
@@ -18,7 +18,11 @@ export type FieldCtx = {
   canApprove: boolean;
   onPick: (id: string, text: string) => void;
   onBusy: (delta: number) => void;
+  lookupExtra?: Record<string, string>; // narrows the searched lists (the quote form: only the deals and projects of the chosen customer)
 };
+
+const LOOKUP_KIND: Record<string, LookupKind> = { deal: 'deals', materialVendor: 'materialVendors', serviceVendor: 'serviceVendors', customer: 'customers', project: 'projects' };
+const LOOKUP_EMPTY: Record<LookupKind, string> = { deals: 'No deals found', materialVendors: 'No vendors found', serviceVendors: 'No vendors found', customers: 'No customers found', projects: 'No projects found' };
 
 export const controlClass = (invalid: boolean, required: boolean, extra = '') =>
   `w-full h-[38px] border rounded px-3 text-[14px] text-gray-900 bg-white focus:outline-none disabled:bg-gray-100 disabled:text-gray-500 ${invalid ? 'border-red-500' : 'border-gray-300 focus:border-[#f5b800]'} ${required ? 'border-l-[3px] border-l-[#e5484d]' : ''} ${extra}`;
@@ -110,13 +114,13 @@ export default function FieldInput({ field: f, value, onChange, error, ctx, comp
         />
       );
     case 'LOOKUP': {
-      const kind = f.lookup === 'deal' ? 'deals' : f.lookup === 'materialVendor' ? 'materialVendors' : 'serviceVendors';
+      const kind: LookupKind = LOOKUP_KIND[f.lookup ?? ''] ?? 'serviceVendors';
       return (
         <LookupSelect
           htmlId={htmlId}
           value={text || null}
           shown={text ? pickedText(f, text, ctx) : ''}
-          search={q => searchLookup(ctx.slug, kind, q)}
+          search={q => searchLookup(ctx.slug, kind, q, ctx.lookupExtra)}
           onChange={(id, item) => {
             if (id && item) ctx.onPick(id, item.sub ? `${item.label} - ${item.sub.split(' · ')[0]}` : item.label);
             onChange(id ?? '');
@@ -125,7 +129,7 @@ export default function FieldInput({ field: f, value, onChange, error, ctx, comp
           ariaLabel={f.label}
           required={marked}
           invalid={invalid}
-          emptyText={f.lookup === 'deal' ? 'No deals found' : 'No vendors found'}
+          emptyText={LOOKUP_EMPTY[kind]}
         />
       );
     }

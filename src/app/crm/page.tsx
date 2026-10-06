@@ -39,12 +39,13 @@ export default async function CRMPage() {
         customer: true,
         lead: { select: { id: true, leadNumber: true } },
         salesExecutive: { include: { user: { select: SAFE_USER_SELECT } } },
-        quotes: { select: { id: true, quoteNumber: true, amount: true, status: true, type: true } },
+        quotes: { where: { deletedAt: null }, select: { id: true, quoteNumber: true, amount: true, status: true, type: true } },
         projects: { select: { id: true, name: true, status: true } },
       },
       orderBy: { updatedAt: 'desc' }
     }),
     prisma.quote.findMany({
+      where: { deletedAt: null },
       include: {
         customer: true,
         lead: { select: { id: true, leadNumber: true } },

@@ -1,6 +1,6 @@
 import { withAuthRoute } from "@/lib/api";
 import { exportRecords, parseListParams } from "@/lib/records/service";
-import { moduleFrom } from "../../helpers";
+import { genericModuleFrom as moduleFrom } from "../../helpers";
 
 type Params = { params: Promise<{ module: string }> };
 

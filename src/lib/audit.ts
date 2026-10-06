@@ -50,7 +50,9 @@ export type SecurityAction =
   | "MODULE_SECTION_CREATED"
   | "MODULE_SECTION_UPDATED"
   | "MODULE_SECTION_DELETED"
-  | "MODULE_SECTIONS_REORDERED";
+  | "MODULE_SECTIONS_REORDERED"
+  | "QUOTE_SETTINGS_UPDATED"
+  | "QUOTE_NUMBER_SET";
 
 type Db = Prisma.TransactionClient | typeof prisma;
 

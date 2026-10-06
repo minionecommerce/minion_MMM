@@ -47,6 +47,10 @@ model User {
   prePaymentsAsApprover          PrePayment[]        @relation("PrePaymentApprover")
   paymentCollectionsAsTaskPerson PaymentCollection[] @relation("PaymentCollectionTaskPerson")
   paymentCollectionsAsApprover   PaymentCollection[] @relation("PaymentCollectionApprover")
+  quotesAsSalesperson            Quote[]             @relation("QuoteSalesperson")
+
+  // Attendance: the person's days (check in / out and the office and site movements)
+  attendanceDays AttendanceDay[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -276,6 +280,7 @@ model Customer {
   email        String?
   phone        String?
   address      String?
+  gstin        String? // GST number, printed on quotes
   status       String  @default("Active") // Active, Inactive
 
   leads      Lead[]
@@ -654,6 +659,40 @@ model Quote {
   createdById String?
   createdBy   Employee? @relation("QuoteCreatedBy", fields: [createdById], references: [id])
 
+  // Quotes module (Zoho Books style quotes): header fields, who sells it, the totals panel, share link, soft delete
+  reference       String?
+  subject         String?
+  terms           String?
+  projectId       String?
+  project         Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  salespersonId   String?
+  salesperson     User?     @relation("QuoteSalesperson", fields: [salespersonId], references: [id], onDelete: SetNull)
+  billingAddress  String?
+  customerGstin   String?
+  placeOfSupply   String?
+  projectLocation String?
+  numberSeries    String? // the quote number without its running number, e.g. QT/MSHS/26-27/A/
+  numberSeq       Int? // the running number, e.g. 723
+  subTotal        Decimal?  @db.Decimal(14, 2)
+  discountPercent Decimal?  @db.Decimal(7, 3)
+  discountAmount  Decimal?  @db.Decimal(14, 2)
+  taxTotal        Decimal?  @db.Decimal(14, 2)
+  shippingCharges Decimal?  @db.Decimal(14, 2)
+  tdsTcsKind      String? // TDS or TCS
+  tdsTcsTaxId     String?
+  tdsTcsName      String?
+  tdsTcsRate      Decimal?  @db.Decimal(7, 3)
+  tdsTcsAmount    Decimal?  @db.Decimal(14, 2)
+  adjustmentLabel String?
+  adjustment      Decimal?  @db.Decimal(14, 2)
+  roundOff        Decimal?  @db.Decimal(14, 2)
+  retainerInvoice Boolean   @default(false)
+  shareToken      String?   @unique
+  shareExpiresAt  DateTime?
+  customFields    Json?
+  updatedById     String?
+  deletedAt       DateTime?
+
   lineItems    QuoteItem[]
   salesOrders  SalesOrder[]
   crmAuditLogs CRMAuditLog[]
@@ -665,6 +704,11 @@ model Quote {
   @@index([leadId])
   @@index([dealId])
   @@index([status])
+  @@index([date])
+  @@index([deletedAt])
+  @@index([projectId])
+  @@index([salespersonId])
+  @@index([numberSeries, numberSeq])
 }
 
 model QuoteItem {
@@ -681,6 +725,21 @@ model QuoteItem {
 
   // If converted to BOQ, track reference
   boqItemId String?
+
+  // Quotes module: the line as it is shown on the quote (name, HSN, tax as they were when it was saved)
+  sortOrder    Int          @default(0)
+  itemId       String?
+  item         CatalogItem? @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  name         String?
+  hsn          String?
+  taxId        String?
+  taxName      String?
+  taxRate      Decimal?     @db.Decimal(7, 3)
+  taxAmount    Decimal?     @db.Decimal(14, 2)
+  customFields Json?
+
+  @@index([quoteId, sortOrder])
+  @@index([itemId])
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -790,6 +849,7 @@ model Project {
   payments       Payment[]
   resources      Resource[]
   landscapes     Landscape[]
+  quotes         Quote[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1601,4 +1661,79 @@ model LandscapeIssue {
 
   @@index([landscapeId])
   @@index([status])
+}
+
+// Quotes module: the items that are picked on a quote
+model CatalogItem {
+  id           String    @id @default(cuid())
+  name         String
+  description  String?
+  hsn          String? // HSN / SAC
+  unit         String?
+  rate         Decimal   @default(0) @db.Decimal(12, 2)
+  taxId        String? // the default tax: an id from the Quote Settings
+  kind         String    @default("Goods") // Goods or Service
+  isActive     Boolean   @default(true)
+  customFields Json?
+  createdById  String?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+
+  quoteLines QuoteItem[]
+
+  @@index([name])
+  @@index([deletedAt, isActive])
+}
+
+// Quotes module: numbering, taxes, rounding, company details and templates (one JSON row per group)
+model QuoteSetting {
+  key       String   @id // numbering, taxes, tds, tcs, rounding, company, templates
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------
+// Attendance: one row per person per calendar day (the CRM time zone's day) with the office / site movements of that day
+// ---------------------------------------------------------
+model AttendanceDay {
+  id          String               @id @default(cuid())
+  userId      String
+  user        User                 @relation(fields: [userId], references: [id])
+  day         DateTime             @db.Date // the calendar day in the CRM time zone
+  status      String               @default("PRESENT") // PRESENT, LEAVE, ABSENT (a day nobody marked has no row; Leave and Absent rows come from the later approval workflow / HR)
+  checkInAt   DateTime?
+  checkOutAt  DateTime?
+  stdStartMin Int? // the office hours in force when the day was started, in minutes after midnight (09:00 = 540)
+  stdEndMin   Int?
+  movements   AttendanceMovement[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, day])
+  @@index([day])
+}
+
+model AttendanceMovement {
+  id            String        @id @default(cuid())
+  dayId         String
+  day           AttendanceDay @relation(fields: [dayId], references: [id], onDelete: Cascade)
+  seq           Int // order within the day: 1, 2, 3 ...
+  type          String // OFFICE_OUT, OFFICE_IN, SITE_IN, SITE_OUT
+  at            DateTime
+  purposeKind   String? // CODE or OTHER (asked on Office Out and Site In)
+  siteVisitCode String? // SV001
+  detail        String? // "SV001 - Skyline Project", or the text typed for Other
+
+  createdAt DateTime @default(now())
+
+  @@unique([dayId, seq])
+}
+
+// Attendance settings (one JSON row per group): "schedule" = {"start":"09:00","end":"18:30","weeklyOff":[0]}; no row = those defaults
+model AttendanceSetting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
 }

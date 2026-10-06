@@ -4,12 +4,13 @@ import { hasPermission } from "@/lib/rbac/effective";
 import { ServiceError } from "@/lib/users/service";
 import { activeUsers, approvers, searchDeals, searchMaterialVendors, searchServiceVendors } from "@/lib/records/lookups";
 import { stripControl } from "@/lib/records/values";
+import { searchCustomers, searchProjects } from "@/lib/quotes/lookups";
 import { moduleFrom } from "../../helpers";
 
 type Params = { params: Promise<{ module: string }> };
 
-// GET /api/records/<module>/lookups?kind=users|approvers|deals|materialVendors|serviceVendors&q=
-// The pick-lists of the forms, read from the live CRM data. Needs create or edit on the module.
+// GET /api/records/<module>/lookups?kind=users|approvers|deals|materialVendors|serviceVendors|customers|projects&q=
+// The pick-lists of the forms, read from the live CRM data (deals and projects: &customerId=). Needs create or edit on the module.
 export async function GET(request: Request, { params }: Params) {
   return withAuthRoute(request, async ctx => {
     const def = await moduleFrom(params);
@@ -22,9 +23,11 @@ export async function GET(request: Request, { params }: Params) {
     switch (kind) {
       case "users": return NextResponse.json({ items: await activeUsers() });
       case "approvers": return NextResponse.json({ items: await approvers(def.id) });
-      case "deals": return NextResponse.json({ items: await searchDeals(q) });
+      case "deals": return NextResponse.json({ items: await searchDeals(q, url.searchParams.get("customerId") ?? undefined) });
       case "materialVendors": return NextResponse.json({ items: await searchMaterialVendors(q) });
       case "serviceVendors": return NextResponse.json({ items: await searchServiceVendors(q) });
+      case "customers": return NextResponse.json({ items: (await searchCustomers(q)).map(c => ({ id: c.id, label: c.label, sub: c.sub, tag: c.tag })) });
+      case "projects": return NextResponse.json({ items: await searchProjects(q, url.searchParams.get("customerId") ?? undefined) });
       default: throw new ServiceError(400, "Unknown list");
     }
   });

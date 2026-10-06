@@ -148,8 +148,11 @@ export function lookupText(f: Pick<LayoutField, "lookup">, id: string, refs: Rec
     const d = refs.deals[id];
     return d ? (d.name ? `${d.code} - ${d.name}` : d.code) : "";
   }
-  const v = (f.lookup === "materialVendor" ? refs.materialVendors : refs.serviceVendors)[id];
-  return v ? `${v.code} - ${v.name}` : "";
+  if (f.lookup === "materialVendor" || f.lookup === "serviceVendor") {
+    const v = (f.lookup === "materialVendor" ? refs.materialVendors : refs.serviceVendors)[id];
+    return v ? `${v.code} - ${v.name}` : "";
+  }
+  return f.lookup ? refs.lookups?.[f.lookup]?.[id] ?? "" : "";
 }
 
 // The text a record shows for a field (lists, the record page, the CSV file)

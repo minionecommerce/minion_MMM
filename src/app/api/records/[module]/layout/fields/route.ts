@@ -18,6 +18,7 @@ const createSchema = z.object({
   currency: z.string().max(5).optional(),
   maxFiles: z.number().int().min(1).max(10).optional(),
   inList: z.boolean().optional(),
+  lookup: z.string().max(30).optional(), // a lookup field: which list it shows (customers, projects, deals, vendors, items, taxes)
 }).strict();
 
 // POST /api/records/<module>/layout/fields — New Field (Super Admin)
