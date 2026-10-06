@@ -13,6 +13,8 @@ export type SystemField = {
   requiredLocked?: boolean; // cannot be made optional or hidden
   readOnly?: boolean;
   listed?: boolean; // starts as a column of the list page
+  hidden?: boolean; // starts hidden (a Super Admin can show it in Edit Page Layout)
+  notListable?: boolean; // can never be a column of the list page
   options?: FieldOption[]; // the starting choices of a dropdown
   default?: string; // option id, "@me", "@today", or a literal
   lookup?: LookupKind;
@@ -30,6 +32,8 @@ export type TableDef = {
   model: string; // Prisma delegate of the rows
   table: string; // its SQL table
   fields: SystemField[];
+  parentKey?: string; // the column of a row that points to its record (default vendorId)
+  parentRelation?: string; // the relation of a row to its record (default vendor)
 };
 
 export type ModuleDef = {
@@ -47,10 +51,13 @@ export type ModuleDef = {
   table: string; // its SQL table
   entityType: string; // in the activity log
   nameKey: string; // the field that names a record in lookups ("Material Company Name")
-  sections: { id: string; label: string; kind: "FORM" | "TABLE" }[];
+  sections: { id: string; label: string; kind: "FORM" | "TABLE" | "FIXED" }[];
   fields: SystemField[];
   tables: TableDef[];
   hasApproval: boolean;
+  custom?: boolean; // has its own screens and service (Quotes): the generic record pages and API do not apply
+  allowLookupFields?: boolean; // New Field can add a Lookup
+  defaultColumns?: string[]; // the list columns a module starts with, in order (default: the listed fields, in form order)
 };
 
 // "Between 300-500" -> "between_300_500"; the same label twice gets _2, _3, ...
@@ -284,14 +291,110 @@ function paymentModule(kind: "pre" | "collection"): ModuleDef {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Quote: the Zoho Books quote form. Its screens, numbering and totals are in src/lib/quotes and src/app/quotes; this definition is what
+// Edit Page Layout works on: labels, mandatory, hidden, order, sections, new fields, dropdown options, the item table's columns.
+// ---------------------------------------------------------------------------
+export const GST_STATES: [string, string][] = [
+  ["01", "Jammu and Kashmir"], ["02", "Himachal Pradesh"], ["03", "Punjab"], ["04", "Chandigarh"], ["05", "Uttarakhand"], ["06", "Haryana"],
+  ["07", "Delhi"], ["08", "Rajasthan"], ["09", "Uttar Pradesh"], ["10", "Bihar"], ["11", "Sikkim"], ["12", "Arunachal Pradesh"],
+  ["13", "Nagaland"], ["14", "Manipur"], ["15", "Mizoram"], ["16", "Tripura"], ["17", "Meghalaya"], ["18", "Assam"], ["19", "West Bengal"],
+  ["20", "Jharkhand"], ["21", "Odisha"], ["22", "Chhattisgarh"], ["23", "Madhya Pradesh"], ["24", "Gujarat"],
+  ["26", "Dadra and Nagar Haveli and Daman and Diu"], ["27", "Maharashtra"], ["29", "Karnataka"], ["30", "Goa"], ["31", "Lakshadweep"],
+  ["32", "Kerala"], ["33", "Tamil Nadu"], ["34", "Puducherry"], ["35", "Andaman and Nicobar Islands"], ["36", "Telangana"],
+  ["37", "Andhra Pradesh"], ["38", "Ladakh"],
+];
+export const gstStateOptions = (): FieldOption[] => GST_STATES.map(([code, name]) => ({ id: code, label: `${name} (${code})` }));
+
+const QUOTE: ModuleDef = {
+  id: "quote",
+  slug: "quotes",
+  label: "Quote",
+  plural: "Quotes",
+  heading: "All Quotes",
+  createLabel: "New",
+  idPrefix: "QT",
+  idLabel: "Quote Number",
+  counterKey: "quote",
+  permission: "quotes",
+  model: "quote",
+  table: "Quote",
+  entityType: "Quote",
+  nameKey: "quoteNumber",
+  hasApproval: false,
+  custom: true,
+  allowLookupFields: true,
+  defaultColumns: ["date", "quoteNumber", "reference", "customerId", "status", "amount"],
+  sections: [
+    { id: "customer", label: "Customer", kind: "FORM" },
+    { id: "details", label: "Quote Details", kind: "FORM" },
+    { id: "sales", label: "Sales", kind: "FORM" },
+    { id: "subject", label: "Subject", kind: "FORM" },
+    { id: "items", label: "Item Table", kind: "TABLE" },
+    { id: "calc", label: "Calculation", kind: "FIXED" },
+    { id: "notes", label: "Customer Notes", kind: "FORM" },
+    { id: "terms", label: "Terms & Attachments", kind: "FORM" },
+    { id: "list", label: "Shown on the quote list and the quote page", kind: "FIXED" },
+  ],
+  fields: [
+    { key: "customerId", label: "Customer Name", type: "LOOKUP", section: "customer", required: true, requiredLocked: true, listed: true, lookup: "customer", relation: "customer" },
+    // what the quote document prints about the customer: filled from the customer, editable per quote when shown
+    { key: "billingAddress", label: "Billing Address", type: "TEXTAREA", section: "customer", hidden: true, max: 1000 },
+    { key: "customerGstin", label: "Customer GSTIN", type: "TEXT", section: "customer", hidden: true, max: 30 },
+    { key: "placeOfSupply", label: "Place of Supply", type: "DROPDOWN", section: "customer", hidden: true, options: gstStateOptions() },
+    { key: "quoteNumber", label: "Quote#", type: "AUTO", section: "details", required: true, requiredLocked: true, readOnly: true, listed: true },
+    { key: "reference", label: "Reference#", type: "TEXT", section: "details", listed: true, max: 100 },
+    { key: "date", label: "Quote Date", type: "DATE", section: "details", required: true, requiredLocked: true, listed: true, default: "@today" },
+    { key: "expiryDate", label: "Expiry Date", type: "DATE", section: "details" },
+    { key: "salespersonId", label: "Task Person", type: "USER", section: "sales", required: true, default: "@me", relation: "salesperson" },
+    { key: "projectId", label: "Project Name", type: "LOOKUP", section: "sales", lookup: "project", relation: "project" },
+    { key: "dealId", label: "Deal Name", type: "LOOKUP", section: "sales", lookup: "deal", relation: "deal" },
+    { key: "projectLocation", label: "Project Location", type: "TEXTAREA", section: "sales", hidden: true, max: 1000 },
+    { key: "subject", label: "Subject", type: "TEXTAREA", section: "subject", max: 2000 },
+    // the calculation panel (placed by the quote form itself)
+    { key: "discountPercent", label: "Discount", type: "CALC", section: "calc", notListable: true },
+    { key: "shippingCharges", label: "Shipping Charges", type: "CALC", section: "calc", notListable: true },
+    { key: "tdsTcsKind", label: "TDS / TCS", type: "CALC", section: "calc", notListable: true },
+    { key: "adjustment", label: "Adjustment", type: "CALC", section: "calc", notListable: true },
+    { key: "roundOff", label: "Round Off", type: "CALC", section: "calc", notListable: true },
+    { key: "notes", label: "Customer Notes", type: "TEXTAREA", section: "notes", default: "Looking forward to your business.", max: 5000 },
+    { key: "terms", label: "Terms & Conditions", type: "TEXTAREA", section: "terms", max: 10000 },
+    { key: "attachments", label: "Attach File(s) to Quote", type: "FILE", section: "terms", maxFiles: 5 },
+    { key: "retainerInvoice", label: "Create a retainer invoice for this quote automatically", type: "CHECKBOX", section: "terms" },
+    // worked out by the system
+    { key: "status", label: "Quote Status", type: "CALC", section: "list", listed: true },
+    { key: "amount", label: "Total", type: "CALC", section: "list", listed: true },
+  ],
+  tables: [
+    {
+      section: "items",
+      relation: "lineItems",
+      model: "quoteItem",
+      table: "QuoteItem",
+      parentKey: "quoteId",
+      parentRelation: "quote",
+      fields: [
+        { key: "name", label: "Item Details", type: "LOOKUP", section: "items", required: true, requiredLocked: true, lookup: "item" },
+        { key: "hsn", label: "HSN/SAC", type: "TEXT", section: "items", hidden: true, max: 20 },
+        { key: "unit", label: "Unit", type: "TEXT", section: "items", hidden: true, max: 20 },
+        { key: "quantity", label: "Quantity", type: "NUMBER", section: "items", required: true, requiredLocked: true, default: "1", min: 0 },
+        { key: "rate", label: "Rate", type: "CURRENCY", section: "items", prefix: "" },
+        { key: "taxId", label: "Tax", type: "LOOKUP", section: "items", lookup: "tax" },
+        { key: "lineAmount", label: "Amount", type: "CALC", section: "items", readOnly: true },
+      ],
+    },
+  ],
+};
+
 export const MODULES: Record<ModuleId, ModuleDef> = {
   materialVendor: MATERIAL_VENDOR,
   serviceVendor: SERVICE_VENDOR,
   prePayment: paymentModule("pre"),
   paymentCollection: paymentModule("collection"),
+  quote: QUOTE,
 };
 
-export const MODULE_LIST: ModuleDef[] = [MODULES.materialVendor, MODULES.serviceVendor, MODULES.prePayment, MODULES.paymentCollection];
+export const MODULE_LIST: ModuleDef[] = [MODULES.materialVendor, MODULES.serviceVendor, MODULES.prePayment, MODULES.paymentCollection, MODULES.quote];
 
 export function moduleBySlug(slug: string): ModuleDef | null {
   return MODULE_LIST.find(m => m.slug === slug) ?? null;

@@ -191,8 +191,8 @@ export async function getCRMAnalytics(dateRange?: { from: Date; to: Date }) {
     prisma.followUp.count({ where: { status: 'Completed', createdAt: { gte: from, lte: to } } }),
     prisma.siteVisit.count({ where: { createdAt: { gte: from, lte: to } } }),
     prisma.siteVisit.count({ where: { status: 'Completed', createdAt: { gte: from, lte: to } } }),
-    prisma.quote.count({ where: { createdAt: { gte: from, lte: to } } }),
-    prisma.quote.count({ where: { status: 'Accepted', createdAt: { gte: from, lte: to } } }),
+    prisma.quote.count({ where: { deletedAt: null, createdAt: { gte: from, lte: to } } }),
+    prisma.quote.count({ where: { deletedAt: null, status: 'Accepted', createdAt: { gte: from, lte: to } } }),
     prisma.deal.count({ where: { deletedAt: null, createdAt: { gte: from, lte: to } } }),
     prisma.deal.count({ where: { deletedAt: null, status: 'Won', wonAt: { gte: from, lte: to } } }),
     prisma.deal.aggregate({
@@ -437,7 +437,7 @@ export async function getLeads(params?: {
         deals: { select: { id: true, status: true, value: true } },
         siteVisits: { select: { id: true, status: true, visitDate: true } },
         followUps: { select: { id: true, status: true, scheduledDate: true } },
-        quotes: { select: { id: true, status: true, amount: true, type: true } },
+        quotes: { where: { deletedAt: null }, select: { id: true, status: true, amount: true, type: true } },
       },
       orderBy: { updatedAt: 'desc' },
       skip: (page - 1) * limit,
@@ -793,7 +793,7 @@ export async function getDeals(params?: {
       customer: true,
       lead: { select: { id: true, leadNumber: true } },
       salesExecutive: { include: { user: { select: SAFE_USER_SELECT } } },
-      quotes: { select: { id: true, quoteNumber: true, amount: true, status: true, type: true } },
+      quotes: { where: { deletedAt: null }, select: { id: true, quoteNumber: true, amount: true, status: true, type: true } },
       projects: { select: { id: true, name: true, status: true } },
     },
     orderBy: { updatedAt: 'desc' }
@@ -934,7 +934,7 @@ export async function convertDealToProject(dealId: string, projectData: {
       customer: true,
       lead: true,
       quotes: {
-        where: { status: 'Accepted' },
+        where: { status: 'Accepted', deletedAt: null },
         include: { lineItems: true },
         orderBy: { createdAt: 'desc' },
         take: 1,
@@ -987,7 +987,7 @@ export async function convertDealToProject(dealId: string, projectData: {
           data: {
             projectId: proj.id,
             category: item.category,
-            item: item.description,
+            item: item.name ? [item.name, item.description].filter(Boolean).join(' - ') : item.description,
             quantity: item.quantity,
             unit: item.unit,
             rate: item.rate,
@@ -1058,7 +1058,7 @@ export async function convertDealToProject(dealId: string, projectData: {
 
 export async function getQuotes(params?: { status?: string; dealId?: string; leadId?: string }) {
   await requirePermission('quotes', 'view');
-  const where: any = {};
+  const where: any = { deletedAt: null };
   if (params?.status) where.status = params.status;
   if (params?.dealId) where.dealId = params.dealId;
   if (params?.leadId) where.leadId = params.leadId;

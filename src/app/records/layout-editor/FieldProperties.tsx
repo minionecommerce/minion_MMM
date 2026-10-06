@@ -5,7 +5,7 @@ import { Loader2, X } from 'lucide-react';
 import { ApiError, callApi } from '@/lib/leads/client';
 import { useToast } from '@/components/ui/Toast';
 import {
-  CURRENCY_CODES, FIELD_LABEL_MAX, FIELD_TYPE_LABEL, TABLE_COLUMN_TYPES,
+  CURRENCY_CODES, FIELD_LABEL_MAX, FIELD_TYPE_LABEL, LOOKUP_TARGETS, TABLE_COLUMN_TYPES,
   type CustomFieldType, type FieldOption, type FieldType, type LayoutField, type LayoutSection, type LookupItem, type ModuleLayoutDto,
 } from '@/lib/records/types';
 import PickListEditor, { DraftPickList, type PickItem } from '@/app/users/components/PickListEditor';
@@ -39,6 +39,7 @@ export default function FieldProperties({ slug, layout, field: initial, createTy
   const [defaultValue, setDefaultValue] = useState(initial?.defaultValue ?? '');
   const [currency, setCurrency] = useState(initial?.currency ?? 'INR');
   const [maxFiles, setMaxFiles] = useState(initial?.maxFiles ?? 3);
+  const [lookup, setLookup] = useState<string>(initial?.lookup ?? LOOKUP_TARGETS[0].kind);
   const [options, setOptions] = useState<FieldOption[]>(initial?.options ?? []);
   const [draft, setDraft] = useState<PickItem[]>([]); // the options of a new dropdown: saved together with the field
   const [users, setUsers] = useState<LookupItem[]>([]);
@@ -48,7 +49,8 @@ export default function FieldProperties({ slug, layout, field: initial, createTy
   const targetSection: LayoutSection | undefined = layout.sections.find(s => s.id === section);
   const inTable = targetSection?.kind === 'TABLE';
   const locked = !!initial?.requiredLocked;
-  const defaultable = initial ? initial.defaultable : effectiveType !== 'FILE';
+  const calculated = type === 'CALC'; // a value the system works out (the totals of a quote): it can be renamed and hidden, never mandatory
+  const defaultable = initial ? initial.defaultable : effectiveType !== 'FILE' && effectiveType !== 'LOOKUP';
   const listable = initial ? initial.listable : !inTable && effectiveType !== 'FILE';
   const moveable = creating || (!!initial && layout.sections.find(s => s.id === initial.section)?.kind === 'FORM');
   const choices = creating ? draft.map(o => ({ id: o.id, label: o.name })) : options;
@@ -82,6 +84,7 @@ export default function FieldProperties({ slug, layout, field: initial, createTy
           ...(effectiveType === 'DROPDOWN' ? { options: draft.map(o => o.name), defaultOption: defaultOption >= 0 ? defaultOption : null } : defaultValue ? { defaultValue } : {}),
           ...(effectiveType === 'CURRENCY' ? { currency } : {}),
           ...(effectiveType === 'FILE' ? { maxFiles } : {}),
+          ...(effectiveType === 'LOOKUP' ? { lookup } : {}),
         });
         onSaved(res.layout);
         toast.success(`"${res.field.label}" added`);
@@ -92,7 +95,7 @@ export default function FieldProperties({ slug, layout, field: initial, createTy
       const chosen = effectiveType === 'DROPDOWN' && !choices.some(c => c.id === defaultValue) ? '' : defaultValue;
       const res = await callApi<{ layout: ModuleLayoutDto }>(api(slug, `/layout/fields/${initial!.key}`), 'PATCH', {
         label,
-        ...(locked ? {} : { required, enabled }),
+        ...(locked ? {} : { ...(calculated ? {} : { required }), enabled }),
         ...(defaultable ? { defaultValue: chosen || null } : {}),
         ...(moveable && section !== initial!.section ? { section } : {}),
         ...(effectiveType !== initial!.type ? { type: effectiveType } : {}),
@@ -157,11 +160,12 @@ export default function FieldProperties({ slug, layout, field: initial, createTy
 
           <div className="space-y-3">
             <div>
-              <label className={`flex items-center gap-2.5 text-[14px] ${locked ? 'text-gray-400' : 'text-gray-800 cursor-pointer'}`} title={locked ? 'Cannot edit this property for system defined field' : undefined}>
-                <input type="checkbox" checked={required} disabled={locked} onChange={e => setRequired(e.target.checked)} className="w-4 h-4 accent-black" />
+              <label className={`flex items-center gap-2.5 text-[14px] ${locked || calculated ? 'text-gray-400' : 'text-gray-800 cursor-pointer'}`} title={locked ? 'Cannot edit this property for system defined field' : undefined}>
+                <input type="checkbox" checked={required} disabled={locked || calculated} onChange={e => setRequired(e.target.checked)} className="w-4 h-4 accent-black" />
                 Mandatory
               </label>
               {locked && <p className="text-[12px] text-gray-500 mt-1 ml-6">Cannot edit this property for system defined field.</p>}
+              {calculated && <p className="text-[12px] text-gray-500 mt-1 ml-6">The system works this value out, so it cannot be mandatory.</p>}
               {type === 'APPROVER' && <p className="text-[12px] text-gray-500 mt-1 ml-6">“Not Yet Approved” counts as an answer, so a new record can always be saved. Only people who may approve can pick someone else.</p>}
             </div>
             {!creating && (
@@ -188,6 +192,20 @@ export default function FieldProperties({ slug, layout, field: initial, createTy
                 {CURRENCY_CODES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
               <p className={help}>Shown in front of the amounts of this field. It applies to every record.</p>
+            </div>
+          )}
+
+          {effectiveType === 'LOOKUP' && (
+            <div>
+              <label htmlFor="rf-lookup" className="block text-[13px] font-medium text-gray-700 mb-1.5">Shows records from</label>
+              {creating ? (
+                <select id="rf-lookup" value={lookup} onChange={e => setLookup(e.target.value)} className={box}>
+                  {LOOKUP_TARGETS.map(t => <option key={t.kind} value={t.kind}>{t.label}</option>)}
+                </select>
+              ) : (
+                <div id="rf-lookup" className={`${box} flex items-center bg-gray-50 text-gray-700`}>{LOOKUP_TARGETS.find(t => t.kind === initial?.lookup)?.label ?? (initial?.lookup === 'item' ? 'Items' : initial?.lookup === 'tax' ? 'Taxes' : 'A CRM list')}</div>
+              )}
+              <p className={help}>{creating ? 'People pick one record from this list. The list cannot be changed later.' : 'The list this field shows cannot be changed.'}</p>
             </div>
           )}
 

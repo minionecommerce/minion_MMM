@@ -331,7 +331,7 @@ async function checkInput(ctx: AuthContext, def: ModuleDef, layout: ModuleLayout
     const unchanged = !!existing && res.value === storedValue(f, existing.row);
     if (typeof res.value === "string" && !unchanged) {
       if (f.type === "USER") users.set(`${f.key}:${res.value}`, { label: f.label, path });
-      else if (f.type === "LOOKUP" && f.lookup) lookups[f.lookup].set(res.value, { label: f.label, path });
+      else if (f.type === "LOOKUP" && (f.lookup === "deal" || f.lookup === "materialVendor" || f.lookup === "serviceVendor")) lookups[f.lookup].set(res.value, { label: f.label, path });
     }
     if (f.isSystem) out.columns[f.key] = toColumn(f, res.value);
     else out.custom[f.key] = res.value;

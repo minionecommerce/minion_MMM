@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   AlignLeft, BadgeCheck, Calendar, CalendarClock, CheckSquare, ChevronDown, CircleDollarSign, EyeOff, FileUp, Hash, LayoutTemplate, Link2, Lock,
-  Mail, MoreHorizontal, Phone, Plus, Search, SquareChevronDown, Table2, Trash2, Type, UserRound, X, type LucideIcon,
+  Calculator, Mail, MoreHorizontal, Phone, Plus, Search, SquareChevronDown, Table2, Trash2, Type, UserRound, X, type LucideIcon,
 } from 'lucide-react';
 import { ApiError, callApi } from '@/lib/leads/client';
 import { useToast } from '@/components/ui/Toast';
@@ -16,12 +16,13 @@ import { MODULES } from '@/lib/records/registry';
 import type { ModuleId } from '@/lib/records/types';
 import { Modal, ReorderList } from '@/app/leads/components/ReorderDialogs';
 import LightConfirm from '@/app/leads/components/LightConfirm';
+import DocumentEditor from '@/app/quotes/DocumentEditor';
 import { api } from '../client';
 import FieldProperties from './FieldProperties';
 
 const ICONS: Record<FieldType, LucideIcon> = {
   TEXT: Type, TEXTAREA: AlignLeft, NUMBER: Hash, CURRENCY: CircleDollarSign, DATE: Calendar, DATETIME: CalendarClock, EMAIL: Mail, PHONE: Phone, URL: Link2,
-  CHECKBOX: CheckSquare, DROPDOWN: SquareChevronDown, USER: UserRound, FILE: FileUp, AUTO: Lock, LOOKUP: Search, APPROVER: BadgeCheck,
+  CHECKBOX: CheckSquare, DROPDOWN: SquareChevronDown, USER: UserRound, FILE: FileUp, AUTO: Lock, LOOKUP: Search, APPROVER: BadgeCheck, CALC: Calculator,
 };
 const field = 'w-full border border-gray-300 rounded px-3 h-[38px] text-[14px] text-gray-900 bg-white focus:outline-none focus:border-[#f5b800]';
 
@@ -49,7 +50,7 @@ export function LayoutButton({ moduleId, layout, variant = 'icon' }: { moduleId:
 type Editing = { field: LayoutField | null; createType: CustomFieldType | null; section: string | null };
 type SectionDialog = { mode: 'create' } | { mode: 'rename'; id: string; label: string };
 
-function LayoutEditor({ moduleId, initial, onClose }: { moduleId: ModuleId; initial: ModuleLayoutDto; onClose: (changed: boolean) => void }) {
+export function LayoutEditor({ moduleId, initial, onClose }: { moduleId: ModuleId; initial: ModuleLayoutDto; onClose: (changed: boolean) => void }) {
   const toast = useToast();
   const def = MODULES[moduleId];
   const slug = def.slug;
@@ -63,6 +64,7 @@ function LayoutEditor({ moduleId, initial, onClose }: { moduleId: ModuleId; init
   const [removing, setRemoving] = useState<{ field: LayoutField; warning: string | null } | null>(null);
   const [removingSection, setRemovingSection] = useState<{ id: string; label: string; count: number } | null>(null);
   const [sectionDialog, setSectionDialog] = useState<SectionDialog | null>(null);
+  const [docOpen, setDocOpen] = useState(false); // the Quote document window (quotes only)
   const [busy, setBusy] = useState(false);
 
   // Close the card menu / type picker with a click elsewhere
@@ -76,7 +78,7 @@ function LayoutEditor({ moduleId, initial, onClose }: { moduleId: ModuleId; init
 
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
-      if (e.key !== 'Escape' || editing || reorder || removing || removingSection || sectionDialog) return;
+      if (e.key !== 'Escape' || editing || reorder || removing || removingSection || sectionDialog || docOpen) return;
       if (menuFor || typeMenu) { setMenuFor(null); setTypeMenu(null); return; } // Escape closes an open menu first, and only then the window
       onClose(changed);
     };
@@ -164,7 +166,7 @@ function LayoutEditor({ moduleId, initial, onClose }: { moduleId: ModuleId; init
       </button>
       {typeMenu === scope && (
         <div role="menu" aria-label="Field type" className="absolute right-0 top-full mt-1 z-30 w-64 max-h-[60vh] overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-xl py-1">
-          {CUSTOM_FIELD_TYPES.filter(t => !tableOnly || TABLE_COLUMN_TYPES.has(t.type)).map(t => {
+          {CUSTOM_FIELD_TYPES.filter(t => (!tableOnly || TABLE_COLUMN_TYPES.has(t.type)) && (t.type !== 'LOOKUP' || def.allowLookupFields)).map(t => {
             const Icon = ICONS[t.type];
             return (
               <button key={t.type} role="menuitem" onClick={() => { setTypeMenu(null); setEditing({ field: null, createType: t.type, section: sectionId }); }} className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-gray-50">
@@ -202,16 +204,29 @@ function LayoutEditor({ moduleId, initial, onClose }: { moduleId: ModuleId; init
         <div className="flex flex-wrap items-center gap-2 px-6 py-3 border-b border-gray-200 shrink-0">{toolbar}</div>
 
         <div className="overflow-y-auto px-6 py-5 bg-gray-50 flex-1 space-y-5">
+          {moduleId === 'quote' && (
+            <div className="border border-dashed border-gray-300 rounded-lg bg-white p-4" data-quote-document-panel>
+              <div className="flex flex-wrap items-center gap-3">
+                <div className="min-w-0 flex-1">
+                  <h3 className="text-[15px] font-bold text-[#333]">Quote document <span className="font-normal text-gray-500">· print, PDF and shared link</span></h3>
+                  <p className="text-[13px] text-gray-600 mt-0.5">What is printed around the items of every quote: the company block, logo, title, the rows under them (# · Quote Date · Place Of Supply · Task Person), bank details and signature.</p>
+                </div>
+                <button onClick={() => setDocOpen(true)} className="px-3 h-[36px] whitespace-nowrap rounded-md border-2 border-[#f5b800] hover:bg-[#fff8dc] bg-white text-[13px] font-semibold text-gray-900">Edit Quote Document</button>
+              </div>
+            </div>
+          )}
           {layout.sections.map(section => {
             const fields = layout.fields.filter(f => f.section === section.id);
             const isTable = section.kind === 'TABLE';
+            const isFixed = section.kind === 'FIXED';
             return (
               <div key={section.id} className="border border-dashed border-gray-300 rounded-lg bg-white p-4" data-layout-section={section.id}>
                 <div className="flex items-center gap-2 mb-3">
                   <h3 className="text-[15px] font-bold text-[#333] truncate">{section.label}</h3>
                   {isTable && <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-100 text-[11px] text-gray-600 shrink-0"><Table2 className="w-3 h-3" /> Table</span>}
+                  {isFixed && <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-100 text-[11px] text-gray-600 shrink-0"><Calculator className="w-3 h-3" /> Placed by the screens</span>}
                   <div className="ml-auto flex items-center gap-2">
-                    {typeButton(`new:${section.id}`, section.id, isTable, isTable ? 'Add column' : 'Add field', true)}
+                    {!isFixed && typeButton(`new:${section.id}`, section.id, isTable, isTable ? 'Add column' : 'Add field', true)}
                     <div className="relative" data-menu>
                       <button onClick={() => setMenuFor(m => (m === `section:${section.id}` ? null : `section:${section.id}`))} aria-label={`Options for section ${section.label}`} aria-haspopup="menu" aria-expanded={menuFor === `section:${section.id}`} className="w-8 h-8 flex items-center justify-center rounded text-gray-500 hover:bg-gray-100 hover:text-black">
                         <MoreHorizontal className="w-5 h-5" />
@@ -310,7 +325,7 @@ function LayoutEditor({ moduleId, initial, onClose }: { moduleId: ModuleId; init
       )}
       {reorder === 'sections' && (
         <Modal title="Reorder sections" subtitle={`The order of the sections on the ${def.label} form.`} onClose={() => setReorder(null)}>
-          <ReorderList items={layout.sections.map(s => ({ id: s.id, label: s.label, hint: s.kind === 'TABLE' ? 'Table' : undefined }))} saveLabel="Save order" onSave={async ids => {
+          <ReorderList items={layout.sections.map(s => ({ id: s.id, label: s.label, hint: s.kind === 'TABLE' ? 'Table' : s.kind === 'FIXED' ? 'Fixed' : undefined }))} saveLabel="Save order" onSave={async ids => {
             const res = await call(() => callApi<{ layout: ModuleLayoutDto }>(api(slug, '/layout/sections/order'), 'PUT', { orderedIds: ids }), 'Section order saved');
             if (res) { applied(res.layout); setReorder(null); }
           }} />
@@ -318,6 +333,8 @@ function LayoutEditor({ moduleId, initial, onClose }: { moduleId: ModuleId; init
       )}
 
       {sectionDialog && <SectionNameDialog dialog={sectionDialog} busy={busy} onSubmit={submitSection} onClose={() => setSectionDialog(null)} />}
+
+      {docOpen && <DocumentEditor onClose={() => setDocOpen(false)} onSaved={() => setChanged(true)} />}
 
       {removing && (
         <LightConfirm title={removing.warning ? 'Field has data' : 'Delete field?'} confirmLabel="Delete" danger busy={busy} onCancel={() => setRemoving(null)} onConfirm={confirmDelete}>

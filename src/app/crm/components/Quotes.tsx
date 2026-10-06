@@ -16,6 +16,7 @@ const statusColors: Record<string, string> = {
   'Sent': 'bg-yellow-400/10 text-yellow-400',
   'Accepted': 'bg-green-400/10 text-green-400',
   'Rejected': 'bg-red-400/10 text-red-400',
+  'Declined': 'bg-red-400/10 text-red-400',
   'Expired': 'bg-orange-400/10 text-orange-400',
   'Cancelled': 'bg-gray-400/10 text-gray-500',
 };
@@ -126,7 +127,7 @@ function QuoteCard({ quote, onRefresh }: { quote: any; onRefresh: () => void }) 
 
 export default function Quotes({ quotes, leads, employees, onRefresh }: QuotesProps) {
   const [statusFilter, setStatusFilter] = useState('All');
-  const statuses = ['All', 'Draft', 'Sent', 'Accepted', 'Rejected'];
+  const statuses = ['All', 'Draft', 'Sent', 'Accepted', 'Declined', 'Rejected'];
 
   const filtered = statusFilter === 'All' ? quotes : quotes.filter(q => q.status === statusFilter);
 

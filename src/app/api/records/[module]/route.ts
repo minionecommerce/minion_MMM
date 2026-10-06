@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { readJson, withAuthRoute } from "@/lib/api";
 import { createRecord, listRecords, parseListParams } from "@/lib/records/service";
-import { moduleFrom } from "../helpers";
+import { genericModuleFrom as moduleFrom } from "../helpers";
 
 type Params = { params: Promise<{ module: string }> };
 

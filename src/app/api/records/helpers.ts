@@ -11,6 +11,13 @@ export async function moduleFrom(params: Promise<{ module: string }>): Promise<M
   return def;
 }
 
+// The generic record routes (list, create, open, edit, delete, CSV) do not apply to a module with its own screens and service (Quotes)
+export async function genericModuleFrom(params: Promise<{ module: string }>): Promise<ModuleDef> {
+  const def = await moduleFrom(params);
+  if (def.custom) throw new ServiceError(404, "Unknown module");
+  return def;
+}
+
 // The screens ask the Super Admin to confirm when an action would change existing records.
 // 409 + { code: "IN_USE", usage } is how they find out.
 export function layoutInUse(err: LayoutInUseError) {

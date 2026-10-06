@@ -43,6 +43,7 @@ export const MODULES = [
   { key: "resources", label: "Resources", group: "Other" },
   { key: "reports", label: "Reports", group: "Other" },
   { key: "settings", label: "Settings", group: "Other" },
+  { key: "attendance", label: "Attendance", group: "People" }, // a person's own check in / out, movements and monthly calendar
 ] as const satisfies readonly ModuleDef[];
 
 export type ModuleKey = (typeof MODULES)[number]["key"];
@@ -70,10 +71,12 @@ export const ROUTE_MODULES: { prefix: string; modules: ModuleKey[] }[] = [
   { prefix: "/admin/access", modules: ["users"] }, // Legacy Audit Log only
   { prefix: "/leads", modules: ["leads"] },
   { prefix: "/deals", modules: ["deals"] },
+  { prefix: "/quotes", modules: ["quotes"] },
   { prefix: "/material-vendors", modules: ["vendors"] },
   { prefix: "/service-vendors", modules: ["vendors"] },
   { prefix: "/pre-payments", modules: ["ppr"] },
   { prefix: "/payment-collections", modules: ["payments"] },
+  { prefix: "/attendance", modules: ["attendance"] },
   { prefix: "/crm", modules: CRM_MODULES },
   { prefix: "/projects", modules: ["projects", "boq"] },
   { prefix: "/parks", modules: ["parks"] },
@@ -103,10 +106,12 @@ export const NAV_ITEMS: { label: string; href: string; modules: ModuleKey[] }[] 
   { label: "MY WORK", href: "/my-work", modules: ["my_work"] },
   { label: "LEADS", href: "/leads", modules: ["leads"] },
   { label: "DEALS", href: "/deals", modules: ["deals"] },
+  { label: "QUOTES", href: "/quotes", modules: ["quotes"] },
   { label: "MATERIAL VENDOR", href: "/material-vendors", modules: ["vendors"] },
   { label: "SERVICE VENDOR", href: "/service-vendors", modules: ["vendors"] },
   { label: "PRE-PAYMENT RECORDS", href: "/pre-payments", modules: ["ppr"] },
   { label: "PAYMENT COLLECTION RECORDS", href: "/payment-collections", modules: ["payments"] },
+  { label: "ATTENDANCE", href: "/attendance", modules: ["attendance"] },
   { label: "TASKS", href: "/tasks", modules: ["tasks"] },
   { label: "CRM", href: "/crm", modules: CRM_MODULES },
   { label: "PROJECTS", href: "/projects", modules: ["projects", "boq"] },

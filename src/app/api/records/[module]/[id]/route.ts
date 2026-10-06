@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { readJson, withAuthRoute } from "@/lib/api";
 import { RecordInUseError, deleteRecord, getRecord, updateRecord } from "@/lib/records/service";
-import { moduleFrom, recordInUse } from "../../helpers";
+import { genericModuleFrom as moduleFrom, recordInUse } from "../../helpers";
 
 type Params = { params: Promise<{ module: string; id: string }> };
 

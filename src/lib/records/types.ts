@@ -1,17 +1,19 @@
 // Types shared by the server and the browser for the four record modules: Material Vendor, Service Vendor,
 // Pre-Payment Records and Payment Collection Records. No server-only imports here.
 
-export const MODULE_IDS = ["materialVendor", "serviceVendor", "prePayment", "paymentCollection"] as const;
+export const MODULE_IDS = ["materialVendor", "serviceVendor", "prePayment", "paymentCollection", "quote"] as const;
 export type ModuleId = (typeof MODULE_IDS)[number];
 
-// AUTO (the record's own ID), LOOKUP (a deal or a vendor) and APPROVER (Approved By) exist only as standard fields.
+// AUTO (the record's own ID), APPROVER (Approved By) and CALC (a value the system works out: the totals of a quote) exist only as
+// standard fields. LOOKUP (a record of another CRM list) is standard in every module and can be added with New Field in the
+// modules that allow it (Quotes).
 export type FieldType =
   | "TEXT" | "TEXTAREA" | "NUMBER" | "CURRENCY" | "DATE" | "DATETIME" | "EMAIL" | "PHONE" | "URL"
   | "CHECKBOX" | "DROPDOWN" | "USER" | "FILE"
-  | "AUTO" | "LOOKUP" | "APPROVER";
+  | "AUTO" | "LOOKUP" | "APPROVER" | "CALC";
 
-export type CustomFieldType = Exclude<FieldType, "AUTO" | "LOOKUP" | "APPROVER">;
-export type LookupKind = "deal" | "materialVendor" | "serviceVendor";
+export type CustomFieldType = Exclude<FieldType, "AUTO" | "APPROVER" | "CALC">;
+export type LookupKind = "deal" | "materialVendor" | "serviceVendor" | "customer" | "project" | "item" | "tax";
 export type FieldOption = { id: string; label: string };
 
 // What a Super Admin can pick in New Field. The same field-type list as Users → Edit Page Layout, plus Date & Time,
@@ -27,18 +29,28 @@ export const CUSTOM_FIELD_TYPES: { type: CustomFieldType; label: string; hint: s
   { type: "CHECKBOX", label: "Checkbox", hint: "Yes / No" },
   { type: "FILE", label: "File Upload", hint: "Documents or photos" },
   { type: "USER", label: "User Lookup", hint: "One of the active CRM users" },
+  { type: "LOOKUP", label: "Lookup", hint: "A record from another CRM list" },
   { type: "EMAIL", label: "Email", hint: "Email address" },
   { type: "PHONE", label: "Phone", hint: "Phone number" },
   { type: "URL", label: "URL", hint: "Web link" },
 ];
 export const CUSTOM_TYPE_SET = new Set<string>(CUSTOM_FIELD_TYPES.map(t => t.type));
+// The lists a Lookup field added with New Field can point to (the modules that allow it)
+export const LOOKUP_TARGETS: { kind: LookupKind; label: string }[] = [
+  { kind: "customer", label: "Customers" },
+  { kind: "deal", label: "Deals" },
+  { kind: "project", label: "Projects" },
+  { kind: "materialVendor", label: "Material Vendors" },
+  { kind: "serviceVendor", label: "Service Vendors" },
+];
+export const LOOKUP_TARGET_SET = new Set<string>(LOOKUP_TARGETS.map(t => t.kind));
 // A column of a table section (Price Detail, Remarks) is a simpler field: no User Lookup, no Date & Time
 export const TABLE_COLUMN_TYPES = new Set<string>(["TEXT", "TEXTAREA", "NUMBER", "CURRENCY", "DATE", "DROPDOWN", "CHECKBOX", "FILE", "EMAIL", "PHONE", "URL"]);
 
 export const FIELD_TYPE_LABEL: Record<FieldType, string> = {
   TEXT: "Single Line", TEXTAREA: "Multi Line", NUMBER: "Number", CURRENCY: "Currency / Amount", DATE: "Date", DATETIME: "Date & Time",
   EMAIL: "Email", PHONE: "Phone", URL: "URL", CHECKBOX: "Checkbox", DROPDOWN: "Dropdown", USER: "User Lookup", FILE: "File Upload",
-  AUTO: "Auto ID", LOOKUP: "Lookup", APPROVER: "Approval",
+  AUTO: "Auto ID", LOOKUP: "Lookup", APPROVER: "Approval", CALC: "Calculation",
 };
 
 // The types a custom field can be switched to without losing what people already typed
@@ -96,7 +108,9 @@ export type LayoutField = {
   typeChoices: FieldType[]; // what this field can be switched to (fields added in Edit Page Layout only)
 };
 
-export type LayoutSection = { id: string; label: string; kind: "FORM" | "TABLE"; isSystem: boolean };
+// FORM: fields in a list. TABLE: the columns of a table of rows. FIXED: fields the screens place themselves (the calculation panel of a
+// quote): they can be renamed, hidden and (where it makes sense) shown as list columns, but nothing is added to or moved out of it.
+export type LayoutSection = { id: string; label: string; kind: "FORM" | "TABLE" | "FIXED"; isSystem: boolean };
 
 export type ModuleLayoutDto = {
   module: ModuleId;
@@ -127,9 +141,10 @@ export type RecordRefs = {
   deals: Record<string, { code: string; name: string; customer: string | null; closed: boolean }>;
   materialVendors: Record<string, { code: string; name: string }>;
   serviceVendors: Record<string, { code: string; name: string }>;
+  lookups?: Record<string, Record<string, string>>; // customers, projects, ...: kind -> id -> name
 };
 
-export type LookupItem = { id: string; label: string; sub?: string | null; tag?: string | null };
+export type LookupItem = { id: string; label: string; sub?: string | null; tag?: string | null; data?: Record<string, string | null> };
 
 export type ListRow = { id: string; code: string; cells: Record<string, string> };
 export type ListData = {
