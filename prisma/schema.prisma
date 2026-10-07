@@ -1916,7 +1916,7 @@ model CatalogItem {
   inventoryAccount  String?
   valuationMethod   String   @default("fifo") // fifo or wac
   reorderPoint      Decimal? @db.Decimal(14, 2)
-  returnable        Boolean  @default(true)
+  returnable        Boolean  @default(false)
   dimLength         Decimal? @db.Decimal(12, 3)
   dimWidth          Decimal? @db.Decimal(12, 3)
   dimHeight         Decimal? @db.Decimal(12, 3)
@@ -1925,11 +1925,27 @@ model CatalogItem {
   weightUnit        String   @default("kg")
   taskTemplateId    String? // an option of the Template dropdown in Project → Edit Page Layout
 
+  // Purchase Information and Default Tax Rates of the New Item form (taxId above is the Intra State Tax Rate)
+  purchaseInfo        Boolean  @default(false)
+  costPrice           Decimal? @db.Decimal(12, 2)
+  purchaseAccount     String?
+  purchaseDescription String?
+  receivable          Boolean  @default(false)
+  interTaxId          String? // the Inter State Tax Rate: an id from the Quote Settings
+
+  // Imported items (Zoho Books Item.csv): its Item ID, the fields the form has no box for, and everything else the file held (nothing of it is thrown away)
+  externalId   String? // the Item ID of the file the item came from; two items never share one (partial unique index)
+  brand        String?
+  manufacturer String?
+  mrp          Decimal? @db.Decimal(12, 2)
+  extra        Json? // { "Vendor": "...", "Stock On Hand": "46.00", ... } the columns of the file that have no field of their own
+
   quoteLines QuoteItem[]
 
   @@index([name])
   @@index([deletedAt, isActive])
   @@index([category])
+  @@index([externalId])
 }
 
 // Quotes module: numbering, taxes, rounding, company details and templates (one JSON row per group)

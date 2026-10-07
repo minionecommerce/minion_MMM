@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Home, Briefcase, Target, LayoutGrid, TreePine, CheckCircle2, Users, UserCog, BookOpen, Gift, Library, Search, Bell, ChevronUp, LogOut, Menu, X, PanelLeftClose, KeyRound, ClipboardList, Handshake, FileText, Boxes, Wrench, Wallet, HandCoins, CalendarCheck, type LucideIcon } from 'lucide-react';
+import { Home, Briefcase, Target, LayoutGrid, TreePine, CheckCircle2, Users, UserCog, BookOpen, Gift, Library, Search, Bell, ChevronUp, LogOut, Menu, X, PanelLeftClose, KeyRound, ClipboardList, Handshake, FileText, Package, Boxes, Wrench, Wallet, HandCoins, CalendarCheck, type LucideIcon } from 'lucide-react';
 import { NAV_ITEMS, snapshotCanViewAny } from '@/lib/rbac/catalog';
 import { useSession, signOut } from 'next-auth/react';
 import { useEffect, useState, useSyncExternalStore } from 'react';
@@ -13,6 +13,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/leads": ClipboardList,
   "/deals": Handshake,
   "/quotes": FileText,
+  "/items": Package,
   "/material-vendors": Boxes,
   "/service-vendors": Wrench,
   "/pre-payments": Wallet,

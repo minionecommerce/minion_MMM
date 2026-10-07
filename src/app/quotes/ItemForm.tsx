@@ -1,21 +1,23 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { AlertCircle, CheckCircle2, ChevronDown, CircleHelp, Plus, Search, X } from 'lucide-react';
 import { ApiError, callApi } from '@/lib/leads/client';
 import { useToast } from '@/components/ui/Toast';
 import {
   DIM_UNITS, IDENTIFIER_TYPES, INVENTORY_TRACKING, MAX_IDENTIFIERS, TAX_PREFERENCES, UNIT_GROUPS, VALUATION_METHODS, WEIGHT_UNITS,
-  digitsOnly, hasFulfilment, hasInventory, isTaxable, taxCodeField, unitGroupOf, type Identifier, type ItemKind,
+  hasFulfilment, hasInventory, isTaxable, taxCodeField, taxCodeShort, unitGroupOf, type Identifier, type ItemKind,
 } from '@/lib/quotes/item-constants';
-import type { ItemDetailDto, TaxDef } from '@/lib/quotes/types';
+import type { CodeSuggestions, ItemDetailDto, TaxDef } from '@/lib/quotes/types';
 import { CUSTOMER_CSS, PrefixBox, Radios, Tick } from '../customers/controls';
 import { searchLookup } from '../records/client';
 import { Button, Combo, Spinner, inputClass, type ComboItem } from './ui';
 import ItemImageCard, { picCount, type Pic, type Pics } from './ItemImages';
-import { discardItemImage, itemImageSrc, searchItemOptions } from './item-client';
-import { defaultTaxId } from '@/lib/quotes/taxes';
-import { blankItemForm, checkItemForm, itemBodyOf, itemFormOf, type ItemFormState } from './item-form-state';
+import { discardItemImage, itemImageSrc, searchItemOptions, suggestItemCode } from './item-client';
+import { defaultTaxId, interTaxFor, isInterStateTax } from '@/lib/quotes/taxes';
+import {
+  CODE_MIN_NAME, blankItemForm, checkItemForm, isCodeAuto, itemBodyOf, itemFormOf, pickCode, typeCode, withCodeSuggestion, withName, type ItemFormState,
+} from './item-form-state';
 
 type Form = ItemFormState;
 
@@ -93,23 +95,48 @@ export default function ItemForm({ item, initialName = '', taxes, onSaved, onCan
   onCancel: () => void;
 }) {
   const toast = useToast();
-  const [f, setF] = useState<Form>(() => (item ? itemFormOf(item) : blankItemForm(initialName, defaultTaxId(taxes))));
+  const [f, setF] = useState<Form>(() => (item ? itemFormOf(item) : blankItemForm(initialName, defaultTaxId(taxes), interTaxFor(taxes, defaultTaxId(taxes)))));
   const [pics, setPics] = useState<Pics>(() => ({ front: picsOf(item?.images.front ?? []), rear: picsOf(item?.images.rear ?? []), other: picsOf(item?.images.other ?? []) }));
   const [uploads, setUploads] = useState(0);
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [banner, setBanner] = useState('');
   const [busy, setBusy] = useState(false);
+  const [hint, setHint] = useState<{ key: string; data: CodeSuggestions } | null>(null);
 
+  const clearError = (key: string) => setErrors(cur => { if (!cur[key]) return cur; const { [key]: _gone, ...rest } = cur; void _gone; return rest; });
   const set = <K extends keyof Form>(key: K, value: Form[K]) => {
     setF(cur => ({ ...cur, [key]: value }));
-    setErrors(cur => { if (!cur[key]) return cur; const { [key]: _gone, ...rest } = cur; void _gone; return rest; });
+    clearError(key);
   };
+
+  // The code box is filled in from the name (and the Type) until the person types or picks a code of their own. The lookup waits for a pause in the typing.
+  const wanted = f.name.trim();
+  const codeAuto = isCodeAuto(f);
+  useEffect(() => {
+    if (!codeAuto || wanted.length < CODE_MIN_NAME) return;
+    let live = true;
+    const timer = setTimeout(() => {
+      suggestItemCode(wanted, f.kind)
+        .then(data => {
+          if (!live) return;
+          setHint({ key: `${f.kind}|${wanted}`, data });
+          setF(cur => withCodeSuggestion(cur, data));
+        })
+        .catch(() => { /* no suggestion this time: the box stays as it is and can be typed in */ });
+    }, 350);
+    return () => { live = false; clearTimeout(timer); };
+  }, [codeAuto, wanted, f.kind]);
+  const codeHint = hint && hint.key === `${f.kind}|${wanted}` && codeAuto ? hint.data : null;
 
   const goods = hasInventory(f.kind);
   const taxable = isTaxable(f.taxPreference);
   const codeLabel = taxCodeField(f.kind);
-  const taxItems = useMemo<ComboItem[]>(() => taxes.filter(t => t.active || t.id === item?.taxId).map(t => ({ id: t.id, label: `${t.name} [${t.rate}%]` })), [taxes, item?.taxId]);
-  const taxShown = taxItems.find(t => t.id === f.taxId)?.label ?? '';
+  // Default Tax Rates: the taxes charged inside a state (GST18) for the Intra State box, the IGST ones for the Inter State box; the tax the item has now is always offered
+  const taxLabel = (t: TaxDef): ComboItem => ({ id: t.id, label: `${t.name} [${t.rate}%]` });
+  const intraItems = useMemo<ComboItem[]>(() => taxes.filter(t => (t.active && !isInterStateTax(t)) || t.id === item?.taxId).map(taxLabel), [taxes, item?.taxId]);
+  const interItems = useMemo<ComboItem[]>(() => taxes.filter(t => (t.active && isInterStateTax(t)) || t.id === item?.interTaxId).map(taxLabel), [taxes, item?.interTaxId]);
+  const intraShown = intraItems.find(t => t.id === f.taxId)?.label ?? '';
+  const interShown = interItems.find(t => t.id === f.interTaxId)?.label ?? '';
   const group = f.unitMode === 'group' ? unitGroupOf(f.unitGroup) : null;
 
   const save = async () => {
@@ -177,7 +204,7 @@ export default function ItemForm({ item, initialName = '', taxes, onSaved, onCan
             <div className="flex flex-col lg:flex-row gap-x-[12px] gap-y-[18px]">
               <div className="lg:w-[620px] shrink-0">
                 <Row label="Name" required id="it-name" width={148} error={errors.name}>
-                  <input id="it-name" autoFocus={!initialName && !item} value={f.name} onChange={e => set('name', e.target.value)} maxLength={200} aria-invalid={!!errors.name || undefined} className={inputClass(!!errors.name, 'max-w-[417px]')} />
+                  <input id="it-name" autoFocus={!initialName && !item} value={f.name} onChange={e => { const v = e.target.value; setF(cur => withName(cur, v)); clearError('name'); }} maxLength={200} aria-invalid={!!errors.name || undefined} className={inputClass(!!errors.name, 'max-w-[417px]')} />
                 </Row>
                 <Row label="Type" tip="Choose Goods for things you supply, or Service for work you do." width={148}>
                   <Radios name="it-kind" value={f.kind} options={[{ id: 'Goods', label: 'Goods' }, { id: 'Service', label: 'Service' }]} onChange={v => set('kind', v as ItemKind)} />
@@ -187,9 +214,34 @@ export default function ItemForm({ item, initialName = '', taxes, onSaved, onCan
                     placeholder="Select a category" ariaLabel="Category" emptyText="No categories yet. Type one to add it." onChange={id => set('category', id ?? '')} />
                 </Row>
                 <Row label={codeLabel} required id="it-hsn" width={148} error={errors.hsn}>
-                  {/* A plain box for the number, not a list: numbers only (letters, spaces and dashes never get in, a pasted "8536 50 90" becomes 85365090) */}
-                  <input id="it-hsn" type="text" inputMode="numeric" autoComplete="off" spellCheck={false} value={f.hsn} onChange={e => set('hsn', digitsOnly(e.target.value))}
+                  {/* A plain box for the number, not a list: numbers only (letters, spaces and dashes never get in, a pasted "8536 50 90" becomes 85365090).
+                      The name fills it in; whatever is typed here stays. */}
+                  <input id="it-hsn" type="text" inputMode="numeric" autoComplete="off" spellCheck={false} value={f.hsn} onChange={e => { const v = e.target.value; setF(cur => typeCode(cur, v)); clearError('hsn'); }}
                     placeholder="Numbers only" aria-label={codeLabel} aria-invalid={!!errors.hsn || undefined} aria-describedby={errors.hsn ? 'it-hsn-error' : undefined} className={inputClass(!!errors.hsn, 'max-w-[317px]')} />
+                  {codeHint && (
+                    <div className="mt-[6px] max-w-[417px] text-[12px] leading-[18px] text-[#6d7189]" data-code-hint aria-live="polite">
+                      {codeHint.best && f.hsn === codeHint.best.code && <p data-code-best>Suggested from the name: {codeHint.best.description}</p>}
+                      {codeHint.switchTo ? (
+                        <p data-code-switch>
+                          This looks like {codeHint.switchTo.kind === 'Service' ? 'a Service' : 'Goods'} ({taxCodeShort(codeHint.switchTo.kind)} {codeHint.switchTo.best.code}: {codeHint.switchTo.best.description}).{' '}
+                          <button type="button" onClick={() => set('kind', codeHint.switchTo!.kind)} className="text-[#548df6] hover:underline">Change Type to {codeHint.switchTo.kind}</button>
+                        </p>
+                      ) : codeHint.others.length > 0 && (
+                        <div data-code-others>
+                          <p>{codeHint.best ? 'Other matches:' : 'Did you mean:'}</p>
+                          <ul className="mt-[2px] space-y-[2px]">
+                            {codeHint.others.map(o => (
+                              <li key={o.code}>
+                                <button type="button" onClick={() => setF(cur => pickCode(cur, o.code))} className="max-w-full text-left hover:underline">
+                                  <span className="font-medium text-[#548df6]">{o.code}</span> <span className="align-bottom">{o.description.length > 70 ? `${o.description.slice(0, 68)}…` : o.description}</span>
+                                </button>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </Row>
                 <Row label="Tax Preference" required id="it-taxPreference" width={148}>
                   <Combo htmlId="it-taxPreference" className="max-w-[317px]" value={f.taxPreference} shown={TAX_PREFERENCES.find(t => t.id === f.taxPreference)?.label ?? ''} items={TAX_PREFERENCES} searchable={false}
@@ -210,15 +262,15 @@ export default function ItemForm({ item, initialName = '', taxes, onSaved, onCan
             </Row>
             <div className="flex flex-col lg:flex-row lg:gap-x-[56px]">
               <div className="lg:w-[493px] shrink-0">
-                <Row label="Unit" tip="What the item is sold in, for example nos, sqft or kg. A unit group is a family of units: choosing one uses its first unit." id="it-unit">
+                <Row label="Unit" required tip="What the item is sold in, for example nos, sqft or kg. A unit group is a family of units: choosing one uses its first unit." id="it-unit" error={errors.unit}>
                   <div className="flex max-w-[318px]">
                     <Segment value={f.unitMode} onChange={v => setF(cur => ({ ...cur, unitMode: v as 'unit' | 'group' }))} label="Unit or unit group" width={f.unitMode === 'unit' ? 62 : 104} options={[{ id: 'unit', label: 'Unit' }, { id: 'group', label: 'Unit Group' }]} />
                     {f.unitMode === 'unit' ? (
                       <Combo htmlId="it-unit" className="flex-1 min-w-0 -ml-px [&>div:first-child]:rounded-l-none" value={f.unit || null} shown={f.unit} search={q => searchItemOptions('units', q)} creatable clearable
-                        placeholder="Select or type to add" ariaLabel="Unit" onChange={id => set('unit', id ?? '')} />
+                        placeholder="Select or type to add" ariaLabel="Unit" invalid={!!errors.unit} onChange={id => set('unit', id ?? '')} />
                     ) : (
                       <Combo htmlId="it-unit" className="flex-1 min-w-0 -ml-px [&>div:first-child]:rounded-l-none" value={f.unitGroup || null} shown={group ? `${group.label} (${group.units.slice(0, 3).join(', ')} ...)` : ''}
-                        items={UNIT_GROUPS.map(g => ({ id: g.id, label: g.label, sub: g.units.join(', ') }))} searchable={false} clearable placeholder="Select a unit group" ariaLabel="Unit group" onChange={id => set('unitGroup', id ?? '')} />
+                        items={UNIT_GROUPS.map(g => ({ id: g.id, label: g.label, sub: g.units.join(', ') }))} searchable={false} clearable placeholder="Select a unit group" ariaLabel="Unit group" invalid={!!errors.unit} onChange={id => { set('unitGroup', id ?? ''); clearError('unit'); }} />
                     )}
                   </div>
                   {group && <p className="mt-[6px] text-[12px] text-[#6d7189]">The item is sold in {group.units[0]}.</p>}
@@ -262,12 +314,55 @@ export default function ItemForm({ item, initialName = '', taxes, onSaved, onCan
             <Row label="Selling Price" required id="it-rate" error={errors.rate}>
               <div className="max-w-[318px]"><PrefixBox id="it-rate" prefix="INR" value={f.rate} onChange={v => set('rate', v)} invalid={!!errors.rate} /></div>
             </Row>
-            {taxable && (
-              <Row label="Tax" id="it-taxId" tip="The tax a quote line starts with when this item is picked. It can be changed on the quote.">
-                <Combo htmlId="it-taxId" className="max-w-[318px]" value={f.taxId || null} shown={taxShown} items={taxItems} searchable={false} clearable placeholder="Select a tax" ariaLabel="Tax" onChange={id => set('taxId', id ?? '')} />
+            {goods && (
+              <Row label="MRP" id="it-mrp" tip="The maximum retail price printed on the pack, if the item has one." error={errors.mrp}>
+                <div className="max-w-[318px]"><PrefixBox id="it-mrp" prefix="INR" value={f.mrp} onChange={v => set('mrp', v)} invalid={!!errors.mrp} /></div>
               </Row>
             )}
           </Section>
+
+          {/* ---- Purchase Information: unticked to begin with; what is under it is kept only while it is ticked ---- */}
+          <Section title="Purchase Information" check={<input id="it-purchaseInfo" type="checkbox" className="c-check" checked={f.purchaseInfo} onChange={e => set('purchaseInfo', e.target.checked)} aria-label="Purchase Information" />}>
+            {f.purchaseInfo && (
+              <div className="flex flex-col lg:flex-row lg:gap-x-[56px]" data-purchase>
+                <div className="lg:w-[493px] shrink-0">
+                  <Row label="Cost Price" required dotted id="it-costPrice" error={errors.costPrice}>
+                    <div className="max-w-[318px]"><PrefixBox id="it-costPrice" prefix="INR" value={f.costPrice} onChange={v => set('costPrice', v)} invalid={!!errors.costPrice} /></div>
+                  </Row>
+                  <Row label="Description" id="it-purchaseDescription">
+                    <textarea id="it-purchaseDescription" value={f.purchaseDescription} onChange={e => set('purchaseDescription', e.target.value)} maxLength={2000} rows={2} className={`${inputClass(false)} !h-[56px] py-[6px] max-w-[319px] resize-y`} />
+                  </Row>
+                </div>
+                <div className="lg:w-[468px]">
+                  <Row label="Account" required dotted width={167} id="it-purchaseAccount" error={errors.purchaseAccount}>
+                    <Combo htmlId="it-purchaseAccount" className="max-w-[301px]" value={f.purchaseAccount || null} shown={f.purchaseAccount} search={q => searchItemOptions('purchaseAccounts', q)} creatable invalid={!!errors.purchaseAccount}
+                      placeholder="Select an account" ariaLabel="Purchase Account" onChange={id => set('purchaseAccount', id ?? '')} />
+                  </Row>
+                  <Row label="Receivable Item" dotted width={167} id="it-receivable">
+                    <div className="min-h-[34px] flex items-center"><input id="it-receivable" type="checkbox" className="c-check" checked={f.receivable} onChange={e => set('receivable', e.target.checked)} aria-label="Receivable Item" /></div>
+                  </Row>
+                </div>
+              </div>
+            )}
+          </Section>
+
+          {/* ---- Default Tax Rates: the tax a quote row starts with when this item is picked (it can be changed on the quote) ---- */}
+          {taxable && (
+            <Section title="Default Tax Rates">
+              <div className="flex flex-col lg:flex-row lg:gap-x-[56px]" data-default-taxes>
+                <div className="lg:w-[493px] shrink-0">
+                  <Row label="Intra State Tax Rate" dotted id="it-taxId">
+                    <Combo htmlId="it-taxId" className="max-w-[318px]" value={f.taxId || null} shown={intraShown} items={intraItems} searchable={false} clearable placeholder="Select a tax" ariaLabel="Intra State Tax Rate" onChange={id => set('taxId', id ?? '')} />
+                  </Row>
+                </div>
+                <div className="lg:w-[468px]">
+                  <Row label="Inter State Tax Rate" dotted width={167} id="it-interTaxId">
+                    <Combo htmlId="it-interTaxId" className="max-w-[301px]" value={f.interTaxId || null} shown={interShown} items={interItems} searchable={false} clearable placeholder="Select a tax" ariaLabel="Inter State Tax Rate" onChange={id => set('interTaxId', id ?? '')} />
+                  </Row>
+                </div>
+              </div>
+            </Section>
+          )}
 
           {/* ---- Inventory (Goods) ---- */}
           {goods && (
@@ -341,6 +436,18 @@ export default function ItemForm({ item, initialName = '', taxes, onSaved, onCan
                   </Row>
                 </div>
               </div>
+              <div className="flex flex-col lg:flex-row lg:gap-x-[56px]">
+                <div className="lg:w-[493px] shrink-0">
+                  <Row label="Manufacturer" id="it-manufacturer">
+                    <input id="it-manufacturer" value={f.manufacturer} onChange={e => set('manufacturer', e.target.value)} maxLength={100} autoComplete="off" className={inputClass(false, 'max-w-[318px]')} />
+                  </Row>
+                </div>
+                <div className="lg:w-[468px]">
+                  <Row label="Brand" width={167} id="it-brand">
+                    <input id="it-brand" value={f.brand} onChange={e => set('brand', e.target.value)} maxLength={100} autoComplete="off" className={inputClass(false, 'max-w-[301px]')} />
+                  </Row>
+                </div>
+              </div>
             </Section>
           )}
 
@@ -352,6 +459,17 @@ export default function ItemForm({ item, initialName = '', taxes, onSaved, onCan
                 onChange={(id, picked) => setF(cur => ({ ...cur, taskTemplateId: id ?? '', taskTemplateName: picked?.label ?? '' }))} />
             </Row>
           </Section>
+
+          {/* ---- What an import kept with the item (read-only) ---- */}
+          {item && (item.externalId || Object.keys(item.extra).length > 0) && (
+            <Section title="Imported Details">
+              <p className="mb-3 text-[12px] text-[#6d7189]">Kept from the file this item was imported from. It is for reading: it is not changed here.</p>
+              <dl className="grid grid-cols-1 sm:grid-cols-[230px_minmax(0,1fr)] gap-x-4 gap-y-1.5 text-[13px]" data-imported-details>
+                {item.externalId && <><dt className="text-[#6d7189]">Item ID</dt><dd>{item.externalId}</dd></>}
+                {Object.entries(item.extra).map(([k, v]) => <Fragment key={k}><dt className="text-[#6d7189] break-words">{k}</dt><dd className="break-words whitespace-pre-line">{v}</dd></Fragment>)}
+              </dl>
+            </Section>
+          )}
         </div>
 
         <div className="sticky bottom-0 z-20 bg-white border-t border-[#eeeeee] shadow-[0_-2px_6px_rgba(34,38,59,0.05)] px-[12px] py-[12px] flex flex-wrap items-center gap-[10px]">

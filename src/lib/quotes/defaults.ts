@@ -1,7 +1,7 @@
 // What Quote Settings start with before anybody changes them. Everything here is editable in Quote Settings (it is stored in the
 // QuoteSetting table once changed), so nothing about a company, a bank or a tax rate is fixed in code.
 
-import type { CompanySettings, DisplaySettings, DocumentSettings, HeaderRow, NumberingSettings, QuoteSettings, TaxDef, TemplateSettings, WithholdingDef } from "./types";
+import type { CompanySettings, DisplaySettings, DocumentSettings, HeaderRow, NumberingSettings, QuoteSettings, TaxDef, TemplateSettings, TermsSettings, WithholdingDef } from "./types";
 
 // GST rates with the split the quote document prints: GST18 = CGST9 + SGST9 (same state), IGST18 (other state)
 function gst(rate: number): TaxDef {
@@ -85,6 +85,8 @@ export const DEFAULT_HEADER: HeaderRow[] = [
 ];
 export const DEFAULT_DOCUMENT: DocumentSettings = { header: DEFAULT_HEADER };
 
+export const DEFAULT_TERMS: TermsSettings = { configured: false, templates: [] };
+
 export const DEFAULT_SETTINGS: QuoteSettings = {
   numbering: DEFAULT_NUMBERING,
   taxes: DEFAULT_TAXES,
@@ -94,8 +96,9 @@ export const DEFAULT_SETTINGS: QuoteSettings = {
   display: DEFAULT_DISPLAY,
   company: DEFAULT_COMPANY,
   templates: DEFAULT_TEMPLATES,
+  terms: DEFAULT_TERMS,
   document: DEFAULT_DOCUMENT,
 };
 
-export const SETTING_GROUPS = ["numbering", "taxes", "tds", "tcs", "rounding", "display", "company", "templates", "document"] as const;
+export const SETTING_GROUPS = ["numbering", "taxes", "tds", "tcs", "rounding", "display", "company", "templates", "terms", "document"] as const;
 export type SettingGroup = (typeof SETTING_GROUPS)[number];

@@ -12,17 +12,16 @@ import { projectTemplates } from "@/lib/records/lookups";
 import type { FileDto, LookupItem } from "@/lib/records/types";
 import { createReadUrls, removeObjects } from "@/lib/leads/storage";
 import { needQuoteWriter, needQuotes } from "./access";
-import { csvLine, parseCsv } from "./csv";
+import { csvLine } from "./csv";
 import { loadSettings } from "./settings";
 import {
-  COMMON_UNITS, DEFAULT_DIM_UNIT, DEFAULT_TAX_PREFERENCE, DEFAULT_VALUATION, DEFAULT_WEIGHT_UNIT, DIM_UNITS, IDENTIFIER_TYPES, INVENTORY_ACCOUNTS, INVENTORY_TRACKING,
+  COMMON_UNITS, DEFAULT_DIM_UNIT, DEFAULT_TAX_PREFERENCE, DEFAULT_VALUATION, DEFAULT_WEIGHT_UNIT, DIM_UNITS, IDENTIFIER_TYPES, INVENTORY_ACCOUNTS, INVENTORY_TRACKING, PURCHASE_ACCOUNTS,
   ITEM_IMAGE_FIELDS, ITEM_IMAGE_KEYS, MAX_DIMENSION, MAX_IDENTIFIERS, MAX_ITEM_IMAGES, MAX_OTHER_IMAGES, TAX_PREFERENCES, VALUATION_METHODS, WEIGHT_UNITS,
   hasFulfilment, hasInventory, isItemKind, isTaxCode, isTaxable, taxCodeField, unitGroupOf, type Identifier, type ItemKind,
 } from "./item-constants";
 import type { ItemDetailDto, ItemDto, ItemImages } from "./types";
 
 const PAGE = 50;
-const MAX_IMPORT_ROWS = 5000;
 const contains = (q: string) => ({ contains: q, mode: "insensitive" as const });
 const asNumber = (d: { toNumber(): number } | number | null | undefined) => (d === null || d === undefined ? 0 : typeof d === "number" ? d : d.toNumber());
 const asNumberOrNull = (d: { toNumber(): number } | number | null | undefined) => (d === null || d === undefined ? null : asNumber(d));
@@ -61,7 +60,7 @@ export async function loadItemExtras(itemIds: string[]): Promise<ItemExtras> {
 }
 
 export const toItem = (r: ItemRow, x?: ItemExtras): ItemDto => ({
-  id: r.id, name: r.name, description: r.description ?? "", hsn: r.hsn ?? "", unit: r.unit ?? "", rate: asNumber(r.rate), taxId: r.taxId,
+  id: r.id, name: r.name, description: r.description ?? "", hsn: r.hsn ?? "", unit: r.unit ?? "", rate: asNumber(r.rate), taxId: r.taxId, interTaxId: r.interTaxId,
   kind: r.kind === "Service" ? "Service" : "Goods", isActive: r.isActive, createdAt: r.createdAt.toISOString(),
   category: r.category ?? "", sku: r.sku ?? "", taxPreference: r.taxPreference || DEFAULT_TAX_PREFERENCE,
   taskTemplateId: r.taskTemplateId, taskTemplateName: r.taskTemplateId ? x?.templates.get(r.taskTemplateId) ?? "" : "", imageFileId: x?.images.get(r.id) ?? null,
@@ -70,11 +69,16 @@ export const toItem = (r: ItemRow, x?: ItemExtras): ItemDto => ({
 const toIdentifiers = (v: Prisma.JsonValue | null): Identifier[] =>
   Array.isArray(v) ? v.flatMap(x => (x && typeof x === "object" && !Array.isArray(x) && typeof x.type === "string" && typeof x.value === "string" ? [{ type: x.type, value: x.value }] : [])) : [];
 
+const toExtra = (v: Prisma.JsonValue | null): Record<string, string> =>
+  v && typeof v === "object" && !Array.isArray(v) ? Object.fromEntries(Object.entries(v).flatMap(([k, x]) => (typeof x === "string" ? [[k, x]] : []))) : {};
+
 function toDetail(r: ItemRow, x: ItemExtras, images: ItemImages): ItemDetailDto {
   return {
     ...toItem(r, x),
     unitGroup: r.unitGroup, identifiers: toIdentifiers(r.identifiers), trackInventory: r.trackInventory, inventoryTracking: r.inventoryTracking, inventoryAccount: r.inventoryAccount ?? "",
     valuationMethod: r.valuationMethod, reorderPoint: asNumberOrNull(r.reorderPoint), returnable: r.returnable,
+    brand: r.brand ?? "", manufacturer: r.manufacturer ?? "", mrp: asNumberOrNull(r.mrp), externalId: r.externalId, extra: toExtra(r.extra),
+    purchaseInfo: r.purchaseInfo, costPrice: asNumberOrNull(r.costPrice), purchaseAccount: r.purchaseAccount ?? "", purchaseDescription: r.purchaseDescription ?? "", receivable: r.receivable,
     dimLength: asNumberOrNull(r.dimLength), dimWidth: asNumberOrNull(r.dimWidth), dimHeight: asNumberOrNull(r.dimHeight), dimUnit: r.dimUnit || DEFAULT_DIM_UNIT,
     weight: asNumberOrNull(r.weight), weightUnit: r.weightUnit || DEFAULT_WEIGHT_UNIT, images,
   };
@@ -93,6 +97,8 @@ export type ItemInput = {
   category?: unknown; sku?: unknown; taxPreference?: unknown; identifiers?: unknown; trackInventory?: unknown; inventoryTracking?: unknown; inventoryAccount?: unknown;
   valuationMethod?: unknown; reorderPoint?: unknown; returnable?: unknown; dimLength?: unknown; dimWidth?: unknown; dimHeight?: unknown; dimUnit?: unknown;
   weight?: unknown; weightUnit?: unknown; taskTemplateId?: unknown; files?: unknown;
+  purchaseInfo?: unknown; costPrice?: unknown; purchaseAccount?: unknown; purchaseDescription?: unknown; receivable?: unknown; interTaxId?: unknown;
+  brand?: unknown; manufacturer?: unknown; mrp?: unknown;
 };
 
 const bad = (message: string): never => { throw new ServiceError(400, message); };
@@ -164,7 +170,7 @@ function cleanFiles(raw: unknown): FileSlot[] | null {
 }
 
 // Worked on whatever the form sent: a Service has no stock, nothing to return and nothing to ship, so those values are never kept for one.
-async function cleanItem(input: ItemInput, current?: ItemRow) {
+export async function cleanItem(input: ItemInput, current?: ItemRow) {
   const settings = await loadSettings();
   const given = (k: keyof ItemInput) => input[k] !== undefined;
 
@@ -187,7 +193,11 @@ async function cleanItem(input: ItemInput, current?: ItemRow) {
   if (typeof taxPreference !== "string" || !TAX_PREFERENCES.some(t => t.id === taxPreference)) return bad("Choose a Tax Preference from the list.");
   let taxId: string | null = input.taxId === undefined ? current?.taxId ?? null : input.taxId === null || input.taxId === "" ? null : String(input.taxId);
   if (!isTaxable(taxPreference)) taxId = null; // an item that is not taxable has no default tax
-  if (taxId && !settings.taxes.some(t => t.id === taxId && (t.active || t.id === current?.taxId))) return bad("Choose a tax from the list.");
+  if (taxId && !settings.taxes.some(t => t.id === taxId && (t.active || t.id === current?.taxId))) return bad("Choose an Intra State Tax Rate from the list.");
+  // the Inter State Tax Rate: the tax a quote row starts with when the quote is for another state
+  let interTaxId: string | null = input.interTaxId === undefined ? current?.interTaxId ?? null : input.interTaxId === null || input.interTaxId === "" ? null : String(input.interTaxId);
+  if (!isTaxable(taxPreference)) interTaxId = null;
+  if (interTaxId && !settings.taxes.some(t => t.id === interTaxId && (t.active || t.id === current?.interTaxId))) return bad("Choose an Inter State Tax Rate from the list.");
 
   // the task template: one of the project templates (Project → Edit Page Layout)
   const templates = await projectTemplates();
@@ -210,8 +220,12 @@ async function cleanItem(input: ItemInput, current?: ItemRow) {
   if (unitGroupRaw !== null && typeof unitGroupRaw !== "string") return bad("Choose a unit group from the list.");
   const group = unitGroupRaw === null ? null : unitGroupOf(unitGroupRaw);
   if (unitGroupRaw !== null && !group) return bad("Choose a unit group from the list.");
-  const unit = text(input.unit === undefined ? current?.unit : input.unit, 20, "The unit") || null;
+  let unit = text(input.unit === undefined ? current?.unit : input.unit, 20, "The unit") || null;
   if (group && unit && !group.units.includes(unit)) return bad(`"${unit}" is not a unit of the ${group.label} group.`);
+  if (group && !unit) unit = group.units[0]; // choosing a group sets its first unit
+  // the unit is shown under the quantity and the rate of a quote row: asked for when the item is new or when the form sends it (an import and a partial
+  // update that leaves it alone are exempt, as for the other rules)
+  if (!unit && (!current || given("unit") || given("unitGroup"))) return bad("The unit is required.");
 
   const identifiers = input.identifiers === undefined ? toIdentifiers(current?.identifiers ?? null) : cleanIdentifiers(input.identifiers);
 
@@ -221,7 +235,7 @@ async function cleanItem(input: ItemInput, current?: ItemRow) {
   let inventoryAccount: string | null = null;
   let valuationMethod = DEFAULT_VALUATION;
   let reorderPoint: number | null = null;
-  let returnable = true;
+  let returnable = false; // a new item is not returnable unless it is said to be
   let dimLength: number | null = null; let dimWidth: number | null = null; let dimHeight: number | null = null;
   let dimUnit = DEFAULT_DIM_UNIT; let weight: number | null = null; let weightUnit = DEFAULT_WEIGHT_UNIT;
   if (hasInventory(kind)) {
@@ -237,7 +251,7 @@ async function cleanItem(input: ItemInput, current?: ItemRow) {
       valuationMethod = method;
       reorderPoint = decimal(input.reorderPoint === undefined ? (current ? asNumberOrNull(current.reorderPoint) : null) : input.reorderPoint, "The Reorder Point", 99_999_999_999.99, 2);
     }
-    returnable = flag(input.returnable, "Returnable Item", current?.returnable ?? true);
+    returnable = flag(input.returnable, "Returnable Item", current?.returnable ?? false);
   }
   if (hasFulfilment(kind)) {
     const pick = (k: "dimLength" | "dimWidth" | "dimHeight" | "weight", what: string) =>
@@ -251,11 +265,30 @@ async function cleanItem(input: ItemInput, current?: ItemRow) {
     weightUnit = wu;
   }
 
+  const brand = text(input.brand === undefined ? current?.brand : input.brand, 100, "The brand") || null;
+  const manufacturer = text(input.manufacturer === undefined ? current?.manufacturer : input.manufacturer, 100, "The manufacturer") || null;
+  const mrp = decimal(input.mrp === undefined ? (current ? asNumberOrNull(current.mrp) : null) : input.mrp, "The MRP", 99_999_999.99, 2);
+
+  // Purchase Information: what is typed under it is kept only while it is ticked
+  const purchaseInfo = flag(input.purchaseInfo, "Purchase Information", current?.purchaseInfo ?? false);
+  let costPrice: number | null = null;
+  let purchaseAccount: string | null = null;
+  let purchaseDescription: string | null = null;
+  let receivable = false;
+  if (purchaseInfo) {
+    costPrice = decimal(input.costPrice === undefined ? (current?.purchaseInfo ? asNumberOrNull(current.costPrice) : undefined) : input.costPrice, "The cost price", 99_999_999.99, 2, true);
+    purchaseAccount = text(input.purchaseAccount === undefined ? current?.purchaseAccount : input.purchaseAccount, 100, "The Purchase Account") || null;
+    if (!purchaseAccount) return bad("The Purchase Account is required.");
+    purchaseDescription = text(input.purchaseDescription === undefined ? current?.purchaseDescription : input.purchaseDescription, 2000, "The purchase description") || null;
+    receivable = flag(input.receivable, "Receivable Item", current?.receivable ?? false);
+  }
+
   return {
     data: {
       name, description, hsn: hsn || null, unit, unitGroup: group ? group.id : null, rate, taxId, kind, isActive,
       category, taxPreference, sku, identifiers: identifiers as unknown as Prisma.InputJsonValue, trackInventory, inventoryTracking, inventoryAccount, valuationMethod,
       reorderPoint, returnable, dimLength, dimWidth, dimHeight, dimUnit, weight, weightUnit, taskTemplateId,
+      interTaxId, purchaseInfo, costPrice, purchaseAccount, purchaseDescription, receivable, brand, manufacturer, mrp,
     },
     slots: cleanFiles(input.files),
   };
@@ -275,19 +308,42 @@ async function assertSkuFree(sku: string | null, exceptId?: string) {
 // ---------------------------------------------------------------------------
 // List, add, edit, delete
 // ---------------------------------------------------------------------------
-export type ItemListParams = { q?: string; page: number; active?: "all" | "active" | "inactive" };
+export const ITEM_SORTS = ["name", "rate", "hsn", "unit", "kind", "category", "status", "created"] as const;
+export type ItemSort = (typeof ITEM_SORTS)[number];
+export type ItemListParams = { q?: string; page: number; active?: "all" | "active" | "inactive"; kind?: ItemKind; sort?: ItemSort; dir?: "asc" | "desc" };
+
+// What the search box looks in: the name, the description, the HSN/SAC, the SKU, the category, the brand, the manufacturer and the Item ID
+export const itemSearch = (q: string): Prisma.CatalogItemWhereInput => ({
+  OR: [{ name: contains(q) }, { description: contains(q) }, { hsn: contains(q) }, { sku: contains(q) }, { category: contains(q) }, { brand: contains(q) }, { manufacturer: contains(q) }, { externalId: contains(q) }],
+});
+
+const orderOf = (sort: ItemSort | undefined, dir: "asc" | "desc"): Prisma.CatalogItemOrderByWithRelationInput[] => {
+  const then: Prisma.CatalogItemOrderByWithRelationInput[] = [{ name: "asc" }, { id: "asc" }];
+  const nulls = (field: "hsn" | "unit" | "category") => ({ [field]: { sort: dir, nulls: "last" } }) as Prisma.CatalogItemOrderByWithRelationInput;
+  switch (sort) {
+    case "rate": return [{ rate: dir }, ...then];
+    case "hsn": return [nulls("hsn"), ...then];
+    case "unit": return [nulls("unit"), ...then];
+    case "category": return [nulls("category"), ...then];
+    case "kind": return [{ kind: dir }, ...then];
+    case "status": return [{ isActive: dir === "asc" ? "desc" : "asc" }, ...then]; // ascending: active first
+    case "created": return [{ createdAt: dir }, { id: dir }];
+    default: return [{ name: dir }, { id: dir }];
+  }
+};
 
 export async function listItems(ctx: AuthContext, p: ItemListParams) {
   needQuotes(ctx, "view");
   const where: Prisma.CatalogItemWhereInput = {
     deletedAt: null,
     ...(p.active === "active" ? { isActive: true } : p.active === "inactive" ? { isActive: false } : {}),
-    ...(p.q ? { OR: [{ name: contains(p.q) }, { description: contains(p.q) }, { hsn: contains(p.q) }, { sku: contains(p.q) }, { category: contains(p.q) }] } : {}),
+    ...(p.kind ? { kind: p.kind } : {}),
+    ...(p.q ? itemSearch(p.q) : {}),
   };
   const [total, showing, rows] = await Promise.all([
     prisma.catalogItem.count({ where: { deletedAt: null } }),
     prisma.catalogItem.count({ where }),
-    prisma.catalogItem.findMany({ where, orderBy: [{ name: "asc" }, { id: "asc" }], skip: (p.page - 1) * PAGE, take: PAGE }),
+    prisma.catalogItem.findMany({ where, orderBy: orderOf(p.sort, p.dir ?? "asc"), skip: (p.page - 1) * PAGE, take: PAGE }),
   ]);
   const x = await loadItemExtras(rows.map(r => r.id));
   return { rows: rows.map(r => toItem(r, x)), total, showing, page: p.page, pageCount: Math.max(1, Math.ceil(showing / PAGE)), pageSize: PAGE };
@@ -367,8 +423,8 @@ export async function itemImageUrl(ctx: AuthContext, fileId: string): Promise<st
 // ---------------------------------------------------------------------------
 // The pick-lists of the New Item form: what the catalogue already uses, searchable, and always the standard ones
 // ---------------------------------------------------------------------------
-export type OptionKind = "categories" | "units" | "accounts";
-export const OPTION_KINDS: OptionKind[] = ["categories", "units", "accounts"];
+export type OptionKind = "categories" | "units" | "accounts" | "purchaseAccounts";
+export const OPTION_KINDS: OptionKind[] = ["categories", "units", "accounts", "purchaseAccounts"];
 
 export async function itemOptions(ctx: AuthContext, kind: OptionKind, q: string): Promise<LookupItem[]> {
   needQuoteWriter(ctx);
@@ -389,100 +445,17 @@ export async function itemOptions(ctx: AuthContext, kind: OptionKind, q: string)
       const all = Array.from(new Set([...INVENTORY_ACCOUNTS, ...used.flatMap(u => (u.inventoryAccount ? [u.inventoryAccount] : []))]));
       return all.filter(like).slice(0, 50).map(a => ({ id: a, label: a }));
     }
-  }
-}
-
-// ---------------------------------------------------------------------------
-// Import / export
-// ---------------------------------------------------------------------------
-const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, "");
-// header (normalised) -> what it holds; the first match wins
-const HEADERS: Record<string, string[]> = {
-  name: ["itemname", "name", "item", "productname"],
-  description: ["description", "itemdescription", "salesdescription"],
-  hsn: ["hsnsac", "hsn", "sac", "hsncode"],
-  unit: ["usageunit", "unit", "uom"],
-  rate: ["rate", "sellingprice", "salesrate", "price", "salesprice"],
-  tax: ["intrastatetaxname", "taxname", "tax", "gst"],
-  kind: ["producttype", "itemtype", "type"],
-  status: ["status", "active"],
-  sku: ["sku", "itemcode"],
-  category: ["categoryname", "category"],
-  taxable: ["taxable", "istaxable"],
-};
-
-export type ImportResult = { created: number; updated: number; skipped: number; notes: string[] };
-
-export async function importItems(ctx: AuthContext, csv: string): Promise<ImportResult> {
-  needQuotes(ctx, "create");
-  needQuotes(ctx, "edit");
-  if (csv.length > 4_000_000) throw new ServiceError(400, "The file is larger than 4 MB.");
-  const rows = parseCsv(csv);
-  if (rows.length < 2) throw new ServiceError(400, "The file has no items. The first line must be the column names.");
-  if (rows.length - 1 > MAX_IMPORT_ROWS) throw new ServiceError(400, `The file has more than ${MAX_IMPORT_ROWS} items. Split it and import the parts one by one.`);
-  const head = rows[0].map(norm);
-  const at = (key: string) => head.findIndex(h => HEADERS[key].includes(h));
-  const col = Object.fromEntries(Object.keys(HEADERS).map(k => [k, at(k)])) as Record<string, number>;
-  if (col.name < 0) throw new ServiceError(400, 'The file needs an "Item Name" column.');
-
-  const settings = await loadSettings();
-  const taxByName = new Map(settings.taxes.map(t => [t.name.toLowerCase(), t.id]));
-  const existing = new Map((await prisma.catalogItem.findMany({ where: { deletedAt: null }, select: { id: true, name: true } })).map(i => [i.name.toLowerCase(), i.id]));
-  const out: ImportResult = { created: 0, updated: 0, skipped: 0, notes: [] };
-  const note = (m: string) => { if (out.notes.length < 20) out.notes.push(m); };
-  const seen = new Set<string>();
-
-  for (let i = 1; i < rows.length; i++) {
-    const r = rows[i];
-    const cell = (k: string) => (col[k] >= 0 ? (r[col[k]] ?? "").trim() : "");
-    const name = cell("name");
-    if (!name) { out.skipped++; note(`Line ${i + 1}: no item name.`); continue; }
-    if (seen.has(name.toLowerCase())) { out.skipped++; note(`Line ${i + 1}: "${name}" is in the file twice; the first one was used.`); continue; }
-    seen.add(name.toLowerCase());
-    const rateCell = cell("rate");
-    const rateText = rateCell.replace(/[^0-9.\-]/g, "");
-    const rate = rateText === "" ? 0 : Number(rateText);
-    if ((rateCell !== "" && rateText === "") || !Number.isFinite(rate) || rate < 0 || rate > 99_999_999.99) { out.skipped++; note(`Line ${i + 1}: "${name}" has a rate that is not valid.`); continue; }
-    const taxName = cell("tax");
-    const taxId = taxName ? taxByName.get(taxName.toLowerCase()) ?? null : null;
-    if (taxName && !taxId) note(`Line ${i + 1}: the tax "${taxName}" is not in Quote Settings, so "${name}" has no default tax.`);
-    const kindText = cell("kind").toLowerCase();
-    const status = cell("status").toLowerCase();
-    const taxable = cell("taxable").toLowerCase();
-    // the code is numbers only (2 to 8 digits); "8536 50 90" and "9983-91" are read as the digits they hold, anything else is left empty
-    const codeCell = cell("hsn");
-    const code = codeCell.replace(/[\s.\-]/g, "");
-    if (codeCell && !isTaxCode(code)) note(`Line ${i + 1}: the HSN/SAC "${codeCell.slice(0, 30)}" of "${name}" is not a number of 2 to 8 digits, so it was left empty.`);
-    try {
-      const sku = text(cell("sku"), 100, "The SKU") || null;
-      const data = {
-        name: text(name, 200, "The item name"),
-        description: text(cell("description"), 2000, "The description") || null,
-        hsn: isTaxCode(code) ? code : null,
-        unit: text(cell("unit"), 20, "The unit") || null,
-        rate: Math.round(rate * 100) / 100,
-        taxId,
-        kind: kindText.startsWith("serv") ? "Service" : "Goods",
-        isActive: status === "" ? true : !(status === "inactive" || status === "no" || status === "false"),
-        category: text(cell("category"), 100, "The category") || null,
-        sku,
-        taxPreference: taxable === "false" || taxable === "no" || taxable === "0" ? "non_taxable" : DEFAULT_TAX_PREFERENCE,
-      };
-      if (sku) {
-        const clash = await prisma.catalogItem.findFirst({ where: { deletedAt: null, sku: { equals: sku, mode: "insensitive" }, name: { not: data.name, mode: "insensitive" } }, select: { name: true } });
-        if (clash) { data.sku = null; note(`Line ${i + 1}: the SKU "${sku}" is used by "${clash.name}", so "${name}" was imported without a SKU.`); }
-      }
-      const id = existing.get(name.toLowerCase());
-      if (id) { await prisma.catalogItem.update({ where: { id }, data }); out.updated++; }
-      else { const row = await prisma.catalogItem.create({ data: { ...data, createdById: ctx.userId }, select: { id: true } }); existing.set(name.toLowerCase(), row.id); out.created++; }
-    } catch (e) {
-      out.skipped++;
-      note(`Line ${i + 1}: "${name}" was not imported${e instanceof ServiceError ? ` (${e.message})` : ""}.`);
+    case "purchaseAccounts": {
+      const used = await prisma.catalogItem.groupBy({ by: ["purchaseAccount"], where: { deletedAt: null, purchaseAccount: { not: null } } });
+      const all = Array.from(new Set([...PURCHASE_ACCOUNTS, ...used.flatMap(u => (u.purchaseAccount ? [u.purchaseAccount] : []))]));
+      return all.filter(like).slice(0, 50).map(a => ({ id: a, label: a }));
     }
   }
-  return out;
 }
 
+// ---------------------------------------------------------------------------
+// Export (the import of a file is in item-import.ts / item-import-server.ts)
+// ---------------------------------------------------------------------------
 export async function exportItems(ctx: AuthContext): Promise<string> {
   needQuotes(ctx, "export");
   const settings = await loadSettings();

@@ -4,7 +4,7 @@ import { ServiceError } from "@/lib/users/service";
 import { OPTION_KINDS, itemOptions, type OptionKind } from "@/lib/quotes/catalog";
 import { stripControl } from "@/lib/records/values";
 
-// GET /api/quotes/items/options?kind=categories|units|accounts&q= — the pick-lists of the New Item form: what the catalogue already uses (and the
+// GET /api/quotes/items/options?kind=categories|units|accounts|purchaseAccounts&q= — the pick-lists of the New Item form: what the catalogue already uses (and the
 // standard choices), searchable. Needs create or edit.
 export async function GET(request: Request) {
   return withAuthRoute(request, async ctx => {

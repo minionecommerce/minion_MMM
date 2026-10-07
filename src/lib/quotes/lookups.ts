@@ -5,7 +5,7 @@ import { prisma } from "@/lib/db";
 import { isId } from "@/lib/records/values";
 import type { LookupItem } from "@/lib/records/types";
 import { CUSTOMER_SELECT, toCustomer } from "@/lib/customers/dto";
-import { loadItemExtras, toItem } from "./catalog";
+import { itemSearch, loadItemExtras, toItem } from "./catalog";
 import type { CustomerDto, ItemDto } from "./types";
 
 const LIMIT = 30;
@@ -45,11 +45,14 @@ export async function searchProjects(q: string, customerId: string | undefined):
   return rows.map(p => ({ id: p.id, label: p.projectCode ? `${p.projectCode} · ${p.name}` : p.name, sub: p.projectCode ? null : p.status, tag: null }));
 }
 
-export async function searchCatalog(q: string, limit = LIMIT): Promise<ItemDto[]> {
+// The items of the Items module that a quote can pick (the ones that are switched on), by name, description, HSN/SAC, SKU, category, brand, manufacturer or Item ID.
+// `offset` asks for the next matches: the list of the picker goes on as it is scrolled, so all the items can be reached.
+export async function searchCatalog(q: string, limit = LIMIT, offset = 0): Promise<ItemDto[]> {
   const text = q.trim();
   const rows = await prisma.catalogItem.findMany({
-    where: { deletedAt: null, isActive: true, ...(text ? { OR: [{ name: contains(text) }, { description: contains(text) }, { hsn: contains(text) }, { sku: contains(text) }, { category: contains(text) }] } : {}) },
+    where: { deletedAt: null, isActive: true, ...(text ? itemSearch(text) : {}) },
     orderBy: [{ name: "asc" }, { id: "asc" }],
+    skip: Math.max(0, Math.min(1_000_000, offset)),
     take: Math.min(200, limit),
   });
   const x = await loadItemExtras(rows.map(r => r.id));

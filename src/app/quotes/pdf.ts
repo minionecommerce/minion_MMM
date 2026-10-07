@@ -2,6 +2,7 @@
 // The page is drawn by the browser itself (html-to-image), so layout, fonts, colours, logo and signature are the ones of the preview. Only the
 // document is drawn, never the status band, which belongs to the viewer and is not part of the document.
 
+import { WATERMARK } from '@/lib/quotes/watermark';
 import { PAGE, pageBreaks, type Interval } from './pdf-breaks';
 import { writePdf, type PdfPage } from './pdf-writer';
 
@@ -24,6 +25,43 @@ async function inlinePictures(node: HTMLElement) {
   }
 }
 
+// The web fonts the document uses (Noto Sans). The picture is drawn inside an image, and an image only has the fonts that are written into it:
+// every @font-face of a family the document uses is copied with its font file inside, so the PDF has the letters the preview has.
+export async function embeddedFonts(node: HTMLElement): Promise<string> {
+  const used = new Set<string>();
+  for (const el of [node, ...Array.from(node.querySelectorAll('*'))]) {
+    for (const name of getComputedStyle(el).fontFamily.split(',')) used.add(name.trim().replace(/^["']|["']$/g, ''));
+  }
+  const css: string[] = [];
+  for (const sheet of Array.from(document.styleSheets)) {
+    let rules: CSSRuleList;
+    try { rules = sheet.cssRules; } catch { continue; } // a style sheet of another site cannot be read
+    for (const rule of Array.from(rules)) {
+      if (!(rule instanceof CSSFontFaceRule)) continue;
+      const style = rule.style;
+      const family = style.getPropertyValue('font-family').trim().replace(/^["']|["']$/g, '');
+      if (!used.has(family)) continue;
+      let src = style.getPropertyValue('src');
+      const files = Array.from(src.matchAll(/url\(\s*["']?([^"')]+)["']?\s*\)/g));
+      if (files.length === 0) continue; // a face made of a font the computer has (local), nothing to copy
+      try {
+        for (const m of files) {
+          const res = await fetch(new URL(m[1], sheet.href ?? location.href).href, { credentials: 'omit' });
+          if (!res.ok) throw new Error('font file');
+          src = src.replace(m[0], `url(${await blobToDataUrl(await res.blob())})`);
+        }
+      } catch { continue; } // without this face the browser's own sans-serif is used: the PDF is still made
+      const range = style.getPropertyValue('unicode-range');
+      css.push(`@font-face{font-family:"${family}";src:${src};font-weight:${style.getPropertyValue('font-weight') || '400'};font-style:${style.getPropertyValue('font-style') || 'normal'};${range ? `unicode-range:${range};` : ''}}`);
+    }
+  }
+  return css.join('');
+}
+
+// Letters drawn into a picture are a little thinner than the ones a PDF viewer draws from a font file; a thin outline of the text's own colour gives them
+// back the weight (a fifth of a pixel, so the text is not made bold)
+const TEXT_WEIGHT = '[data-quote-document],[data-quote-document] *{-webkit-text-stroke:0.2px currentColor!important}';
+
 // The zoom of the browser: the screen's scaling (125 %, 150 %) and Ctrl + / -. A browser puts every line and text on whole screen pixels (a 1px
 // line is 0.8px at 125 %), so a quote has other heights at another zoom. The picture is drawn at the zoom the person sees, so the pages are cut where
 // the preview was measured and the lines and text are those of the preview.
@@ -37,6 +75,7 @@ function pageZoom() {
 // the sizes are put back by a style sheet that is stronger than the copied values.
 async function drawDocument(node: HTMLElement, ratio: number, zoom: number): Promise<HTMLCanvasElement> {
   const { toCanvas } = await import('html-to-image');
+  const fonts = await embeddedFonts(node);
   const rect = node.getBoundingClientRect();
   const width = node.offsetWidth;
   const marked = [node, ...Array.from(node.querySelectorAll('*'))];
@@ -51,12 +90,12 @@ async function drawDocument(node: HTMLElement, ratio: number, zoom: number): Pro
       width: width * zoom,
       height: Math.ceil(rect.height * zoom),
       pixelRatio: ratio / zoom,
-      backgroundColor: '#ffffff',
+      // no background: the document is drawn on a see-through picture and put on a white page, behind the watermark of that page
       skipFonts: true,
       cacheBust: false,
       // not the page's theme variables (--x): what they hold is already in the copied properties, and each one would be copied to every element
       includeStyleProperties: Array.from(getComputedStyle(document.documentElement)).filter(name => !name.startsWith('--')),
-      fontEmbedCSS: Array.from(sizes, s => `[data-pdf-fs="${s}"]{font-size:${s}!important}`).join(''),
+      fontEmbedCSS: fonts + TEXT_WEIGHT + Array.from(sizes, s => `[data-pdf-fs="${s}"]{font-size:${s}!important}`).join(''),
       style: { width: `${width}px`, height: `${rect.height}px`, ...(zoom !== 1 ? { zoom: String(zoom) } : {}) },
     });
   } finally {
@@ -102,6 +141,7 @@ export async function makeQuotePdf(node: HTMLElement, meta: PdfMeta): Promise<Bl
   const boxBottom = box ? box.bottom - nodeRect.top : height;
   const boxLeft = box ? box.left - nodeRect.left : 0;
   const boxWidth = box ? box.width : width;
+  const logo = node.querySelector<HTMLImageElement>('img[data-company-logo]'); // the same picture, already read into the page by inlinePictures
   const end = Math.min(canvas.height / r, boxBottom + PAGE.bottom);
   const single = end <= PAGE.height + 1; // one page: the margin under the box belongs to it
   // page i shows the document from edges[i] to edges[i + 1]
@@ -120,6 +160,16 @@ export async function makeQuotePdf(node: HTMLElement, meta: PdfMeta): Promise<Bl
     if (!ctx) throw new Error('This browser cannot draw the PDF.');
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, page.width, page.height);
+    // the logo behind the page, where the Zoho PDF has it, on every page; the document is drawn over it
+    if (logo && logo.naturalWidth > 0) {
+      const w = WATERMARK.width;
+      const h = (w * logo.naturalHeight) / logo.naturalWidth;
+      ctx.save();
+      ctx.globalAlpha = WATERMARK.opacity;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(logo, Math.round((WATERMARK.centerX - w / 2) * r), Math.round((WATERMARK.centerY - h / 2) * r), Math.round(w * r), Math.round(h * r));
+      ctx.restore();
+    }
     const sy = Math.round(from * r);
     const sh = Math.min(canvas.height - sy, Math.round((to - from) * r));
     ctx.drawImage(canvas, 0, sy, canvas.width, sh, 0, Math.round(dest * r), canvas.width, sh);
@@ -127,7 +177,7 @@ export async function makeQuotePdf(node: HTMLElement, meta: PdfMeta): Promise<Bl
     const inside = (y: number) => y > boxTop + 1 && y < boxBottom - 1;
     if (i > 0 && inside(from)) ctx.fillRect(Math.round(boxLeft * r), Math.round(dest * r), Math.round(boxWidth * r), line);
     if (i < edges.length - 2 && inside(to)) ctx.fillRect(Math.round(boxLeft * r), Math.round(dest * r) + sh - line, Math.round(boxWidth * r), line);
-    const jpeg = await new Promise<Blob>((resolve, reject) => page.toBlob(b => (b ? resolve(b) : reject(new Error('Could not make the page picture.'))), 'image/jpeg', 0.95));
+    const jpeg = await new Promise<Blob>((resolve, reject) => page.toBlob(b => (b ? resolve(b) : reject(new Error('Could not make the page picture.'))), 'image/jpeg', 0.97));
     pages.push({ jpeg: new Uint8Array(await jpeg.arrayBuffer()), width: page.width, height: page.height });
   }
   return new Blob([writePdf(pages, { title: meta.title, author: meta.author }) as BlobPart], { type: 'application/pdf' });

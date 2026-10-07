@@ -32,6 +32,8 @@ export const INVENTORY_TRACKING: Choice[] = [{ id: "none", label: "None" }, { id
 export const VALUATION_METHODS: Choice[] = [{ id: "fifo", label: "FIFO (First In, First Out)" }, { id: "wac", label: "WAC (Weighted Average Cost)" }];
 export const DEFAULT_VALUATION = "fifo";
 export const INVENTORY_ACCOUNTS = ["Inventory Asset", "Finished Goods", "Raw Materials", "Work in Progress", "Stores and Spares"];
+// The account a purchase of the item is booked to (Purchase Information); a new one can be typed
+export const PURCHASE_ACCOUNTS = ["Cost of Goods Sold", "Purchases", "Materials and Supplies", "Labour and Contract Work", "Freight and Transport", "Other Expenses"];
 
 export const DIM_UNITS = ["cm", "mm", "in", "ft", "m"];
 export const WEIGHT_UNITS = ["kg", "g", "lb", "oz"];
