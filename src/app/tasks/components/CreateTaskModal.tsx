@@ -68,16 +68,17 @@ function LinkPicker({ kind, value, onChange, invalid }: { kind: 'lead' | 'projec
 
 type Errors = Record<string, string>;
 
-export default function CreateTaskModal({ mode, task, options, currentUserName, defaultType, onClose, onSaved }: {
+export default function CreateTaskModal({ mode, task, options, currentUserName, defaultType, fixedLink, onClose, onSaved }: {
   mode: 'create' | 'edit';
   task: TaskDetail | null; // required when editing
   options: TaskOptions;
   currentUserName: string;
   defaultType: TaskTypeId;
+  fixedLink?: { type: 'project'; id: string; label: string }; // a task made inside a project: its type and its project are fixed
   onClose: () => void;
   onSaved: (message: string) => void;
 }) {
-  const [type, setType] = useState<TaskTypeId>(task?.taskType ?? defaultType);
+  const [type, setType] = useState<TaskTypeId>(fixedLink?.type ?? task?.taskType ?? defaultType);
   const [title, setTitle] = useState(task?.title ?? '');
   const [assigneeId, setAssigneeId] = useState(task?.assignee?.id ?? '');
   const [startDate, setStartDate] = useState(task?.startRaw ?? '');
@@ -88,7 +89,7 @@ export default function CreateTaskModal({ mode, task, options, currentUserName, 
   const [productId, setProductId] = useState(task?.productId ?? '');
   const [priority, setPriority] = useState(task?.priority ?? 'Medium');
   const [proof, setProof] = useState(task?.requiresCompletionProof ?? true);
-  const [link, setLink] = useState<Link>(task?.link ? { id: task.link.id, label: task.link.label } : null);
+  const [link, setLink] = useState<Link>(fixedLink ? { id: fixedLink.id, label: fixedLink.label } : task?.link ? { id: task.link.id, label: task.link.label } : null);
   const [errors, setErrors] = useState<Errors>({});
   const [formError, setFormError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -152,7 +153,7 @@ export default function CreateTaskModal({ mode, task, options, currentUserName, 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-4">
           <div>
             <label htmlFor="tf-type" className={label}>Task Type</label>
-            <select id="tf-type" value={type} disabled={mode === 'edit' || saving} onChange={e => changeType(e.target.value as TaskTypeId)} className={`${input} cursor-pointer`}>
+            <select id="tf-type" value={type} disabled={mode === 'edit' || saving || !!fixedLink} onChange={e => changeType(e.target.value as TaskTypeId)} className={`${input} cursor-pointer`}>
               {TASK_TYPES.map(t => <option key={t.id} value={t.id}>{t.label}</option>)}
             </select>
           </div>
@@ -164,7 +165,7 @@ export default function CreateTaskModal({ mode, task, options, currentUserName, 
           {needsLink && (
             <div className="sm:col-span-2">
               <label className={label}>{LINK_KIND[type as 'lead']} <span className="text-[#d9232b]">*</span></label>
-              <LinkPicker key={type} kind={type as 'lead'} value={link} onChange={setLink} invalid={!!errors[`${type}Id`]} />
+              {fixedLink ? <div className={`${input} flex items-center bg-gray-50 text-gray-700`}>{fixedLink.label}</div> : <LinkPicker key={type} kind={type as 'lead'} value={link} onChange={setLink} invalid={!!errors[`${type}Id`]} />}
               {errors[`${type}Id`] && <p role="alert" className={err}>{errors[`${type}Id`]}</p>}
             </div>
           )}

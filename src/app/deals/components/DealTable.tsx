@@ -8,7 +8,7 @@ import { CategoryCell, FollowUpCell, LeadStatusCell, LocationCell, RequirementsC
 import DealActions, { type DealActionHandlers } from './DealActions';
 import { DealCustomerCell, DealIdCell, DealValidityCell } from './DealCells';
 
-type Abilities = { create: boolean; edit: boolean; delete: boolean };
+type Abilities = { create: boolean; edit: boolean; delete: boolean; project: boolean };
 
 type Column = HeaderColumn<DealSortKey> & { id: DealColumnId | 'actions' };
 // The Leads table's columns, with the Deal ID, Deal Status (instead of Lead Status) and Deal Validity of a deal
@@ -31,9 +31,10 @@ function CardSection({ title, children }: { title: string; children: React.React
   return <div><div className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 mb-1">{title}</div>{children}</div>;
 }
 
-export default function DealTable({ rows, totalDeals, sort, dir, abilities, loading, columnOrder, filterGroups, onSort, onFilter, onReset, onFollowUp, onViewFollowUps, inline, handlersFor }: {
+export default function DealTable({ rows, totalDeals, convertedView, sort, dir, abilities, loading, columnOrder, filterGroups, onSort, onFilter, onReset, onFollowUp, onViewFollowUps, inline, handlersFor }: {
   rows: DealRow[];
-  totalDeals: number; // all deals, whatever the search and filters
+  totalDeals: number; // all deals of the view that is open, whatever the search and filters
+  convertedView: boolean; // the Converted Deals filter is on
   sort?: DealSortKey;
   dir: 'asc' | 'desc';
   abilities: Abilities;
@@ -67,10 +68,21 @@ export default function DealTable({ rows, totalDeals, sort, dir, abilities, load
     }
   };
 
-  const actions = (row: DealRow) => <DealActions canEdit={abilities.edit} canCreate={abilities.create} canDelete={abilities.delete} isClosed={row.isClosed} handlers={handlersFor(row)} />;
+  const actions = (row: DealRow) => (
+    <DealActions
+      canEdit={abilities.edit} canCreate={abilities.create} canDelete={abilities.delete} canConvert={abilities.project} isClosed={row.isClosed}
+      project={row.isProjectConverted ? { id: row.projectId ?? '', code: row.projectCode ?? '' } : null}
+      handlers={handlersFor(row)}
+    />
+  );
 
   if (totalDeals === 0) {
-    return (
+    return convertedView ? (
+      <div className="py-20 text-center text-gray-500 border border-dashed border-gray-300 rounded-lg">
+        <div className="text-[16px] font-semibold text-gray-700">No converted deals yet</div>
+        <div className="text-[13px] mt-1">A deal you convert to a project (the blue icon in Actions) is kept here, and its project is on the Projects page.</div>
+      </div>
+    ) : (
       <div className="py-20 text-center text-gray-500 border border-dashed border-gray-300 rounded-lg">
         <div className="text-[16px] font-semibold text-gray-700">No deals yet</div>
         <div className="text-[13px] mt-1">Convert a lead from the Leads page (the convert icon in Actions) and it will appear here.</div>

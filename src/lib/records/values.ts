@@ -53,6 +53,15 @@ export function cleanValue(f: LayoutField, raw: unknown): Clean {
     if (raw.length > f.maxFiles) return { error: `${f.label} can have at most ${f.maxFiles} file${f.maxFiles === 1 ? "" : "s"}` };
     return { value: raw };
   }
+  if (f.type === "MULTISELECT") {
+    // a list of option ids; kept in the order of the options, so the same choices are always the same value
+    if (raw === undefined || raw === null) return { value: null };
+    if (!Array.isArray(raw) || !raw.every(x => typeof x === "string")) return { error: `${f.label} must be a list of choices` };
+    if (raw.length === 0) return { value: null };
+    if (new Set(raw).size !== raw.length) return { error: `${f.label} lists a choice twice` };
+    if (!raw.every(id => f.options.some(o => o.id === id))) return { error: `${f.label} has a choice that is not in the list` };
+    return { value: f.options.filter(o => raw.includes(o.id)).map(o => o.id) };
+  }
   if (isEmptyValue(raw)) return { value: null };
 
   switch (f.type) {
@@ -162,6 +171,7 @@ export function displayValue(f: LayoutField, raw: unknown, refs: RecordRefs): st
   switch (f.type) {
     case "CHECKBOX": return raw === true ? "Yes" : "No";
     case "DROPDOWN": return f.options.find(o => o.id === raw)?.label ?? "";
+    case "MULTISELECT": return Array.isArray(raw) ? f.options.filter(o => raw.includes(o.id)).map(o => o.label).join(", ") : "";
     case "USER": return userName(refs, String(raw));
     case "LOOKUP": return lookupText(f, String(raw), refs);
     case "CURRENCY": return typeof raw === "number" ? formatMoney(raw, f.prefix ?? f.currency) : String(raw);
@@ -183,7 +193,7 @@ export function defaultFor(f: LayoutField, me: { id: string } | null): unknown {
   const d = f.defaultValue;
   switch (f.type) {
     case "FILE": return [];
-    case "AUTO": case "LOOKUP": case "APPROVER": return null;
+    case "AUTO": case "LOOKUP": case "APPROVER": case "MULTISELECT": return null;
     case "CHECKBOX": return d === "true" ? true : null;
     case "DROPDOWN": return d && f.options.some(o => o.id === d) ? d : null;
     case "USER": return d === "@me" ? me?.id ?? null : d || null;

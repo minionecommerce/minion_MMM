@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal, flushSync } from 'react-dom';
-import Link from 'next/link';
+import Link, { useLinkStatus } from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { CheckCircle2, ChevronDown, Copy, FileText, LayoutTemplate, Mail, MessageSquare, MoreHorizontal, Paperclip, Pencil, Plus, Printer, Repeat2, Send, Settings, Share2, Trash2, X, XCircle } from 'lucide-react';
 import { callApi } from '@/lib/leads/client';
@@ -40,6 +40,12 @@ type Props = {
 
 const tool = 'inline-flex items-center gap-[6px] h-[39px] px-[13px] text-[13px] text-[#575a6f] hover:bg-[#eceef8] whitespace-nowrap';
 const divider = <span className="w-px h-[18px] bg-[#e3e5ee] self-center" aria-hidden />;
+
+// Put inside a Link: the icon turns into a spinner while the page behind the link is still opening, so a slow open never looks like a dead button
+function LinkIcon({ children }: { children: React.ReactNode }) {
+  const { pending } = useLinkStatus();
+  return pending ? <Spinner className="w-3.5 h-3.5" /> : children;
+}
 
 export default function QuoteView({ quote, doc, layout, settings, abilities, list, params, salesOrders, openSend, today }: Props) {
   const router = useRouter();
@@ -255,7 +261,7 @@ export default function QuoteView({ quote, doc, layout, settings, abilities, lis
 
           {/* No overflow here (not even overflow-x): a bar that scrolls also cuts off the menus that open under its buttons. A narrow screen wraps the buttons instead. */}
           <div className="min-h-[41px] bg-[#f7f8fc] border-y border-[#e9eaf4] flex flex-wrap items-stretch" role="toolbar" aria-label="Quote actions">
-            {abilities.edit && !locked && <Link href={`/quotes/${quote.id}/edit`} className={tool}><Pencil className="w-3.5 h-3.5" /> Edit</Link>}
+            {abilities.edit && !locked && <Link href={`/quotes/${quote.id}/edit`} className={tool}><LinkIcon><Pencil className="w-3.5 h-3.5" /></LinkIcon> Edit</Link>}
             {abilities.edit && !locked && divider}
             {abilities.edit && <button type="button" onClick={() => setSend(true)} className={tool}><Mail className="w-3.5 h-3.5" /> Send</button>}
             {abilities.edit && divider}

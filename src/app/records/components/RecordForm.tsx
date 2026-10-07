@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { AlertCircle, ArrowLeft, Loader2 } from 'lucide-react';
+import { AlertCircle, ArrowLeft, Loader2, Lock } from 'lucide-react';
 import { ApiError, callApi } from '@/lib/leads/client';
 import { useToast } from '@/components/ui/Toast';
 import { MODULES } from '@/lib/records/registry';
@@ -26,6 +26,8 @@ type Props = {
   canApprove: boolean;
   canLayout: boolean;
   nextCode: string;
+  // Create PPR / Create PCR inside a project: the deal is the project's, shown and not changeable; Save goes to the project and comes back to it
+  fromProject?: { id: string; code: string; dealId: string; dealLabel: string };
 };
 
 export function FieldRow({ f, children, error, htmlId }: { f: LayoutField; children: React.ReactNode; error?: string; htmlId: string }) {
@@ -53,10 +55,12 @@ export function TwoColumns<T>({ items, render }: { items: T[]; render: (item: T)
   );
 }
 
-export default function RecordForm({ moduleId, mode, layout, record, refs, users, approvers, me, canApprove, canLayout, nextCode }: Props) {
+export default function RecordForm({ moduleId, mode, layout, record, refs, users, approvers, me, canApprove, canLayout, nextCode, fromProject }: Props) {
   const router = useRouter();
   const toast = useToast();
   const def = MODULES[moduleId];
+  const backHref = fromProject ? `/projects/${fromProject.id}?tab=payments` : `/${def.slug}`; // Create PCR / Create PPR come from the Payments tab
+  const dealLocked = (f: LayoutField) => !!fromProject && f.key === 'dealId' && f.type === 'LOOKUP';
   const kinds = useMemo(() => new Map(layout.sections.map(s => [s.id, s.kind])), [layout.sections]);
   const formFields = layout.fields.filter(f => kinds.get(f.section) === 'FORM');
   const tableSections = layout.sections.filter(s => s.kind === 'TABLE');
@@ -65,7 +69,7 @@ export default function RecordForm({ moduleId, mode, layout, record, refs, users
 
   const [values, setValues] = useState<FormValues>(() => {
     const v: FormValues = {};
-    for (const f of formFields) v[f.key] = record ? toFormValue(f, record.values[f.key]) : start(f);
+    for (const f of formFields) v[f.key] = record ? toFormValue(f, record.values[f.key]) : dealLocked(f) ? fromProject!.dealId : start(f);
     return v;
   });
   const [rows, setRows] = useState<Record<string, RowState[]>>(() => Object.fromEntries(tableSections.map(s => {
@@ -99,7 +103,7 @@ export default function RecordForm({ moduleId, mode, layout, record, refs, users
     onBusy: d => setUploads(n => n + d),
   };
   // A field added in Edit Page Layout while this form is open starts with its default on a new record, and empty on a saved one
-  const valueOf = (f: LayoutField) => (f.key in values ? values[f.key] : mode === 'create' ? start(f) : toFormValue(f, null));
+  const valueOf = (f: LayoutField) => (dealLocked(f) ? fromProject!.dealId : f.key in values ? values[f.key] : mode === 'create' ? start(f) : toFormValue(f, null));
   const cellOf = (row: RowState, c: LayoutField) => row.values[c.key] ?? (row.id ? toFormValue(c, null) : start(c));
   const setValue = (key: string, v: unknown) => {
     setValues(cur => ({ ...cur, [key]: v }));
@@ -176,10 +180,10 @@ export default function RecordForm({ moduleId, mode, layout, record, refs, users
     try {
       const body = { values: payloadValues, rows: payloadRows };
       const res = mode === 'create'
-        ? await callApi<{ code: string }>(api(def.slug), 'POST', body)
+        ? await callApi<{ code: string }>(fromProject ? `/api/projects/${fromProject.id}/records/${def.slug}` : api(def.slug), 'POST', body)
         : await callApi<{ code: string }>(api(def.slug, `/${record!.id}`), 'PUT', body);
       toast.success(mode === 'create' ? `${res.code} created` : `${res.code} saved`);
-      router.push(`/${def.slug}`);
+      router.push(backHref); // inside a project: back to the project, which now shows the new record
       router.refresh();
     } catch (err) {
       const mapped: Record<string, string> = {};
@@ -203,10 +207,11 @@ export default function RecordForm({ moduleId, mode, layout, record, refs, users
   return (
     <div className="min-h-screen flex flex-col bg-white">
       <div className="px-4 sm:px-6 pt-6 pb-4 border-b border-gray-200 flex flex-wrap items-center gap-3">
-        <Link href={`/${def.slug}`} aria-label={`Back to ${def.plural}`} className="w-9 h-9 rounded-full border border-gray-300 hover:bg-gray-100 flex items-center justify-center text-gray-700"><ArrowLeft className="w-4 h-4" /></Link>
+        <Link href={backHref} aria-label={fromProject ? `Back to project ${fromProject.code}` : `Back to ${def.plural}`} className="w-9 h-9 rounded-full border border-gray-300 hover:bg-gray-100 flex items-center justify-center text-gray-700"><ArrowLeft className="w-4 h-4" /></Link>
         <div className="min-w-0">
           <h1 className="text-[22px] sm:text-[26px] font-semibold text-[#222] leading-tight">{title}</h1>
           {mode === 'edit' && <p className="text-[13px] text-gray-500">{def.label}</p>}
+          {fromProject && <p className="text-[13px] text-gray-500">For project {fromProject.code} · the deal is the project&apos;s and cannot be changed here</p>}
         </div>
         {canLayout && <div className="ml-auto"><LayoutButton moduleId={moduleId} layout={layout} variant="text" /></div>}
       </div>
@@ -239,7 +244,13 @@ export default function RecordForm({ moduleId, mode, layout, record, refs, users
                   items={fields}
                   render={f => (
                     <FieldRow key={f.key} f={f} htmlId={`f-${f.key}`} error={errors[`values.${f.key}`]}>
-                      <FieldInput field={f} value={valueOf(f)} onChange={v => setValue(f.key, v)} error={errors[`values.${f.key}`]} ctx={ctx} htmlId={`f-${f.key}`} />
+                      {dealLocked(f) ? (
+                        <div id={`f-${f.key}`} data-locked-deal className="w-full h-[38px] border border-gray-200 rounded px-3 bg-gray-100 text-[14px] text-gray-700 flex items-center justify-between gap-2">
+                          <span className="truncate">{fromProject!.dealLabel}</span><Lock className="w-4 h-4 text-gray-400 shrink-0" aria-label="Locked" />
+                        </div>
+                      ) : (
+                        <FieldInput field={f} value={valueOf(f)} onChange={v => setValue(f.key, v)} error={errors[`values.${f.key}`]} ctx={ctx} htmlId={`f-${f.key}`} />
+                      )}
                     </FieldRow>
                   )}
                 />
@@ -250,7 +261,7 @@ export default function RecordForm({ moduleId, mode, layout, record, refs, users
 
         <div className="sticky bottom-0 z-20 bg-white border-t border-gray-200 px-4 sm:px-6 py-3 flex items-center justify-end gap-3">
           {uploads > 0 && <span className="mr-auto text-[13px] text-gray-500 inline-flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Uploading files…</span>}
-          <Link href={`/${def.slug}`} className="px-5 h-[40px] rounded-md bg-gray-200 hover:bg-gray-300 text-gray-800 text-[14px] font-medium inline-flex items-center">Cancel</Link>
+          <Link href={backHref} className="px-5 h-[40px] rounded-md bg-gray-200 hover:bg-gray-300 text-gray-800 text-[14px] font-medium inline-flex items-center">Cancel</Link>
           <button type="submit" disabled={saving || uploads > 0} className="px-7 h-[40px] rounded-md bg-black hover:bg-[#222] text-white text-[14px] font-medium disabled:opacity-60 inline-flex items-center gap-2">
             {saving && <Loader2 className="w-4 h-4 animate-spin" />}{saving ? 'Saving…' : 'Save'}
           </button>

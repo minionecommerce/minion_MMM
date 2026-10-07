@@ -37,7 +37,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="scroll-smooth">
+    <html lang="en" className="scroll-smooth" suppressHydrationWarning>
       <body
         className={`${geistSans.variable} ${geistMono.variable} ${archivoBlack.variable} ${caveat.variable} antialiased`}
         suppressHydrationWarning
@@ -45,7 +45,7 @@ export default function RootLayout({
         <Providers>
           <div className="min-h-screen lg:flex">
             <GlobalNavbar />
-            <div className="flex-1 min-w-0">{children}</div>
+            <div className="flex-1 min-w-0" data-app-content>{children}</div>
           </div>
         </Providers>
       </body>

@@ -283,6 +283,49 @@ model Customer {
   gstin        String? // GST number, printed on quotes
   status       String  @default("Active") // Active, Inactive
 
+  // The Customer form (src/lib/customers). `name` is the Display Name, `phone` the Mobile, `address` the Billing Address as printed lines
+  // (kept in step with the bill* columns so older screens still read it). Everything below is empty for the customers that existed before.
+  salutation         String?
+  firstName          String?
+  lastName           String?
+  companyName        String?
+  workPhone          String?
+  language           String?
+  commEmail          Boolean  @default(false)
+  commWhatsapp       Boolean  @default(false)
+  gstTreatment       String? // registered_regular, consumer, overseas ...
+  legalName          String?
+  tradeName          String?
+  placeOfSupply      String? // GST state code, 33 = Tamil Nadu
+  pan                String?
+  taxPreference      String? // taxable, exempt
+  currency           String?
+  accountsReceivable String?
+  openingBalance     Decimal? @db.Decimal(14, 2)
+  creditLimit        Decimal? @db.Decimal(14, 2)
+  paymentTerms       String?
+  portalEnabled      Boolean  @default(false)
+  remarks            String?
+  billAttention      String?
+  billCountry        String?
+  billStreet1        String?
+  billStreet2        String?
+  billCity           String?
+  billState          String?
+  billPinCode        String?
+  billPhone          String?
+  billFax            String?
+  shipAttention      String?
+  shipCountry        String?
+  shipStreet1        String?
+  shipStreet2        String?
+  shipCity           String?
+  shipState          String?
+  shipPinCode        String?
+  shipPhone          String?
+  shipFax            String?
+  customFields       Json?
+
   leads      Lead[]
   deals      Deal[]
   projects   Project[]
@@ -611,6 +654,10 @@ model Deal {
   dealStatus   LeadOption? @relation("DealStatus", fields: [dealStatusId], references: [id])
   deletedAt    DateTime?
 
+  // Projects module (Deals → Convert to Project): set when the deal became a project. A converted deal leaves the normal Deals views
+  // (the Converted Deals filter shows it) and is never deleted; its project is in "projects".
+  projectConvertedAt DateTime?
+
   // Assignment
   salesExecutiveId String?
   salesExecutive   Employee? @relation("DealSalesExecutive", fields: [salesExecutiveId], references: [id])
@@ -636,6 +683,7 @@ model Deal {
   @@index([wonAt])
   @@index([createdAt])
   @@index([dealStatusId])
+  @@index([projectConvertedAt])
 }
 
 model Quote {
@@ -737,12 +785,14 @@ model QuoteItem {
   taxRate      Decimal?     @db.Decimal(7, 3)
   taxAmount    Decimal?     @db.Decimal(14, 2)
   customFields Json?
-
-  @@index([quoteId, sortOrder])
-  @@index([itemId])
+  kind           String? // Goods or Service, as the line was saved (decides HSN or SAC)
+  taskTemplateId String? // an option of the Template dropdown in Project → Edit Page Layout
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([quoteId, sortOrder])
+  @@index([itemId])
 }
 
 model SalesOrder {
@@ -835,11 +885,29 @@ model Project {
   manager      Employee    @relation("ProjectManager", fields: [managerId], references: [id])
 
   type            String?
-  status          String    @default("Planning") // Planning, In Progress, On Hold, Completed, Cancelled
-  startDate       DateTime?
-  expectedEndDate DateTime?
-  progress        Int       @default(0)
+  status          String    @default("Planning") // older projects: Planning, In Progress, On Hold, Completed, Cancelled. Projects module: the id of an option of the Project Status dropdown (Edit Page Layout)
+  startDate       DateTime? // Projects module: Project Start Date
+  expectedEndDate DateTime? // Projects module: Project Completion Date (shown as Project Validity)
+  progress        Int       @default(0) // Projects module: Completion %
   value           Decimal?  @db.Decimal(12, 2)
+
+  // Projects module (Deals → Convert to Project). A project of the module has a code; the older demo project has none.
+  // Money (Project Value, Collected Amount, Expenses, Profit ...) is never stored: it is worked out from the accepted quotes, PCRs and PPRs of the deal.
+  projectSeq          Int?      @unique // 1, 2, 3 ... from the Counter table (never reused)
+  projectCode         String?   @unique // "MP" + projectSeq
+  siteLocation        String?
+  siteLocationLink    String? // a map link: the Site Location in the list opens it
+  productOrService    String? // the id of the Product / Service option (the LeadOption ids lo_pos_product / lo_pos_service, or one added in Edit Page Layout)
+  priorCompletionDate DateTime? @db.Date
+  actualStartDate     DateTime? @db.Date
+  completedDate       DateTime? @db.Date
+  exclusions          Decimal?  @db.Decimal(16, 2) // taken off the profit before the incentive
+  incentivePercent    Decimal?  @db.Decimal(7, 3)
+  customFields        Json? // fields added in Edit Page Layout: { "cf_xxx": value }
+  createdById         String?
+  updatedById         String?
+  deletedAt           DateTime?
+  convertedAt         DateTime? // when the deal was converted
 
   // Relations
   tasks          Task[]
@@ -851,8 +919,163 @@ model Project {
   landscapes     Landscape[]
   quotes         Quote[]
 
+  quoteLines        ProjectQuoteLine[]
+  itemSelections    ProjectItemSelection[]
+  workCoverage      ProjectWorkCoverage[]
+  materialVendors   ProjectMaterialVendor[]
+  serviceVendors    ProjectServiceVendor[]
+  procurementBlocks ProjectProcurement[]
+  procurementRows   ProjectProcurementRow[]
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([deletedAt, projectSeq])
+  @@index([dealId])
+}
+
+// ---------------------------------------------------------
+// Projects module: the rows of the project templates (Project detail page). Each table keeps only what people type or choose;
+// everything else in a template (quote values, given amounts, expenses ...) is read live from the quotes, PPRs and PCRs of the deal.
+// Every table has "projectId" and "customFields" (the columns added in Project → Edit Page Layout).
+// ---------------------------------------------------------
+
+// PROJECT VALUE INFORMATION: the Exclusions typed for one accepted quote (the quote itself is read live)
+model ProjectQuoteLine {
+  id             String   @id @default(cuid())
+  projectId      String
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  quoteId        String
+  quoteExclusion Decimal? @db.Decimal(16, 2)
+  customFields   Json?
+  sortOrder      Int      @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([projectId, quoteId])
+}
+
+// VENDOR SELECTION: what was chosen for one item of an accepted quote (Template, Service Vendors, Material Vendors)
+model ProjectItemSelection {
+  id                String   @id @default(cuid())
+  projectId         String
+  project           Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  quoteItemId       String
+  templateId        String? // the id of an option of the Template dropdown (Project → Edit Page Layout)
+  serviceVendorIds  String[] @default([])
+  materialVendorIds String[] @default([])
+  customFields      Json?
+  sortOrder         Int      @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([projectId, quoteItemId])
+  @@index([projectId, templateId])
+}
+
+// WORK COVERAGE: the Completed tick of one template (the template's values are read live)
+model ProjectWorkCoverage {
+  id           String  @id @default(cuid())
+  projectId    String
+  project      Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  templateId   String
+  completed    Boolean @default(false)
+  customFields Json?
+  sortOrder    Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([projectId, templateId])
+}
+
+// MATERIAL VENDOR INVOLVEMENT: one row per Material Vendor chosen in Vendor Selection. Its code (MP1M1, MP1M2 ...) never changes.
+model ProjectMaterialVendor {
+  id                   String    @id @default(cuid())
+  projectId            String
+  project              Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  seq                  Int // 1, 2, 3 ... within the project
+  materialCode         String // project code + "M" + seq
+  materialVendorId     String
+  materialList         String?
+  materialQuotedValue  Decimal?  @db.Decimal(16, 2)
+  planningToTake       DateTime? @db.Date
+  takenDate            DateTime? @db.Date
+  materialStatus       String? // the id of an option of the Status dropdown
+  materialTaskPersonId String? // a User id
+  customFields         Json?
+  sortOrder            Int       @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([projectId, seq])
+  @@unique([projectId, materialCode])
+  @@unique([projectId, materialVendorId])
+}
+
+// SERVICE VENDOR INVOLVEMENT: one row per Service Vendor chosen in Vendor Selection (MP1S1, MP1S2 ...)
+model ProjectServiceVendor {
+  id                    String    @id @default(cuid())
+  projectId             String
+  project               Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  seq                   Int
+  serviceCode           String // project code + "S" + seq
+  serviceVendorId       String
+  serviceQuotedValue    Decimal?  @db.Decimal(16, 2)
+  serviceStartDate      DateTime? @db.Date
+  serviceStartedDate    DateTime? @db.Date
+  serviceCompletionDate DateTime? @db.Date
+  serviceCompletedDate  DateTime? @db.Date
+  customFields          Json?
+  sortOrder             Int       @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([projectId, seq])
+  @@unique([projectId, serviceCode])
+  @@unique([projectId, serviceVendorId])
+}
+
+// MATERIAL PROCUREMENT: one block per material ("MATERIAL 1", "MATERIAL 2" ...) with its own item and vendor rows
+model ProjectProcurement {
+  id          String                  @id @default(cuid())
+  projectId   String
+  project     Project                 @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  sortOrder   Int                     @default(0)
+  quoteItemId String? // the item chosen at the top of the block (an item of the accepted quotes)
+  itemLabel   String? // its name when it was chosen, shown if the quote item is gone
+  rows        ProjectProcurementRow[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId, sortOrder])
+}
+
+model ProjectProcurementRow {
+  id               String             @id @default(cuid())
+  projectId        String
+  project          Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  blockId          String
+  block            ProjectProcurement @relation(fields: [blockId], references: [id], onDelete: Cascade)
+  sortOrder        Int                @default(0)
+  procVendorName   String?
+  procVendorNumber String?
+  procLocation     String?
+  procQuoteValue   Decimal?           @db.Decimal(16, 2)
+  procSize         String?
+  procNotes        String?
+  customFields     Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([blockId, sortOrder])
+  @@index([projectId])
 }
 
 model Task {
@@ -1250,6 +1473,7 @@ model PrePayment {
   materialVendor   MaterialVendor? @relation(fields: [materialVendorId], references: [id], onDelete: SetNull)
   serviceVendorId  String?
   serviceVendor    ServiceVendor?  @relation(fields: [serviceVendorId], references: [id], onDelete: SetNull)
+  workTypeId       String? // Work Type: the id of a project template (an option of the Template dropdown in Project → Edit Page Layout)
   amount           Decimal?        @db.Decimal(16, 2)
   date             DateTime?       @db.Date
   paymentStatus    String?
@@ -1273,6 +1497,7 @@ model PrePayment {
   @@index([taskPersonId])
   @@index([materialVendorId])
   @@index([serviceVendorId])
+  @@index([workTypeId])
   @@index([date])
 }
 
@@ -1663,14 +1888,14 @@ model LandscapeIssue {
   @@index([status])
 }
 
-// Quotes module: the items that are picked on a quote
+// Quotes module: the items that are picked on a quote (the Item Master). The pictures of an item are ModuleFile rows of the module "item".
 model CatalogItem {
   id           String    @id @default(cuid())
   name         String
   description  String?
-  hsn          String? // HSN / SAC
+  hsn          String? // the HSN code of Goods, the SAC of a Service
   unit         String?
-  rate         Decimal   @default(0) @db.Decimal(12, 2)
+  rate         Decimal   @default(0) @db.Decimal(12, 2) // the selling price
   taxId        String? // the default tax: an id from the Quote Settings
   kind         String    @default("Goods") // Goods or Service
   isActive     Boolean   @default(true)
@@ -1680,10 +1905,31 @@ model CatalogItem {
   updatedAt    DateTime  @updatedAt
   deletedAt    DateTime?
 
+  // New Item form: classification, identifiers, inventory, returns, fulfilment, task template
+  category          String?
+  taxPreference     String   @default("taxable") // taxable, non_taxable, out_of_scope, non_gst
+  unitGroup         String? // the id of a unit group (length, area ...) when the unit was chosen as a group
+  sku               String?
+  identifiers       Json? // [{ type: "UPC", value: "..." }]
+  trackInventory    Boolean  @default(false)
+  inventoryTracking String   @default("none") // none or batch
+  inventoryAccount  String?
+  valuationMethod   String   @default("fifo") // fifo or wac
+  reorderPoint      Decimal? @db.Decimal(14, 2)
+  returnable        Boolean  @default(true)
+  dimLength         Decimal? @db.Decimal(12, 3)
+  dimWidth          Decimal? @db.Decimal(12, 3)
+  dimHeight         Decimal? @db.Decimal(12, 3)
+  dimUnit           String   @default("cm")
+  weight            Decimal? @db.Decimal(12, 3)
+  weightUnit        String   @default("kg")
+  taskTemplateId    String? // an option of the Template dropdown in Project → Edit Page Layout
+
   quoteLines QuoteItem[]
 
   @@index([name])
   @@index([deletedAt, isActive])
+  @@index([category])
 }
 
 // Quotes module: numbering, taxes, rounding, company details and templates (one JSON row per group)

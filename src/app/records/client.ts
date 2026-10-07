@@ -26,7 +26,7 @@ export async function uploadRecordFile(slug: string, fieldKey: string, file: Fil
 
 export const discardRecordFile = (slug: string, id: string) => callApi(api(slug, `/uploads/${id}`), "DELETE").catch(() => {});
 
-export type LookupKind = "deals" | "materialVendors" | "serviceVendors" | "customers" | "projects";
+export type LookupKind = "deals" | "materialVendors" | "serviceVendors" | "customers" | "projects" | "templates";
 // What a lookup field offers: deals, vendors, customers, projects. `extra` narrows it (customerId: only the deals / projects of that customer).
 export async function searchLookup(slug: string, kind: LookupKind, q: string, extra: Record<string, string> = {}): Promise<LookupItem[]> {
   const more = Object.entries(extra).map(([k, v]) => `&${k}=${encodeURIComponent(v)}`).join("");
@@ -42,6 +42,7 @@ export type FormValues = Record<string, unknown>;
 
 export function toFormValue(f: LayoutField, stored: unknown): unknown {
   if (f.type === "NUMBER" || f.type === "CURRENCY") return stored === null || stored === undefined ? "" : String(stored);
+  if (f.type === "MULTISELECT") return Array.isArray(stored) ? stored.filter((x): x is string => typeof x === "string") : [];
   if (stored === null || stored === undefined) return f.type === "FILE" ? [] : f.type === "CHECKBOX" ? false : "";
   return stored;
 }
@@ -63,6 +64,7 @@ export function toPayloadValue(f: LayoutField, value: unknown): unknown {
       return Number.isNaN(n) ? s : n; // a value that is not a number is sent as typed so the server explains it
     }
     case "FILE": return (value as FileDto[]).map(x => x.id);
+    case "MULTISELECT": return Array.isArray(value) && value.length ? value : null;
     case "CHECKBOX": return value === true ? true : null;
     case "DROPDOWN":
     case "USER":
@@ -81,6 +83,6 @@ export function toPayloadValue(f: LayoutField, value: unknown): unknown {
 }
 
 export const isBlankValue = (f: LayoutField, value: unknown) =>
-  f.type === "FILE" ? (value as unknown[]).length === 0 : f.type === "CHECKBOX" ? value !== true : value === "" || value === null || value === undefined;
+  f.type === "FILE" || f.type === "MULTISELECT" ? (value as unknown[]).length === 0 : f.type === "CHECKBOX" ? value !== true : value === "" || value === null || value === undefined;
 
 export const newRowKey = () => `r_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`;

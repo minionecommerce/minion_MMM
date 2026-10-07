@@ -65,6 +65,7 @@ export default function QuoteDetails({ quote, layout, settings }: { quote: Quote
             <tr className="bg-[#f9f9fb] border-b border-[#ebeaf2] text-[11px] uppercase text-[#6d7189] h-[36px]">
               <th className="text-left px-3 font-medium w-[40px]">#</th>
               <th className="text-left px-3 font-medium">{colOn('name')?.label ?? 'Item Details'}</th>
+              {colOn('taskTemplateId') && <th className="text-left px-3 font-medium">{colOn('taskTemplateId')!.label}</th>}
               {colOn('hsn') && <th className="text-left px-3 font-medium">{colOn('hsn')!.label}</th>}
               {custom.map(c => <th key={c.key} className="text-left px-3 font-medium">{c.label}</th>)}
               {colOn('quantity') && <th className="text-right px-3 font-medium">{colOn('quantity')!.label}</th>}
@@ -77,7 +78,8 @@ export default function QuoteDetails({ quote, layout, settings }: { quote: Quote
             {quote.lines.map((l, i) => (
               <tr key={l.id} className="align-top border-b border-[#ebeaf2] last:border-b-0" data-line>
                 <td className="px-3 py-2 text-[#6d7189]">{i + 1}</td>
-                <td className="px-3 py-2"><div className="font-medium">{l.name}</div>{l.description && <div className="text-[12px] text-[#6d7189] whitespace-pre-line">{l.description}</div>}</td>
+                <td className="px-3 py-2"><div className="font-medium">{l.name}</div>{l.description && <div className="text-[12px] text-[#6d7189] whitespace-pre-line">{l.description}</div>}{l.hsn && !colOn('hsn') && <div className="text-[12px] text-[#6d7189]">{l.kind === 'Service' ? 'SAC' : l.kind === 'Goods' ? 'HSN' : 'HSN/SAC'} : {l.hsn}</div>}</td>
+                {colOn('taskTemplateId') && <td className="px-3 py-2">{l.taskTemplateName}</td>}
                 {colOn('hsn') && <td className="px-3 py-2">{l.hsn}</td>}
                 {custom.map(c => <td key={c.key} className="px-3 py-2">{displayValue(c, l.custom[c.key], quote.refs)}</td>)}
                 {colOn('quantity') && <td className="px-3 py-2 text-right whitespace-nowrap">{formatQuantity(l.quantity)}{l.unit ? ` ${l.unit}` : ''}</td>}
@@ -86,7 +88,7 @@ export default function QuoteDetails({ quote, layout, settings }: { quote: Quote
                 <td className="px-3 py-2 text-right font-medium">{amount(l.amount)}</td>
               </tr>
             ))}
-            {quote.lines.length === 0 && <tr><td colSpan={8} className="px-3 py-6 text-center text-[#6d7189]">There are no items on this quote.</td></tr>}
+            {quote.lines.length === 0 && <tr><td colSpan={9} className="px-3 py-6 text-center text-[#6d7189]">There are no items on this quote.</td></tr>}
           </tbody>
         </table>
       </div>

@@ -3,6 +3,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "@/lib/db";
 import type { AuthContext } from "@/lib/auth";
 import { hasPermission } from "@/lib/rbac/effective";
+import { nextCustomerCode } from "@/lib/customers/numbering";
 import { ServiceError } from "@/lib/users/service";
 import { AUDIO_FILE_EXTENSIONS, isAllowedAudioType, sniffAudioType } from "./audio-types";
 import { DEAL_CLOSING_MAX_YEARS, DEAL_NUMBER_PREFIX, FOLLOWUP_NEEDED_MESSAGE, IMAGE_FILE_EXTENSIONS, MIN_FOLLOWUPS_TO_CONVERT, isAttachmentAllowed, MAX_ATTACHMENTS_PER_LEAD, maxFileBytes, maxFileLabel, MAX_THUMBNAIL_BYTES, storageExtension, UNKNOWN_MIME_TYPE } from "./constants";
@@ -61,11 +62,11 @@ export async function nextLeadSeq(db: Db): Promise<number> {
 export const leadCodeFor = (seq: number) => `ML${seq}`;
 
 // ---------------------------------------------------------------------------
-// Reference validation: every id must exist, be the right kind of option,
-// and the category chain must be consistent. Nothing from the browser is trusted.
+// Reference validation: every id must exist, be the right kind of option, and a Subcategory must belong to the chosen Main Category.
+// Nothing from the browser is trusted.
 // ---------------------------------------------------------------------------
 export async function resolveReferences(input: LeadInput) {
-  const optionIds = [input.productOrServiceId, input.requirementId, input.modeOfCustomerId, input.sourceId, input.mainCategoryId, input.categoryId, input.subcategoryId, input.leadStatusId, input.leadTypeId].filter((x): x is string => !!x);
+  const optionIds = [input.productOrServiceId, input.requirementId, input.modeOfCustomerId, input.sourceId, input.mainCategoryId, input.subcategoryId, input.leadStatusId, input.leadTypeId].filter((x): x is string => !!x);
   const options = await prisma.leadOption.findMany({
     where: { id: { in: optionIds } },
     select: { id: true, type: true, parentId: true, label: true },
@@ -82,13 +83,11 @@ export async function resolveReferences(input: LeadInput) {
   expect(input.modeOfCustomerId, "MODE_OF_CUSTOMER", "Mode of Customer");
   const source = expect(input.sourceId, "SOURCE", "Source");
   expect(input.mainCategoryId, "MAIN_CATEGORY", "Main Category");
-  const category = expect(input.categoryId, "CATEGORY", "Category");
   const subcategory = expect(input.subcategoryId, "SUBCATEGORY", "Subcategory");
   expect(input.leadStatusId, "LEAD_STATUS", "Lead Status");
   expect(input.leadTypeId, "LEAD_TYPE", "Type Of Lead");
-  if (category && category.parentId !== input.mainCategoryId) throw badRequest("Category does not belong to the selected Main Category");
-  if (subcategory && subcategory.parentId !== input.categoryId) throw badRequest("Subcategory does not belong to the selected Category");
-  if (subcategory && !category) throw badRequest("Choose a Category for the Subcategory");
+  if (subcategory && !input.mainCategoryId) throw badRequest("Choose a Main Category for the Subcategory");
+  if (subcategory && subcategory.parentId !== input.mainCategoryId) throw badRequest("Subcategory does not belong to the selected Main Category");
 
   const employeeIds = [input.taskAssignedPersonId, input.leadPersonId].filter((x): x is string => !!x);
   const employees = await prisma.employee.findMany({
@@ -109,7 +108,7 @@ export async function findOrCreateCustomer(db: Db, name: string, phone: string) 
   const loose = await db.$queryRaw<{ id: string }[]>`
     SELECT "id" FROM "Customer" WHERE regexp_replace("phone", '[^0-9+]', '', 'g') = ${phone} LIMIT 1`;
   if (loose[0]) return loose[0].id;
-  return (await db.customer.create({ data: { name, phone, customerType: "Individual" }, select: { id: true } })).id;
+  return (await db.customer.create({ data: { name, phone, customerType: "Individual", customerCode: await nextCustomerCode(db) }, select: { id: true } })).id;
 }
 
 export function leadData(input: LeadInput, refs: Awaited<ReturnType<typeof resolveReferences>>, actor: AuthContext, phone: string, custom: CustomValues, scope: Scope = "lead") {
@@ -127,7 +126,6 @@ export function leadData(input: LeadInput, refs: Awaited<ReturnType<typeof resol
     exactLocation: input.exactLocation,
     locationLink: input.locationLink,
     mainCategoryId: input.mainCategoryId,
-    categoryId: input.categoryId,
     subcategoryId: input.subcategoryId,
     leadTypeId: input.leadTypeId,
     conventionalRate: input.conventionalRate,
@@ -335,7 +333,6 @@ export async function duplicateLead(actor: AuthContext, id: string) {
     exactLocation: src.exactLocation,
     locationLink: src.locationLink,
     mainCategoryId: src.mainCategoryId,
-    categoryId: src.categoryId,
     subcategoryId: src.subcategoryId,
     leadPersonId: src.leadPersonId,
     leadStatusId: src.leadStatusId,

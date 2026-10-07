@@ -39,7 +39,6 @@ export const leadInputSchema = z
       .transform(v => v || null)
       .refine(v => v === null || isHttpUrl(v), "Enter a valid http(s) link"),
     mainCategoryId: optionalId,
-    categoryId: optionalId,
     subcategoryId: optionalId,
     leadPersonId: optionalId,
     leadStatusId: optionalId,

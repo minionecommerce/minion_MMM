@@ -18,7 +18,7 @@ type Values = {
   customerName: string; contactNumber: string; taskAssignedPersonId: string; productOrServiceId: string;
   requirementId: string; exactRequirement: string; modeOfCustomerId: string; sourceId: string;
   location: string; exactLocation: string; locationLink: string;
-  mainCategoryId: string; categoryId: string; subcategoryId: string;
+  mainCategoryId: string; subcategoryId: string;
   leadPersonId: string; leadStatusId: string; amount: string; conventionalRate: string;
   notes: string; leadTypeId: string; dailyTask: boolean;
   dealName: string; closingDate: string; dealValue: string; dealStatusId: string; // Edit Deal only
@@ -60,13 +60,13 @@ function initialValues(lead: LeadRow | null, options: LeadFormOptions, employeeI
   const me = employeeId && options.employees.some(e => e.id === employeeId) ? employeeId : '';
   const standard = options.leadTypes.find(t => t.label.toLowerCase() === 'standard')?.id ?? options.leadTypes[0]?.id ?? '';
   if (!lead) {
-    return withDefaults({ customerName: '', contactNumber: '', taskAssignedPersonId: me, productOrServiceId: '', requirementId: '', exactRequirement: '', modeOfCustomerId: '', sourceId: '', location: '', exactLocation: '', locationLink: '', mainCategoryId: '', categoryId: '', subcategoryId: '', leadPersonId: me, leadStatusId: '', amount: '', conventionalRate: '0', notes: '', leadTypeId: standard, dailyTask: false, dealName: '', closingDate: '', dealValue: '', dealStatusId: '' }, options.fields);
+    return withDefaults({ customerName: '', contactNumber: '', taskAssignedPersonId: me, productOrServiceId: '', requirementId: '', exactRequirement: '', modeOfCustomerId: '', sourceId: '', location: '', exactLocation: '', locationLink: '', mainCategoryId: '', subcategoryId: '', leadPersonId: me, leadStatusId: '', amount: '', conventionalRate: '0', notes: '', leadTypeId: standard, dailyTask: false, dealName: '', closingDate: '', dealValue: '', dealStatusId: '' }, options.fields);
   }
   return {
     customerName: lead.customerName === '—' ? '' : lead.customerName, contactNumber: lead.contactNumber, taskAssignedPersonId: lead.ids.taskAssignedPersonId ?? '',
     productOrServiceId: lead.ids.productOrServiceId ?? '', requirementId: lead.ids.requirementId ?? '', exactRequirement: lead.exactRequirement ?? '',
     modeOfCustomerId: lead.ids.modeOfCustomerId ?? '', sourceId: lead.ids.sourceId ?? '', location: lead.location ?? '', exactLocation: lead.exactLocation ?? '',
-    locationLink: lead.locationLink ?? '', mainCategoryId: lead.ids.mainCategoryId ?? '', categoryId: lead.ids.categoryId ?? '', subcategoryId: lead.ids.subcategoryId ?? '',
+    locationLink: lead.locationLink ?? '', mainCategoryId: lead.ids.mainCategoryId ?? '', subcategoryId: lead.ids.subcategoryId ?? '',
     leadPersonId: lead.ids.leadPersonId ?? '', leadStatusId: lead.ids.leadStatusId ?? '', amount: lead.amount !== null ? String(lead.amount) : '',
     conventionalRate: String(lead.conventionalRate ?? 0), notes: lead.notes ?? '', leadTypeId: lead.ids.leadTypeId ?? standard, dailyTask: lead.dailyTask,
     dealName: deal?.name ?? '', closingDate: deal?.closingDate ?? '', dealValue: deal ? String(deal.value) : '', dealStatusId: deal?.status?.id ?? '',
@@ -189,8 +189,7 @@ export default function AddLeadModal({ mode, lead, options: initialOptions, curr
     queue.add(imgs.map((f, i) => new File([f], f.name && f.name !== 'image.png' ? f.name : `pasted-${Date.now()}-${i}.png`, { type: f.type })));
   };
 
-  const categories = useMemo(() => options.categories.filter(c => c.parentId === v.mainCategoryId), [options, v.mainCategoryId]);
-  const subcategories = useMemo(() => options.subcategories.filter(c => c.parentId === v.categoryId), [options, v.categoryId]);
+  const subcategories = useMemo(() => options.subcategories.filter(c => c.parentId === v.mainCategoryId), [options, v.mainCategoryId]);
 
   const refreshOptions = async () => {
     setRefreshing(true);
@@ -242,7 +241,7 @@ export default function AddLeadModal({ mode, lead, options: initialOptions, curr
     requirementId: v.requirementId || null, exactRequirement: v.exactRequirement.trim() || null,
     modeOfCustomerId: v.modeOfCustomerId || null, sourceId: v.sourceId || null,
     location: v.location.trim() || null, exactLocation: v.exactLocation.trim() || null, locationLink: v.locationLink.trim() || null,
-    mainCategoryId: v.mainCategoryId || null, categoryId: v.categoryId || null, subcategoryId: v.subcategoryId || null,
+    mainCategoryId: v.mainCategoryId || null, subcategoryId: v.subcategoryId || null,
     leadPersonId: v.leadPersonId || null, conventionalRate: Number(v.conventionalRate || 0),
     notes: v.notes.trim() || null, leadTypeId: v.leadTypeId || null, dailyTask: v.dailyTask,
     ...(deal
@@ -389,7 +388,7 @@ export default function AddLeadModal({ mode, lead, options: initialOptions, curr
             </Field>
             <Field order={ord('mainCategoryId')} label={L('mainCategoryId', 'Main Category')} required={R('mainCategoryId')} error={errors.mainCategoryId}>
               <div className="flex gap-2">
-                <select className={`${input} ${ring('mainCategoryId')}`} aria-invalid={inv('mainCategoryId')} value={v.mainCategoryId} onChange={e => { setErrors(x => ({ ...x, mainCategoryId: undefined })); setV(c => ({ ...c, mainCategoryId: e.target.value, categoryId: '', subcategoryId: '' })); }}>
+                <select className={`${input} ${ring('mainCategoryId')}`} aria-invalid={inv('mainCategoryId')} value={v.mainCategoryId} onChange={e => { setErrors(x => ({ ...x, mainCategoryId: undefined })); setV(c => ({ ...c, mainCategoryId: e.target.value, subcategoryId: '' })); }}>
                   <option value="">Select Main Category</option>
                   {options.mainCategories.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
                 </select>
@@ -398,15 +397,8 @@ export default function AddLeadModal({ mode, lead, options: initialOptions, curr
                 </button>
               </div>
             </Field>
-
-            <Field order={ord('categoryId')} label={L('categoryId', 'Category')} required={R('categoryId')} error={errors.categoryId}>
-              <select className={`${input} ${ring('categoryId')}`} aria-invalid={inv('categoryId')} value={v.categoryId} onChange={e => setV(c => ({ ...c, categoryId: e.target.value, subcategoryId: '' }))} disabled={!v.mainCategoryId}>
-                <option value="">Select Category</option>
-                {categories.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
-              </select>
-            </Field>
             <Field order={ord('subcategoryId')} label={L('subcategoryId', 'Subcategory')} required={R('subcategoryId')} error={errors.subcategoryId}>
-              <select className={`${input} ${ring('subcategoryId')}`} aria-invalid={inv('subcategoryId')} value={v.subcategoryId} onChange={e => set('subcategoryId', e.target.value)} disabled={!v.categoryId}>
+              <select className={`${input} ${ring('subcategoryId')}`} aria-invalid={inv('subcategoryId')} value={v.subcategoryId} onChange={e => set('subcategoryId', e.target.value)} disabled={!v.mainCategoryId}>
                 <option value="">Select Subcategory</option>
                 {subcategories.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
               </select>

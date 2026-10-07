@@ -1,5 +1,6 @@
 import { prisma } from "@/lib/db";
 import type { AuthContext } from "@/lib/auth";
+import { ServiceError } from "@/lib/users/service";
 import { DEAL_CLOSING_MAX_YEARS, DEAL_NUMBER_PREFIX } from "@/lib/leads/constants";
 import { normalizePhone, todayDay } from "@/lib/leads/format";
 import { checkLeadAgainstLayout } from "@/lib/leads/layout";
@@ -14,28 +15,35 @@ import {
 // (Deal Name, Deal Value, Deal Validity, Deal Status, the DL number) lives on the Deal.
 // ---------------------------------------------------------------------------
 
-// The live deal behind a Deals page action, with the id of its lead
-export async function findDeal(dealId: string) {
+// The live deal behind a Deals page action, with the id of its lead. A deal that became a project (Convert to Project) stays in the CRM
+// but is closed to changes: it can be looked at (allowConverted), nothing more. Its project is where the work goes on.
+export async function findDeal(dealId: string, options: { allowConverted?: boolean } = {}) {
   const deal = await prisma.deal.findFirst({
     where: { id: dealId, dealNumber: { startsWith: DEAL_NUMBER_PREFIX }, deletedAt: null, lead: { deletedAt: null, convertedAt: { not: null } } },
-    select: { id: true, leadId: true, dealNumber: true, title: true, value: true, expectedCloseDate: true, dealStatusId: true },
+    select: { id: true, leadId: true, dealNumber: true, title: true, value: true, expectedCloseDate: true, dealStatusId: true, projectConvertedAt: true, projects: { where: { deletedAt: null }, select: { projectCode: true }, take: 1 } },
   });
   if (!deal) throw notFound("deal");
+  if (deal.projectConvertedAt && !options.allowConverted) {
+    const code = deal.projects[0]?.projectCode;
+    throw new ServiceError(409, `Deal ${deal.dealNumber} was converted to a project${code ? ` (${code})` : ""}. It is kept as it was and can no longer be changed or deleted.`);
+  }
   return deal;
 }
 
 // The id of the lead behind a deal, for the actions that are done on the lead itself (notes, follow-ups, files, closing, ...).
 // The permission is checked first, so a person without it cannot tell whether a deal exists.
-export async function leadIdOf(actor: AuthContext, dealId: string, action: "view" | "create" | "edit" | "delete") {
+// A deal that became a project is only opened by the routes that just read it (allowConverted); every route that adds or changes
+// something refuses it, whatever permission it asks for.
+export async function leadIdOf(actor: AuthContext, dealId: string, action: "view" | "create" | "edit" | "delete", options: { allowConverted?: boolean } = {}) {
   need(actor, action, "deal");
-  return (await findDeal(dealId)).leadId;
+  return (await findDeal(dealId, options)).leadId;
 }
 
 // The View dialog of a deal: the deal's own details and the original lead's, with its files and follow-ups.
 // Needs deals.view only; the lead's details come along because they were carried forward with the deal.
 export async function getDealDetail(actor: AuthContext, dealId: string) {
   need(actor, "view", "deal");
-  const deal = await findDeal(dealId);
+  const deal = await findDeal(dealId, { allowConverted: true });
   return leadDetail(deal.leadId);
 }
 
@@ -127,7 +135,6 @@ export async function duplicateDeal(actor: AuthContext, dealId: string) {
     exactLocation: src.exactLocation,
     locationLink: src.locationLink,
     mainCategoryId: src.mainCategoryId,
-    categoryId: src.categoryId,
     subcategoryId: src.subcategoryId,
     leadPersonId: src.leadPersonId,
     leadStatusId: src.leadStatusId,

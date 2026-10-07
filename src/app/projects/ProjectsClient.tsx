@@ -1,184 +1,140 @@
 'use client';
 
-import { useState, useMemo } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useRef, useState, useTransition } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { PROJECT_DATE_TYPES, type ProjectFilterKey, type ProjectListParams, type ProjectSortKey } from '@/lib/projects/constants';
+import type { ProjectListData } from '@/lib/projects/types';
+import type { ModuleLayoutDto } from '@/lib/records/types';
+import { formatRupees } from '@/lib/leads/format';
+import LeadHeader from '@/app/leads/components/LeadHeader';
+import LeadToolbar from '@/app/leads/components/LeadToolbar';
+import LeadSummary from '@/app/leads/components/LeadSummary';
+import LeadSearch from '@/app/leads/components/LeadSearch';
+import { LayoutEditor } from '@/app/records/layout-editor/LayoutEditor';
+import ProjectTable from './ProjectTable';
 
-import ProjectsHeader from './components/ProjectsHeader';
-import ProjectSummaryCards from './components/ProjectSummaryCards';
-import ProjectPipeline from './components/ProjectPipeline';
-import ProjectFilters from './components/ProjectFilters';
-import ProjectTable from './components/ProjectTable';
-import CreateProjectModal from './components/CreateProjectModal';
-import { ProjectStage } from './data/mock';
+type FilterItem = { value: string; label: string };
 
-export default function ProjectsClient({ initialProjects }: { initialProjects: any[] }) {
+// The Projects list: a row for each converted deal (Project Code / Deal No, name, site location, task person, contact, money, dates, completion).
+// Same search, header sort / filter menus, calendar and paging in the address as the Leads and Deals pages. Total Value is the Project Value
+// of every project that matches the search and filters, not only the page that is open.
+export default function ProjectsClient({ data, params, lists, layout, extraColumns, abilities }: {
+  data: ProjectListData;
+  params: ProjectListParams;
+  lists: { statuses: FilterItem[]; people: FilterItem[]; locations: FilterItem[] };
+  layout: ModuleLayoutDto;
+  extraColumns: { key: string; label: string }[];
+  abilities: { export: boolean; layout: boolean };
+}) {
   const router = useRouter();
-  const [showCreateModal, setShowCreateModal] = useState(false);
-  const [activeStage, setActiveStage] = useState<ProjectStage | null>(null);
-  
-  // Search & Filters
-  const [search, setSearch] = useState('');
-  const [activeTab, setActiveTab] = useState('Active');
-  const [filters, setFilters] = useState<Record<string, string>>({});
+  const search = useSearchParams();
+  const [pending, startTransition] = useTransition();
+  const [q, setQ] = useState(params.q ?? '');
+  const [layoutOpen, setLayoutOpen] = useState(false);
+  // While a reset is on its way, the search box's own delayed update must not put the old search/filters back in the address
+  const resetting = useRef(false);
 
-  const handleFilterChange = (key: string, value: string) => {
-    setFilters(prev => ({ ...prev, [key]: value }));
+  const setParams = (updates: Record<string, string | undefined>, replace = false) => {
+    const next = new URLSearchParams(search.toString());
+    for (const [k, v] of Object.entries(updates)) {
+      if (v) next.set(k, v);
+      else next.delete(k);
+    }
+    if (!('page' in updates)) next.delete('page');
+    startTransition(() => (replace ? router.replace : router.push)(`/projects${next.toString() ? `?${next}` : ''}`));
   };
 
-  const handleClearFilters = () => {
-    setFilters({});
-    setSearch('');
-    setActiveStage(null);
+  // Live search: results update about 0.15s after each keystroke
+  useEffect(() => {
+    if (resetting.current || (params.q ?? '') === q.trim()) return;
+    const t = setTimeout(() => setParams({ q: q.trim() || undefined }, true), 150);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q]);
+
+  const exportHref = `/api/projects/export${search.toString() ? `?${search}` : ''}`;
+
+  const showAll = () => {
+    resetting.current = true;
+    setQ('');
+    const next = new URLSearchParams();
+    for (const k of ['sort', 'dir']) { const v = search.get(k); if (v) next.set(k, v); }
+    startTransition(() => { router.push(`/projects${next.toString() ? `?${next}` : ''}`); router.refresh(); });
   };
-
-  const handleProjectClick = (id: string) => {
-    router.push(`/projects/${id}`);
+  const clearAll = () => {
+    resetting.current = true;
+    setQ('');
+    startTransition(() => { router.push('/projects'); router.refresh(); });
   };
+  useEffect(() => { resetting.current = false; }, [data]);
 
-  // Map all DB projects to UI project representation
-  const mappedProjects = useMemo(() => {
-    return initialProjects.map(dbProj => {
-      const contractVal = Number(dbProj.value || 0);
-      const gst = contractVal * 0.18;
-      const totalContractVal = contractVal + gst;
+  const onFilter = (next: Partial<Record<ProjectFilterKey, string[]>>) =>
+    setParams(Object.fromEntries(Object.entries(next).map(([k, v]) => [`f_${k}`, v && v.length ? JSON.stringify(v) : undefined])));
 
-      const actualCost = (dbProj.expenses || []).reduce((acc: number, e: any) => acc + Number(e.amount || 0), 0);
-      const receivedAmount = (dbProj.payments || [])
-        .filter((p: any) => p.paymentType === 'Inbound' || p.status === 'Completed' || p.status === 'Paid')
-        .reduce((acc: number, p: any) => acc + Number(p.amount || 0), 0);
-
-      const pendingAmount = Math.max(0, totalContractVal - receivedAmount);
-      const expectedProfit = Math.round(contractVal * 0.25);
-      const currentProfit = receivedAmount - actualCost;
-
-      return {
-        id: dbProj.id,
-        name: dbProj.name,
-        customerName: dbProj.customer?.name || 'Unknown',
-        customerCode: dbProj.customer?.customerCode || `CUST-${dbProj.customerId?.substring(0,4)}`,
-        type: dbProj.type || 'Other',
-        location: dbProj.lead?.siteLocation || dbProj.customer?.address || 'Chennai, TN',
-        propertyType: dbProj.lead?.propertyType || 'Villa',
-        projectManager: dbProj.manager?.user?.name || dbProj.manager?.designation || 'Dinesh Subramanian',
-        projectCoordinator: 'Rahul S A',
-        salesExecutive: dbProj.lead?.salesExecutive?.user?.name || 'Mukesh V',
-        progress: dbProj.progress || 0,
-        stage: (dbProj.status === 'Completed' ? 'Completed' : dbProj.status === 'Planning' ? 'Planning' : 'Execution') as any,
-        status: dbProj.status || 'Active',
-        startDate: dbProj.startDate ? new Date(dbProj.startDate).toISOString().split('T')[0] : 'TBD',
-        expectedCompletion: dbProj.expectedEndDate ? new Date(dbProj.expectedEndDate).toISOString().split('T')[0] : 'TBD',
-        priority: (dbProj.lead?.priority || 'Medium') as any,
-        crmRefs: {
-          leadId: dbProj.lead?.leadNumber || dbProj.leadId || 'MIN-LEAD-2026-0001',
-          dealId: dbProj.deal?.dealNumber || dbProj.dealId || 'DEAL-2026-0001',
-          quoteId: 'QT-2026-0001'
-        },
-        financials: {
-          contractValue: contractVal,
-          gst: gst,
-          totalContractValue: totalContractVal,
-          receivedAmount: receivedAmount,
-          pendingAmount: pendingAmount,
-          actualCost: actualCost,
-          expectedProfit: expectedProfit,
-          currentProfit: currentProfit,
-          vendorPayable: 0,
-          writtenOff: 0,
-          loss: 0,
-        },
-        health: {
-          schedule: dbProj.progress >= 50 ? 90 : 100,
-          budget: actualCost <= contractVal ? 95 : 60,
-          execution: dbProj.progress || 0,
-          procurement: 80,
-          payment: totalContractVal > 0 ? Math.min(100, Math.round((receivedAmount / totalContractVal) * 100)) : 0,
-          overall: (actualCost > contractVal ? 'AT RISK' : 'ON TRACK') as any,
-        },
-        alerts: [],
-      };
-    });
-  }, [initialProjects]);
-
-  // Filter projects for table
-  const filteredProjects = useMemo(() => {
-    return mappedProjects.filter(p => {
-      // Tab filter
-      if (activeTab === 'Active' && p.status !== 'Active') return false;
-      if (activeTab === 'Planning' && p.stage !== 'Planning') return false;
-      if (activeTab === 'Execution' && p.stage !== 'Execution') return false;
-      if (activeTab === 'At Risk' && p.status !== 'At Risk') return false;
-      if (activeTab === 'Completed' && p.status !== 'Completed') return false;
-      if (activeTab === 'On Hold' && p.status !== 'On Hold') return false;
-      
-      // Stage visual filter
-      if (activeStage && p.stage !== activeStage) return false;
-
-      // Search
-      if (search) {
-        const q = search.toLowerCase();
-        if (
-          !p.name.toLowerCase().includes(q) &&
-          !p.id.toLowerCase().includes(q) &&
-          !p.customerName.toLowerCase().includes(q) &&
-          !p.location.toLowerCase().includes(q)
-        ) return false;
-      }
-
-      // Advanced filters
-      if (filters.status && p.status !== filters.status) return false;
-      if (filters.type && p.type !== filters.type) return false;
-      if (filters.manager && p.projectManager !== filters.manager) return false;
-      if (filters.priority && p.priority !== filters.priority) return false;
-      
-      if (filters.paymentStatus) {
-        const percent = p.financials.receivedAmount / (p.financials.totalContractValue || 1);
-        const pStatus = percent >= 1 ? 'Paid' : percent > 0 ? 'Partially Paid' : 'Pending';
-        if (filters.paymentStatus !== pStatus) return false;
-      }
-
-      return true;
-    });
-  }, [mappedProjects, search, filters, activeTab, activeStage]);
+  const group = (key: ProjectFilterKey, label: string, items: FilterItem[]) => ({ key, label, items, selected: params.cols[key] ?? [] });
+  const filterGroups = {
+    name: [group('status', 'Project Status', lists.statuses)],
+    taskPerson: [group('taskPerson', 'Task Person', lists.people)],
+    location: [group('location', 'Site Location', lists.locations)],
+  };
 
   return (
-    <div className="w-full min-h-screen bg-[#0D0D0F] text-white font-sans selection:bg-yellow-400 selection:text-black flex flex-col">
-      <main className="flex-1 w-full max-w-[1700px] mx-auto">
-        <ProjectsHeader 
-          onNewProject={() => setShowCreateModal(true)}
-          onAddTask={() => {}} 
-          onSiteVisit={() => {}} 
-        />
-        
-        <ProjectSummaryCards projects={mappedProjects} />
-        
-        <ProjectPipeline 
-          projects={mappedProjects}
-          activeStage={activeStage} 
-          onStageClick={setActiveStage} 
-        />
+    <div data-light-native className="w-full min-h-screen bg-white text-[#333] font-sans">
+      <div className="px-4 sm:px-5 pt-6 pb-10 max-w-[2000px] mx-auto">
+        <LeadHeader title="Project Management" />
 
-        <div className="px-6 pb-10">
-          <ProjectFilters 
-            search={search}
-            onSearchChange={setSearch}
-            filters={filters}
-            onFilterChange={handleFilterChange}
-            onClearFilters={handleClearFilters}
-            activeTab={activeTab}
-            onTabChange={setActiveTab}
-          />
-          
-          <div className="mt-4">
-            <ProjectTable 
-              projects={filteredProjects} 
-              onProjectClick={handleProjectClick} 
-            />
+        <div className="mt-6 flex flex-col lg:flex-row lg:flex-wrap lg:items-center gap-x-5 gap-y-3 pb-5 border-b-[3px] border-gray-200">
+          <LeadSummary noun="Projects" total={data.total} showing={data.showing} onShowAll={showAll} />
+          <div className="text-[14px] font-semibold text-[#333] lg:whitespace-nowrap">
+            Total Value: <span className="inline-block px-2.5 py-0.5 rounded bg-[#e6f6ec] text-[#15803d] font-bold text-[14px]" data-total-value>{formatRupees(data.totalValue)}</span>
           </div>
+          <LeadSearch value={q} onChange={setQ} placeholder="Search projects..." />
+          <LeadToolbar
+            className="self-end lg:self-auto lg:ml-auto"
+            params={params}
+            canCreate={false}
+            canExport={abilities.export}
+            canEditLayout={abilities.layout}
+            refreshing={pending}
+            onAdd={() => {}}
+            onEditLayout={() => setLayoutOpen(true)}
+            onRefresh={clearAll}
+            onParams={setParams}
+            exportHref={exportHref}
+            dateTypes={PROJECT_DATE_TYPES}
+            layoutLabel="Edit Page Layout"
+            noun="projects"
+            showImport={false}
+          />
         </div>
-      </main>
 
-      {showCreateModal && <CreateProjectModal onClose={() => setShowCreateModal(false)} />}
+        <div className="mt-4">
+          <ProjectTable
+            rows={data.rows}
+            total={data.total}
+            sort={params.sort}
+            dir={params.dir}
+            loading={pending}
+            extraColumns={extraColumns}
+            filterGroups={filterGroups}
+            onSort={(k: ProjectSortKey, d) => setParams({ sort: k, dir: d })}
+            onFilter={onFilter}
+            onReset={clearAll}
+          />
+        </div>
+
+        {data.pageCount > 1 && (
+          <div className="mt-5 flex items-center justify-end gap-3 text-[13px] text-gray-600">
+            {pending && <Loader2 className="w-4 h-4 animate-spin" />}
+            <span>Page {data.page} of {data.pageCount} · {data.pageSize} per page</span>
+            <button disabled={data.page <= 1} onClick={() => setParams({ page: String(data.page - 1) })} aria-label="Previous page" className="w-9 h-9 border border-gray-300 rounded flex items-center justify-center disabled:opacity-40 hover:bg-gray-100"><ChevronLeft className="w-4 h-4" /></button>
+            <button disabled={data.page >= data.pageCount} onClick={() => setParams({ page: String(data.page + 1) })} aria-label="Next page" className="w-9 h-9 border border-gray-300 rounded flex items-center justify-center disabled:opacity-40 hover:bg-gray-100"><ChevronRight className="w-4 h-4" /></button>
+          </div>
+        )}
+      </div>
+
+      {layoutOpen && abilities.layout && <LayoutEditor moduleId="project" initial={layout} onClose={changed => { setLayoutOpen(false); if (changed) router.refresh(); }} />}
     </div>
   );
 }
-

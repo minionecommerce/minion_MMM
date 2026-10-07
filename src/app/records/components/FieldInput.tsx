@@ -7,6 +7,7 @@ import type { FileDto, LayoutField, LookupItem, RecordRefs } from '@/lib/records
 import { searchLookup, type LookupKind } from '../client';
 import FileField from './FileField';
 import LookupSelect from './LookupSelect';
+import MultiSelect from './MultiSelect';
 
 // What a field needs besides its own value: the lists to pick from and the names of what is already picked
 export type FieldCtx = {
@@ -21,8 +22,8 @@ export type FieldCtx = {
   lookupExtra?: Record<string, string>; // narrows the searched lists (the quote form: only the deals and projects of the chosen customer)
 };
 
-const LOOKUP_KIND: Record<string, LookupKind> = { deal: 'deals', materialVendor: 'materialVendors', serviceVendor: 'serviceVendors', customer: 'customers', project: 'projects' };
-const LOOKUP_EMPTY: Record<LookupKind, string> = { deals: 'No deals found', materialVendors: 'No vendors found', serviceVendors: 'No vendors found', customers: 'No customers found', projects: 'No projects found' };
+const LOOKUP_KIND: Record<string, LookupKind> = { deal: 'deals', materialVendor: 'materialVendors', serviceVendor: 'serviceVendors', customer: 'customers', project: 'projects', template: 'templates' };
+const LOOKUP_EMPTY: Record<LookupKind, string> = { deals: 'No deals found', materialVendors: 'No vendors found', serviceVendors: 'No vendors found', customers: 'No customers found', projects: 'No projects found', templates: 'No templates found' };
 
 export const controlClass = (invalid: boolean, required: boolean, extra = '') =>
   `w-full h-[38px] border rounded px-3 text-[14px] text-gray-900 bg-white focus:outline-none disabled:bg-gray-100 disabled:text-gray-500 ${invalid ? 'border-red-500' : 'border-gray-300 focus:border-[#f5b800]'} ${required ? 'border-l-[3px] border-l-[#e5484d]' : ''} ${extra}`;
@@ -39,13 +40,15 @@ export function pickedText(f: LayoutField, id: string, ctx: FieldCtx): string {
 }
 
 // One field of a record, as an input: used in the form and, with `compact`, in the cells of a table.
-export default function FieldInput({ field: f, value, onChange, error, ctx, compact, htmlId }: {
+export default function FieldInput({ field: f, value, onChange, error, ctx, compact, bare, badge, htmlId }: {
   field: LayoutField;
   value: unknown;
   onChange: (value: unknown) => void;
   error?: string;
   ctx: FieldCtx;
   compact?: boolean;
+  bare?: boolean; // the plainest control (the cells of the project tables): a tick box without its "Yes", a File Upload shown as file icons
+  badge?: (optionId: string) => string; // a Dropdown shown as a coloured badge: the classes of the chosen option
   htmlId: string;
 }) {
   const invalid = !!error;
@@ -86,6 +89,7 @@ export default function FieldInput({ field: f, value, onChange, error, ctx, comp
     case 'URL':
       return <input id={htmlId} type="url" value={text} onChange={e => onChange(e.target.value)} maxLength={2000} placeholder="https://" className={cls} {...describe} />;
     case 'CHECKBOX':
+      if (bare) return <input id={htmlId} type="checkbox" aria-label={f.label} checked={value === true} onChange={e => onChange(e.target.checked)} className="block mx-auto w-[18px] h-[18px] accent-[#0d6efd] cursor-pointer" />;
       return (
         <label className="inline-flex items-center gap-2 h-[38px] text-[14px] text-gray-800 cursor-pointer">
           <input id={htmlId} type="checkbox" checked={value === true} onChange={e => onChange(e.target.checked)} className="w-4 h-4 accent-black" /> Yes
@@ -93,11 +97,13 @@ export default function FieldInput({ field: f, value, onChange, error, ctx, comp
       );
     case 'DROPDOWN':
       return (
-        <select id={htmlId} value={f.options.some(o => o.id === text) ? text : ''} onChange={e => onChange(e.target.value)} className={cls} {...describe}>
+        <select id={htmlId} value={f.options.some(o => o.id === text) ? text : ''} onChange={e => onChange(e.target.value)} className={badge ? `h-[30px] w-full min-w-[120px] cursor-pointer rounded-full border px-3 text-[12px] font-semibold focus:outline-none ${badge(text)}` : cls} {...describe}>
           <option value="">-None-</option>
           {f.options.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
         </select>
       );
+    case 'MULTISELECT':
+      return <MultiSelect htmlId={htmlId} label={f.label} options={f.options} value={Array.isArray(value) ? (value as string[]) : []} onChange={onChange} className={cls} describe={describe} />;
     case 'USER':
       return (
         <LookupSelect
@@ -153,6 +159,7 @@ export default function FieldInput({ field: f, value, onChange, error, ctx, comp
           onChange={onChange}
           onBusy={ctx.onBusy}
           compact={compact}
+          bare={bare}
         />
       );
     default:

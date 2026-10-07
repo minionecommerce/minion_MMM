@@ -1,6 +1,4 @@
 import { z } from "zod";
-import { NextResponse } from "next/server";
-import { DuplicateCustomerError } from "@/lib/quotes/lookups";
 import { originFromHeaders } from "@/lib/quotes/origin";
 
 // The address of this site as the person's browser sees it
@@ -20,6 +18,12 @@ export const quoteBodySchema = z.object({
   intent: z.enum(["draft", "save", "send"]),
 }).strict();
 
-export function duplicateCustomer(err: DuplicateCustomerError) {
-  return NextResponse.json({ error: err.message, code: "DUPLICATE", hard: err.hard, existing: err.existing }, { status: 409 });
-}
+// The body of an item (create and edit): what the New Item form sends. Every key is optional here; the service decides what is required.
+export const itemBodySchema = z.object({
+  name: z.unknown().optional(), description: z.unknown().optional(), hsn: z.unknown().optional(), unit: z.unknown().optional(), unitGroup: z.unknown().optional(),
+  rate: z.unknown().optional(), taxId: z.unknown().optional(), kind: z.unknown().optional(), isActive: z.unknown().optional(),
+  category: z.unknown().optional(), sku: z.unknown().optional(), taxPreference: z.unknown().optional(), identifiers: z.unknown().optional(),
+  trackInventory: z.unknown().optional(), inventoryTracking: z.unknown().optional(), inventoryAccount: z.unknown().optional(), valuationMethod: z.unknown().optional(),
+  reorderPoint: z.unknown().optional(), returnable: z.unknown().optional(), dimLength: z.unknown().optional(), dimWidth: z.unknown().optional(), dimHeight: z.unknown().optional(),
+  dimUnit: z.unknown().optional(), weight: z.unknown().optional(), weightUnit: z.unknown().optional(), taskTemplateId: z.unknown().optional(), files: z.unknown().optional(),
+}).strict();

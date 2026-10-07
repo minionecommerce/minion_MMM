@@ -78,6 +78,7 @@ function parseTaxes(v: unknown): TaxDef[] {
   if (v.length > 100) bad("There can be 100 taxes at most.");
   const names = new Set<string>();
   const ids = new Set<string>();
+  if (v.filter(x => isObject(x) && x.isDefault === true).length > 1) bad("Only one tax can be the default.");
   return v.map((raw, i) => {
     if (!isObject(raw)) return bad(`Tax ${i + 1} is not valid.`);
     const name = tidy(raw.name, 40, "A tax name", true);
@@ -96,7 +97,10 @@ function parseTaxes(v: unknown): TaxDef[] {
     if (!components.length) components = [{ name, rate }];
     const sum = Math.round(components.reduce((a, c) => a + c.rate, 0) * 1000) / 1000;
     if (sum !== rate) bad(`The parts of ${name} add up to ${sum}%, not ${rate}%.`);
-    return { id, name, rate, components, active: raw.active === undefined ? true : bool(raw.active, `Active for ${name}`) };
+    const active = raw.active === undefined ? true : bool(raw.active, `Active for ${name}`);
+    const isDefault = raw.isDefault === undefined ? false : bool(raw.isDefault, `Default for ${name}`);
+    if (isDefault && !active) bad(`${name} is switched off, so it cannot be the default tax.`);
+    return { id, name, rate, components, active, ...(isDefault ? { isDefault: true } : {}) };
   });
 }
 

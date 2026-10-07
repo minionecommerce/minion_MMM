@@ -23,7 +23,7 @@ export const MAX_QUOTE_FILES = 5;
 // Settings (Quote Settings: numbering, taxes, rounding, how amounts are shown, company details, messages)
 // ---------------------------------------------------------------------------
 export type TaxComponent = { name: string; rate: number }; // CGST9 (9%)
-export type TaxDef = { id: string; name: string; rate: number; components: TaxComponent[]; active: boolean }; // GST18 = CGST9 + SGST9
+export type TaxDef = { id: string; name: string; rate: number; components: TaxComponent[]; active: boolean; isDefault?: boolean }; // GST18 = CGST9 + SGST9; the Default one is what a new item row starts with
 export type WithholdingDef = { id: string; name: string; rate: number; active: boolean }; // a TDS section or a TCS rate
 
 export type FyFormat = "YY-YY" | "YYYY-YY" | "YYYY-YYYY" | "YY" | "YYYY";
@@ -145,24 +145,60 @@ export type ItemDto = {
   id: string;
   name: string;
   description: string;
-  hsn: string;
+  hsn: string; // the HSN code of Goods, the SAC of a Service
   unit: string;
   rate: number;
   taxId: string | null;
   kind: "Goods" | "Service";
   isActive: boolean;
   createdAt: string;
+  category: string;
+  sku: string;
+  taxPreference: string; // an id of TAX_PREFERENCES
+  taskTemplateId: string | null; // an option of the Template dropdown of the Project layout
+  taskTemplateName: string;
+  imageFileId: string | null; // the picture shown on a quote row: the front picture, or the first one there is
 };
 
+// The pictures of an item, by place; a saved one has a short-lived link
+export type ItemImages = { front: FileDto[]; rear: FileDto[]; other: FileDto[] };
+
+// An item as the New Item form edits it
+export type ItemDetailDto = ItemDto & {
+  unitGroup: string | null;
+  identifiers: { type: string; value: string }[];
+  trackInventory: boolean;
+  inventoryTracking: string;
+  inventoryAccount: string;
+  valuationMethod: string;
+  reorderPoint: number | null;
+  returnable: boolean;
+  dimLength: number | null;
+  dimWidth: number | null;
+  dimHeight: number | null;
+  dimUnit: string;
+  weight: number | null;
+  weightUnit: string;
+  images: ItemImages;
+};
+
+// A customer as the pick-lists, the quote form and the quote document use it. `address` is the Billing Address as printed lines; the new fields are
+// empty for a customer that was added before the Customer form existed.
 export type CustomerDto = {
   id: string;
   code: string | null;
-  name: string;
-  phone: string | null;
+  name: string; // the Display Name
+  phone: string | null; // the Mobile
   email: string | null;
   address: string | null;
   gstin: string | null;
   customerType: string;
+  companyName?: string | null;
+  contactName?: string | null; // first name + last name
+  shippingAddress?: string | null; // printed lines
+  gstTreatment?: string | null;
+  placeOfSupply?: string | null; // GST state code, 33 = Tamil Nadu
+  pan?: string | null;
 };
 
 // ---------------------------------------------------------------------------
@@ -174,6 +210,8 @@ export type LineInput = {
   name: string;
   description?: string;
   hsn?: string;
+  kind?: "Goods" | "Service" | null;
+  taskTemplateId?: string | null;
   unit?: string;
   quantity: number;
   rate: number;
@@ -187,6 +225,10 @@ export type LineDto = {
   name: string;
   description: string;
   hsn: string;
+  kind: "Goods" | "Service" | null; // decides whether hsn is an HSN code or a SAC
+  taskTemplateId: string | null;
+  taskTemplateName: string;
+  imageFileId: string | null; // the picture of the item the line was made from (nothing for a line typed by hand)
   unit: string;
   quantity: number;
   rate: number;

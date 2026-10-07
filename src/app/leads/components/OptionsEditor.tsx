@@ -30,7 +30,7 @@ function applyOrder(list: Option[], ids: string[]): Option[] {
 // Add / rename / reorder / delete the options of a pick-list field. Every change is saved straight away.
 export default function OptionsEditor({ field, parentField, onChanged, noun = 'lead' }: {
   field: LeadFieldDto;
-  parentField: LeadFieldDto | null; // for levelled lists (Category under Main Category)
+  parentField: LeadFieldDto | null; // for levelled lists (Subcategory under Main Category)
   onChanged: (options: Option[]) => void;
   noun?: string; // what the options are used by: 'lead' (default) or 'deal'
 }) {

@@ -13,7 +13,7 @@ import { DEAL_NUMBER_PREFIX } from "@/lib/leads/constants";
 import { MODULES, type ModuleDef, type SystemField } from "./registry";
 import { getLayout, ROW_PARENT_KEY } from "./layout";
 import { bindFiles, filesOf, slotKey, type FileSlot } from "./files";
-import { buildRefs, emptyRefIds, type RefIds } from "./lookups";
+import { buildRefs, emptyRefIds, projectTemplates, type RefIds } from "./lookups";
 import { cleanValue, displayValue, isEmptyValue, isId, stripControl } from "./values";
 import {
   MAX_ROWS, PAGE_SIZE,
@@ -104,7 +104,7 @@ function gatherRefIds(layout: ModuleLayoutDto, rows: Row[]): RefIds {
     const v = storedValue(f, row);
     if (typeof v !== "string" || !v) return;
     if (f.type === "USER" || f.type === "APPROVER") ids.users.add(v);
-    else if (f.type === "LOOKUP") (f.lookup === "deal" ? ids.deals : f.lookup === "materialVendor" ? ids.materialVendors : ids.serviceVendors).add(v);
+    else if (f.type === "LOOKUP") (f.lookup === "deal" ? ids.deals : f.lookup === "materialVendor" ? ids.materialVendors : f.lookup === "template" ? ids.templates : ids.serviceVendors).add(v);
   };
   for (const f of formFieldsOf(layout)) for (const row of rows) add(f, row); // table columns never hold users or lookups
   return ids;
@@ -161,7 +161,8 @@ function searchClauses(def: ModuleDef, layout: ModuleLayoutDto, q: string): unkn
     } else if (!table && f.isSystem && f.type === "LOOKUP" && f.lookup) {
       if (f.lookup === "deal") or.push({ deal: { is: { OR: [{ dealNumber: contains(q) }, { title: contains(q) }, { lead: { is: { customerName: contains(q) } } }] } } });
       else if (f.lookup === "materialVendor") or.push({ materialVendor: { is: { OR: [{ code: contains(q) }, { companyName: contains(q) }] } } });
-      else or.push({ serviceVendor: { is: { OR: [{ code: contains(q) }, { name: contains(q) }] } } });
+      else if (f.lookup === "serviceVendor") or.push({ serviceVendor: { is: { OR: [{ code: contains(q) }, { name: contains(q) }] } } });
+      // a template (the Work Type of a PPR) is an option of the Project layout, not a row of a table: the text search does not look at it
     }
   }
   return or;
@@ -306,7 +307,12 @@ async function checkInput(ctx: AuthContext, def: ModuleDef, layout: ModuleLayout
 
   const out: Checked = { columns: {}, custom: {}, slots: [], tables: {}, approved: null };
   const users = new Map<string, { label: string; path: (string | number)[] }>();
-  const lookups = { deal: new Map<string, { label: string; path: (string | number)[] }>(), materialVendor: new Map<string, { label: string; path: (string | number)[] }>(), serviceVendor: new Map<string, { label: string; path: (string | number)[] }>() };
+  const lookups = {
+    deal: new Map<string, { label: string; path: (string | number)[] }>(),
+    materialVendor: new Map<string, { label: string; path: (string | number)[] }>(),
+    serviceVendor: new Map<string, { label: string; path: (string | number)[] }>(),
+    template: new Map<string, { label: string; path: (string | number)[] }>(),
+  };
 
   for (const f of formFields) {
     if (!f.enabled || f.type === "AUTO" || f.type === "APPROVER") continue;
@@ -331,7 +337,7 @@ async function checkInput(ctx: AuthContext, def: ModuleDef, layout: ModuleLayout
     const unchanged = !!existing && res.value === storedValue(f, existing.row);
     if (typeof res.value === "string" && !unchanged) {
       if (f.type === "USER") users.set(`${f.key}:${res.value}`, { label: f.label, path });
-      else if (f.type === "LOOKUP" && (f.lookup === "deal" || f.lookup === "materialVendor" || f.lookup === "serviceVendor")) lookups[f.lookup].set(res.value, { label: f.label, path });
+      else if (f.type === "LOOKUP" && (f.lookup === "deal" || f.lookup === "materialVendor" || f.lookup === "serviceVendor" || f.lookup === "template")) lookups[f.lookup].set(res.value, { label: f.label, path });
     }
     if (f.isSystem) out.columns[f.key] = toColumn(f, res.value);
     else out.custom[f.key] = res.value;
@@ -410,6 +416,10 @@ async function checkInput(ctx: AuthContext, def: ModuleDef, layout: ModuleLayout
   if (lookups.serviceVendor.size) {
     const found = new Set((await prisma.serviceVendor.findMany({ where: { id: { in: Array.from(lookups.serviceVendor.keys()) }, deletedAt: null }, select: { id: true } })).map(d => d.id));
     for (const [id, v] of lookups.serviceVendor) if (!found.has(id)) issues.push(issue(v.path, `${v.label} must be an existing Service Vendor`));
+  }
+  if (lookups.template.size) {
+    const known = new Set((await projectTemplates()).map(o => o.id));
+    for (const [id, v] of lookups.template) if (!known.has(id)) issues.push(issue(v.path, `${v.label} must be one of the project templates`));
   }
   if (approverCheck) {
     const state = await loadAuthState(approverCheck.id);

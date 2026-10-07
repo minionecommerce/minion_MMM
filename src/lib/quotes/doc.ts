@@ -6,6 +6,7 @@ import { GST_STATES } from "@/lib/records/registry";
 import { displayValue, isEmptyValue } from "@/lib/records/values";
 import type { LayoutField, ModuleLayoutDto } from "@/lib/records/types";
 import { amountInWords, formatQuoteDay, type Grouping } from "./format";
+import { taxCodeShort } from "./item-constants";
 import type { CalcOut, HeaderKey, QuoteDto, QuoteSettings } from "./types";
 
 export type DocLine = {
@@ -13,6 +14,7 @@ export type DocLine = {
   name: string;
   description: string;
   hsn: string;
+  taxCodeLabel: string; // HSN for Goods, SAC for a Service
   unit: string;
   quantity: number;
   rate: number;
@@ -45,7 +47,7 @@ export type QuoteDoc = {
   company: DocCompany;
   headerLeft: DocHeaderRow[]; // the rows under the company block: # / Quote Date ... | Place Of Supply / Task Person ...
   headerRight: DocHeaderRow[];
-  customer: { name: string; address: string[]; gstin: string; phone: string; email: string };
+  customer: { name: string; address: string[]; shipTo: string[]; gstin: string; phone: string; email: string };
   subject: string;
   extraColumns: { key: string; label: string }[];
   showHsn: boolean;
@@ -84,9 +86,9 @@ export function buildDoc(quote: QuoteDto, layout: ModuleLayoutDto, settings: Quo
   const dealId = text(v.dealId);
   const deal = dealId ? quote.refs.deals[dealId] : undefined;
 
-  // Place of supply: what the quote says, else the state of the customer's GSTIN, else the company's own state
+  // Place of supply: what the quote says, else the one saved with the customer, else the state of the customer's GSTIN, else the company's own state
   const gstin = text(v.customerGstin) || customer?.gstin || "";
-  const placeCode = text(v.placeOfSupply) || (/^\d{2}/.test(gstin) ? gstin.slice(0, 2) : "") || c.stateCode;
+  const placeCode = text(v.placeOfSupply) || customer?.placeOfSupply || (/^\d{2}/.test(gstin) ? gstin.slice(0, 2) : "") || c.stateCode;
 
   // The value of each row that can sit under the company block (empty = nothing to print)
   const value: Record<HeaderKey, string> = {
@@ -122,6 +124,7 @@ export function buildDoc(quote: QuoteDto, layout: ModuleLayoutDto, settings: Quo
     name: l.name,
     description: l.description,
     hsn: l.hsn,
+    taxCodeLabel: taxCodeShort(l.kind),
     unit: l.unit,
     quantity: l.quantity,
     rate: l.rate,
@@ -152,6 +155,7 @@ export function buildDoc(quote: QuoteDto, layout: ModuleLayoutDto, settings: Quo
     customer: {
       name: customer?.name ?? "",
       address: lines(text(v.billingAddress) || customer?.address),
+      shipTo: lines(customer?.shippingAddress),
       gstin,
       phone: customer?.phone ?? "",
       email: customer?.email ?? "",

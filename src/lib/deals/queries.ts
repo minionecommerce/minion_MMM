@@ -3,11 +3,11 @@ import { prisma } from "@/lib/db";
 import { DEAL_NUMBER_PREFIX, PAGE_SIZE } from "@/lib/leads/constants";
 import { formatDealStamp, formatDealValidity } from "@/lib/leads/format";
 import { buildWhere, dateRange, parseListParams, rowSelect, searchTerms, toRow, type LeadListParams } from "@/lib/leads/queries";
-import { DEAL_SORT_KEYS, type DealSortKey } from "./constants";
+import { CONVERTED_FILTER, DEAL_SORT_KEYS, type DealFilterId, type DealSortKey } from "./constants";
 
 // The Deals page works like the Leads page: the same search, column filters, quick filters and dates. Its rows are deals;
 // everything about the customer, requirements, staff, follow-ups and so on is read from the lead the deal was made from.
-export type DealListParams = Omit<LeadListParams, "sort"> & { sort?: DealSortKey };
+export type DealListParams = Omit<LeadListParams, "sort" | "filter"> & { sort?: DealSortKey; filter?: DealFilterId };
 
 const dealSelect = {
   id: true,
@@ -17,7 +17,9 @@ const dealSelect = {
   value: true,
   expectedCloseDate: true,
   createdAt: true,
+  projectConvertedAt: true,
   dealStatus: { select: { id: true, label: true, key: true } },
+  projects: { where: { deletedAt: null }, select: { id: true, projectCode: true }, take: 1 }, // the project a converted deal became
   lead: { select: rowSelect },
 } satisfies Prisma.DealSelect;
 
@@ -45,11 +47,18 @@ export function toDealRow(d: DealRecord) {
       closingDate: d.expectedCloseDate ? d.expectedCloseDate.toISOString().slice(0, 10) : null, // 2026-10-15, for the edit form
       status: d.dealStatus ? { id: d.dealStatus.id, label: d.dealStatus.label, key: d.dealStatus.key } : null, // the Deal Status
     },
+    // Convert to Project: the deal stays, but only the Converted Deals filter lists it, with the project it became
+    isProjectConverted: d.projectConvertedAt !== null,
+    projectId: d.projects[0]?.id ?? null,
+    projectCode: d.projects[0]?.projectCode ?? null,
   };
 }
 
 // Only deals made by Convert (DL numbers) are listed, and deleted ones are not; the older CRM page keeps its own deals
-const live: Prisma.DealWhereInput = { dealNumber: { startsWith: DEAL_NUMBER_PREFIX }, deletedAt: null, lead: { deletedAt: null, convertedAt: { not: null } } };
+export const live: Prisma.DealWhereInput = { dealNumber: { startsWith: DEAL_NUMBER_PREFIX }, deletedAt: null, lead: { deletedAt: null, convertedAt: { not: null } } };
+// The normal views leave out the deals that became projects; the Converted Deals filter shows only those
+const normalDeals: Prisma.DealWhereInput = { ...live, projectConvertedAt: null };
+const convertedDeals: Prisma.DealWhereInput = { ...live, projectConvertedAt: { not: null } };
 
 function orderBy(sort: DealSortKey | undefined, dir: "asc" | "desc"): Prisma.DealOrderByWithRelationInput[] {
   const tie: Prisma.DealOrderByWithRelationInput[] = [{ createdAt: "desc" }, { id: "desc" }];
@@ -69,13 +78,18 @@ function orderBy(sort: DealSortKey | undefined, dir: "asc" | "desc"): Prisma.Dea
 }
 
 export function parseDealParams(sp: Record<string, string | string[] | undefined>): DealListParams {
-  const { sort: _leadSort, ...params } = parseListParams(sp); // eslint-disable-line @typescript-eslint/no-unused-vars
+  const { sort: _leadSort, filter: leadFilter, ...params } = parseListParams(sp); // eslint-disable-line @typescript-eslint/no-unused-vars
   const sort = typeof sp.sort === "string" ? sp.sort : undefined;
-  return { ...params, sort: (DEAL_SORT_KEYS as readonly string[]).includes(sort ?? "") ? (sort as DealSortKey) : undefined };
+  const filter: DealFilterId | undefined = sp.filter === CONVERTED_FILTER ? CONVERTED_FILTER : leadFilter;
+  return { ...params, filter, sort: (DEAL_SORT_KEYS as readonly string[]).includes(sort ?? "") ? (sort as DealSortKey) : undefined };
 }
 
+const isConvertedView = (params: DealListParams) => params.filter === CONVERTED_FILTER;
+
 async function buildDealWhere(params: DealListParams): Promise<Prisma.DealWhereInput> {
-  const and: Prisma.DealWhereInput[] = [live, { lead: await buildWhere(params, "deal") }];
+  // The Converted Deals filter is about the deal, not about its lead's status: the lead rules (Open / Follow-up ...) are not applied to it
+  const leadParams = { ...params, filter: params.filter === CONVERTED_FILTER ? undefined : params.filter };
+  const and: Prisma.DealWhereInput[] = [isConvertedView(params) ? convertedDeals : normalDeals, { lead: await buildWhere(leadParams, "deal") }];
 
   if (params.q) {
     const contains = { contains: params.q, mode: "insensitive" as const };
@@ -102,7 +116,7 @@ export async function listDeals(params: DealListParams) {
       take: PAGE_SIZE,
     }),
     prisma.deal.count({ where }),
-    prisma.deal.count({ where: live }),
+    prisma.deal.count({ where: isConvertedView(params) ? convertedDeals : normalDeals }), // Total Deals: the deals of the view that is open
   ]);
   return {
     rows: rows.map(toDealRow),

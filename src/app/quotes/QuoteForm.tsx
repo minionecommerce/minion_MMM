@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useRouter } from 'next/navigation';
-import { AlertCircle, Calculator, LayoutTemplate, RefreshCw, Search, Settings, X } from 'lucide-react';
+import { AlertCircle, Calculator, LayoutTemplate, RefreshCw, Settings, X } from 'lucide-react';
 import { ApiError, callApi } from '@/lib/leads/client';
 import { useToast } from '@/components/ui/Toast';
 import { cleanValue } from '@/lib/records/values';
@@ -13,8 +13,10 @@ import { initialValue, isBlankValue, searchLookup, toFormValue, toPayloadValue, 
 import QField, { QFiles, SLUG, shownFor, type QCtx } from './QField';
 import LineItems from './LineItems';
 import CalcPanel from './CalcPanel';
-import { CustomerModal, CustomerSearchModal, NumberingModal } from './modals';
-import { Button, Combo, FormRow, Spinner, inputClass, type ComboItem } from './ui';
+import { NumberingModal } from './modals';
+import CustomerPicker from '../customers/CustomerPicker';
+import { Button, Combo, FormRow, Spinner, inputClass } from './ui';
+import { defaultTaxId } from '@/lib/quotes/taxes';
 import { blankLine, calcFromDto, computeTotals, emptyCalc, lineFromDto, lineToInput, type CalcState, type LineState } from './form-state';
 
 const EMPTY_REFS: RecordRefs = { users: {}, deals: {}, materialVendors: {}, serviceVendors: {}, lookups: {} };
@@ -49,7 +51,7 @@ export default function QuoteForm({ mode, layout, settings, quote, nextNumber, u
     if (!quote && settings.templates.defaultValidDays && 'expiryDate' in v && !v.expiryDate) v.expiryDate = addDays(typeof v.date === 'string' && v.date ? v.date : today, settings.templates.defaultValidDays);
     return v;
   });
-  const [lines, setLinesState] = useState<LineState[]>(() => (quote?.lines.length ? quote.lines.map(lineFromDto) : [blankLine()]));
+  const [lines, setLinesState] = useState<LineState[]>(() => (quote?.lines.length ? quote.lines.map(lineFromDto) : [blankLine(defaultTaxId(settings.taxes))]));
   const [calc, setCalcState] = useState<CalcState>(() => (quote ? calcFromDto(quote.calc) : emptyCalc()));
   const [customer, setCustomer] = useState<CustomerDto | null>(quote?.customer ?? null);
   const [users, setUsers] = useState(usersIn);
@@ -63,8 +65,6 @@ export default function QuoteForm({ mode, layout, settings, quote, nextNumber, u
   const [manualNumber, setManualNumber] = useState<string | null>(null);
   const [numbering, setNumbering] = useState(false);
   const [layoutOpen, setLayoutOpen] = useState(false);
-  const [customerModal, setCustomerModal] = useState<{ name: string } | null>(null);
-  const [customerSearch, setCustomerSearch] = useState(false);
 
   const customerId = typeof values.customerId === 'string' ? values.customerId : '';
   const dateValue = typeof values.date === 'string' ? values.date : '';
@@ -124,16 +124,11 @@ export default function QuoteForm({ mode, layout, settings, quote, nextNumber, u
       const gst = fieldOf('customerGstin');
       if (gst?.enabled) next.customerGstin = c.gstin ?? '';
       const pos = fieldOf('placeOfSupply');
-      const code = (c.gstin ?? '').slice(0, 2);
+      const code = c.placeOfSupply || (c.gstin ?? '').slice(0, 2);
       if (pos?.enabled && pos.options.some(o => o.id === code)) next.placeOfSupply = code;
       return next;
     });
     setErrors(cur => Object.fromEntries(Object.entries(cur).filter(([k]) => k !== 'values.customerId')));
-  };
-
-  const searchCustomers = async (q: string): Promise<ComboItem[]> => {
-    const res = await callApi<{ items: (LookupItem & { customer: CustomerDto })[] }>(`/api/quotes/customers?q=${encodeURIComponent(q)}`, 'GET');
-    return res.items.map(i => ({ id: i.id, label: i.label, sub: i.sub, tag: i.tag, data: i.customer }));
   };
 
   const refreshUsers = async () => {
@@ -244,27 +239,17 @@ export default function QuoteForm({ mode, layout, settings, quote, nextNumber, u
   };
 
   const customerBox = (f: LayoutField, id: string) => (
-    <div className="flex items-start gap-0 max-w-full">
-      <Combo
-        htmlId={id}
-        className="w-[509px] max-w-[calc(100%-27px)]"
-        value={customerId || null}
-        shown={customerId ? (picked[customerId] || customer?.name || quote?.refs.lookups?.customer?.[customerId] || '') : ''}
-        search={searchCustomers}
-        placeholder="Select or add a customer"
-        ariaLabel={f.label}
-        invalid={!!errors[`values.${f.key}`]}
-        emptyText="No customers found"
-        onChange={(cid, item) => {
-          if (cid && item?.data) applyCustomer(item.data as CustomerDto);
-          else { setValue('customerId', ''); setCustomer(null); }
-        }}
-        footer={close => (
-          <button type="button" onClick={() => { close(); setCustomerModal({ name: '' }); }} className="w-full flex items-center gap-2 px-3 h-[32px] text-[13px] text-[#548df6] hover:bg-[#f1f1fa]">+ New Customer</button>
-        )}
-      />
-      <button type="button" onClick={() => setCustomerSearch(true)} aria-label="Search customers" title="Search customers" className="w-[34px] h-[34px] shrink-0 rounded-r-[4px] bg-[#548df6] hover:bg-[#4a82ea] text-white flex items-center justify-center -ml-px"><Search className="w-3.5 h-3.5" /></button>
-    </div>
+    <CustomerPicker
+      htmlId={id}
+      label={f.label}
+      customerId={customerId}
+      shown={customerId ? (picked[customerId] || customer?.name || quote?.refs.lookups?.customer?.[customerId] || '') : ''}
+      invalid={!!errors[`values.${f.key}`]}
+      canCreate
+      canEdit
+      onPick={c => applyCustomer(c)}
+      onClear={() => { setValue('customerId', ''); setCustomer(null); }}
+    />
   );
 
   const projectBox = (f: LayoutField, id: string) => (
@@ -430,7 +415,7 @@ export default function QuoteForm({ mode, layout, settings, quote, nextNumber, u
       }
       nodes.push(
         <div key={section.id} className="mt-[40px]">
-          <LineItems title={section.label} lines={lines} setLines={setLines} columns={itemColumns} settings={settings} amounts={totals.lines.map(l => l.amount)} errors={errors} ctx={ctx} canAddItem={abilities.create || abilities.edit} aside={right} below={left} />
+          <LineItems title={section.label} lines={lines} setLines={setLines} columns={itemColumns} settings={settings} amounts={totals.lines.map(l => l.amount)} errors={errors} ctx={ctx} canAddItem={abilities.create} canEditItem={abilities.edit} aside={right} below={left} />
         </div>,
       );
       return;
@@ -517,8 +502,6 @@ export default function QuoteForm({ mode, layout, settings, quote, nextNumber, u
           onSaved={() => { setNumbering(false); void refreshPreview(mode === 'create' && /^\d{4}-\d{2}-\d{2}$/.test(dateValue) ? dateValue : today); router.refresh(); }}
         />
       )}
-      {customerModal && <CustomerModal initialName={customerModal.name} onClose={() => setCustomerModal(null)} onCreated={c => { setCustomerModal(null); setCustomerSearch(false); applyCustomer(c); toast.success(`${c.name} added`); }} />}
-      {customerSearch && <CustomerSearchModal onClose={() => setCustomerSearch(false)} onPick={c => { setCustomerSearch(false); applyCustomer(c); }} onNew={name => { setCustomerSearch(false); setCustomerModal({ name }); }} />}
     </div>
   );
 }

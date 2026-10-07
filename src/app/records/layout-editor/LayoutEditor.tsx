@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  AlignLeft, BadgeCheck, Calendar, CalendarClock, CheckSquare, ChevronDown, CircleDollarSign, EyeOff, FileUp, Hash, LayoutTemplate, Link2, Lock,
+  AlignLeft, BadgeCheck, Calendar, CalendarClock, CheckSquare, ChevronDown, CircleDollarSign, EyeOff, FileUp, Hash, LayoutTemplate, Link2, ListChecks, Lock,
   Calculator, Mail, MoreHorizontal, Phone, Plus, Search, SquareChevronDown, Table2, Trash2, Type, UserRound, X, type LucideIcon,
 } from 'lucide-react';
 import { ApiError, callApi } from '@/lib/leads/client';
@@ -22,7 +22,7 @@ import FieldProperties from './FieldProperties';
 
 const ICONS: Record<FieldType, LucideIcon> = {
   TEXT: Type, TEXTAREA: AlignLeft, NUMBER: Hash, CURRENCY: CircleDollarSign, DATE: Calendar, DATETIME: CalendarClock, EMAIL: Mail, PHONE: Phone, URL: Link2,
-  CHECKBOX: CheckSquare, DROPDOWN: SquareChevronDown, USER: UserRound, FILE: FileUp, AUTO: Lock, LOOKUP: Search, APPROVER: BadgeCheck, CALC: Calculator,
+  CHECKBOX: CheckSquare, DROPDOWN: SquareChevronDown, MULTISELECT: ListChecks, USER: UserRound, FILE: FileUp, AUTO: Lock, LOOKUP: Search, APPROVER: BadgeCheck, CALC: Calculator,
 };
 const field = 'w-full border border-gray-300 rounded px-3 h-[38px] text-[14px] text-gray-900 bg-white focus:outline-none focus:border-[#f5b800]';
 
@@ -166,7 +166,7 @@ export function LayoutEditor({ moduleId, initial, onClose }: { moduleId: ModuleI
       </button>
       {typeMenu === scope && (
         <div role="menu" aria-label="Field type" className="absolute right-0 top-full mt-1 z-30 w-64 max-h-[60vh] overflow-y-auto bg-white border border-gray-200 rounded-lg shadow-xl py-1">
-          {CUSTOM_FIELD_TYPES.filter(t => (!tableOnly || TABLE_COLUMN_TYPES.has(t.type)) && (t.type !== 'LOOKUP' || def.allowLookupFields)).map(t => {
+          {CUSTOM_FIELD_TYPES.filter(t => (!tableOnly || TABLE_COLUMN_TYPES.has(t.type)) && (t.type !== 'LOOKUP' || def.allowLookupFields) && (t.type !== 'MULTISELECT' || def.allowMultiSelect)).map(t => {
             const Icon = ICONS[t.type];
             return (
               <button key={t.type} role="menuitem" onClick={() => { setTypeMenu(null); setEditing({ field: null, createType: t.type, section: sectionId }); }} className="w-full flex items-center gap-3 px-3 py-2 text-left hover:bg-gray-50">
@@ -344,7 +344,7 @@ export function LayoutEditor({ moduleId, initial, onClose }: { moduleId: ModuleI
               <p className="text-gray-500">The rest of each record is not changed. Are you sure you want to continue?</p>
             </>
           ) : (
-            <p>“{removing.field.label}” will be removed from the {def.label} form, record and list{removing.field.type === 'DROPDOWN' ? ', together with its options' : ''}.</p>
+            <p>“{removing.field.label}” will be removed from the {def.label} form, record and list{removing.field.type === 'DROPDOWN' || removing.field.type === 'MULTISELECT' ? ', together with its options' : ''}.</p>
           )}
         </LightConfirm>
       )}

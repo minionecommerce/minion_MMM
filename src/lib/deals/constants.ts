@@ -5,12 +5,16 @@ export const DEAL_SORT_KEYS = ["deal", "customer", "requirement", "assigned", "s
 export type DealSortKey = (typeof DEAL_SORT_KEYS)[number];
 
 // Quick filter buttons: the Leads page's, named for deals. They use the same ids and the same Status rules (Open / Follow-up / Closed);
-// there is no Pending button.
-export const DEAL_FILTERS: { id: LeadFilterId; label: string }[] = [
+// there is no Pending button. "Converted Deals" is the deals that became projects (Convert to Project): they are left out of every other
+// view and of the list itself, and only this button shows them.
+export const CONVERTED_FILTER = "converted";
+export type DealFilterId = LeadFilterId | typeof CONVERTED_FILTER;
+export const DEAL_FILTERS: { id: DealFilterId; label: string }[] = [
   { id: "open", label: "Open Deal" },
   { id: "follow_up", label: "Follow-up Deal" },
   { id: "revive", label: "Revive Deal" },
   { id: "today_followup", label: "Today Follow-up" },
+  { id: CONVERTED_FILTER, label: "Converted Deals" },
 ];
 
 // Which date the calendar's From / To range applies to, chosen with the funnel icon. Deal Created Date is the default.

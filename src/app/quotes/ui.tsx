@@ -108,7 +108,7 @@ export function Button({ children, onClick, type = 'button', kind = 'grey', disa
 // ---------------------------------------------------------------------------
 export type ComboItem = LookupItem & { data?: unknown };
 
-export function Combo({ htmlId, value, shown, items, search, onChange, placeholder, disabled, invalid, clearable, ariaLabel, emptyText = 'Nothing found', footer, icon, optionLabel, className = '' }: {
+export function Combo({ htmlId, value, shown, items, search, onChange, placeholder, disabled, invalid, clearable, ariaLabel, emptyText = 'Nothing found', footer, icon, optionLabel, className = '', searchable = true, creatable, roomy }: {
   htmlId?: string;
   value: string | null;
   shown: string;
@@ -123,8 +123,11 @@ export function Combo({ htmlId, value, shown, items, search, onChange, placehold
   emptyText?: string;
   footer?: (close: () => void) => ReactNode;
   icon?: ReactNode;
-  optionLabel?: (item: ComboItem) => ReactNode;
+  optionLabel?: (item: ComboItem, active: boolean) => ReactNode;
   className?: string;
+  searchable?: boolean; // false: a short list without the search box (a salutation, a language)
+  creatable?: boolean; // what was typed that is not in the list can be added: "Select or type to add"
+  roomy?: boolean; // taller, rounded rows (the customer list)
 }) {
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState('');
@@ -134,11 +137,15 @@ export function Combo({ htmlId, value, shown, items, search, onChange, placehold
   const [active, setActive] = useState(0);
   const box = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
+  const panel = useRef<HTMLDivElement>(null);
   const listId = useId();
   const close = useCallback(() => setOpen(false), []);
   useDismiss(open, close, box);
 
-  const results = items ? items.filter(i => `${i.label} ${i.sub ?? ''}`.toLowerCase().includes(q.trim().toLowerCase())) : found;
+  const matches = items ? items.filter(i => `${i.label} ${i.sub ?? ''}`.toLowerCase().includes(q.trim().toLowerCase())) : found;
+  const typed = q.trim();
+  const addable = !!creatable && typed !== '' && !matches.some(i => i.label.toLowerCase() === typed.toLowerCase());
+  const results: ComboItem[] = addable ? [{ id: typed, label: typed, data: { __new: '1' } }, ...matches] : matches;
 
   useEffect(() => {
     if (!open || !search) return;
@@ -164,7 +171,7 @@ export function Combo({ htmlId, value, shown, items, search, onChange, placehold
     setQ('');
     setActive(0);
     setOpen(true);
-    requestAnimationFrame(() => input.current?.focus());
+    requestAnimationFrame(() => (input.current ?? panel.current)?.focus());
   };
   const pick = (item: ComboItem) => { onChange(item.id, item); setOpen(false); };
   const onKey = (e: React.KeyboardEvent) => {
@@ -183,23 +190,27 @@ export function Combo({ htmlId, value, shown, items, search, onChange, placehold
         {value && clearable && !disabled && (
           <button type="button" onClick={() => onChange(null, null)} aria-label={`Clear ${ariaLabel}`} className="w-7 flex items-center justify-center text-[#e5484d] hover:bg-[#fdeeee]"><X className="w-4 h-4" /></button>
         )}
-        <span className="w-8 flex items-center justify-center text-[#6d7189] pointer-events-none"><ChevronDown className="w-4 h-4" /></span>
+        <span className={`w-8 flex items-center justify-center pointer-events-none ${open ? 'text-[#548df6]' : 'text-[#6d7189]'}`}><ChevronDown className={`w-4 h-4 ${open ? 'rotate-180' : ''}`} /></span>
       </div>
       {open && (
-        <div className="absolute left-0 min-w-full top-[calc(100%+3px)] z-50 bg-white border border-[#d7d5e1] rounded-[4px] shadow-[0_6px_20px_rgba(34,38,59,0.14)]" onKeyDown={onKey}>
-          <div className="p-2 border-b border-[#ebeaf2] relative">
-            <Search className="w-4 h-4 text-[#9ca0ab] absolute left-4 top-1/2 -translate-y-1/2" aria-hidden />
-            <input ref={input} value={q} onChange={e => setQ(e.target.value)} placeholder="Search" aria-label={`Search ${ariaLabel}`} aria-controls={listId} className="w-full h-[34px] pl-8 pr-8 border border-[#d7d5e1] rounded-[4px] text-[13px] text-[#22263b] focus:outline-none focus:border-[#548df6]" />
-            {busy && <Spinner className="w-3.5 h-3.5 text-[#9ca0ab] absolute right-4 top-1/2 -translate-y-1/2" />}
-          </div>
-          <ul id={listId} role="listbox" aria-label={ariaLabel} className="max-h-[240px] overflow-y-auto py-1">
+        <div ref={panel} tabIndex={-1} className="absolute left-0 min-w-full top-[calc(100%+3px)] z-50 bg-white border border-[#d7d5e1] rounded-[4px] shadow-[0_6px_20px_rgba(34,38,59,0.14)] focus:outline-none" onKeyDown={onKey}>
+          {searchable && (
+            <div className="p-2 border-b border-[#ebeaf2] relative">
+              <Search className="w-4 h-4 text-[#9ca0ab] absolute left-4 top-1/2 -translate-y-1/2" aria-hidden />
+              <input ref={input} value={q} onChange={e => setQ(e.target.value)} placeholder="Search" aria-label={`Search ${ariaLabel}`} aria-controls={listId} className="w-full h-[34px] pl-8 pr-8 border border-[#d7d5e1] rounded-[4px] text-[13px] text-[#22263b] focus:outline-none focus:border-[#548df6]" />
+              {busy && <Spinner className="w-3.5 h-3.5 text-[#9ca0ab] absolute right-4 top-1/2 -translate-y-1/2" />}
+            </div>
+          )}
+          <ul id={listId} role="listbox" aria-label={ariaLabel} className={`q-scroll max-h-[240px] overflow-y-auto py-1 ${roomy ? 'px-1.5' : ''}`}>
             {error && <li className="px-3 py-2 text-[13px] text-[#d9232b]">{error}</li>}
             {!error && results.length === 0 && !busy && <li className="px-3 py-2 text-[13px] text-[#6d7189]">{emptyText}</li>}
             {results.map((item, i) => (
               <li key={item.id} role="option" aria-selected={item.id === value}>
-                <button type="button" onClick={() => pick(item)} onMouseEnter={() => setActive(i)} className={`w-full text-left px-3 py-1.5 flex items-start gap-2 ${i === active ? 'bg-[#548df6] text-white' : ''}`}>
+                <button type="button" onClick={() => pick(item)} onMouseEnter={() => setActive(i)} className={`w-full text-left px-3 flex items-start gap-2 ${roomy ? 'py-2 rounded-[6px]' : 'py-1.5'} ${i === active ? 'bg-[#548df6] text-white' : ''}`}>
                   <span className="min-w-0 flex-1">
-                    {optionLabel ? optionLabel(item) : (
+                    {(item.data as { __new?: string } | undefined)?.__new ? (
+                      <span className="block text-[13px] truncate">+ Add &ldquo;{item.label}&rdquo;</span>
+                    ) : optionLabel ? optionLabel(item, i === active) : (
                       <>
                         <span className={`block text-[13px] truncate ${item.id === value && i !== active ? 'font-semibold' : ''}`}>{item.label}</span>
                         {item.sub && <span className={`block text-[12px] truncate ${i === active ? 'text-white/85' : 'text-[#6d7189]'}`}>{item.sub}</span>}
