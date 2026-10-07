@@ -23,9 +23,9 @@ export type QCtx = {
 };
 
 const uploadKey = (name: string) => `${name}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
-const KIND: Record<string, LookupKind> = { deal: 'deals', materialVendor: 'materialVendors', serviceVendor: 'serviceVendors', customer: 'customers', project: 'projects' };
-const PLACEHOLDER: Record<string, string> = { deal: 'Click to select Deal_Name', customer: 'Select or add a customer', project: 'Select a project' };
-const EMPTY: Record<string, string> = { deal: 'No deals found', customer: 'No customers found', project: 'No projects found' };
+const KIND: Record<string, LookupKind> = { deal: 'deals', materialVendor: 'materialVendors', serviceVendor: 'serviceVendors', customer: 'customers', project: 'projects', template: 'templates' };
+const PLACEHOLDER: Record<string, string> = { deal: 'Click to select Deal_Name', customer: 'Select or add a customer', project: 'Select a project', template: 'Click to select Name' };
+const EMPTY: Record<string, string> = { deal: 'No deals found', customer: 'No customers found', project: 'No projects found', template: 'No task templates found' };
 
 export function shownFor(f: LayoutField, id: string, ctx: QCtx): string {
   if (ctx.picked[id]) return ctx.picked[id];
@@ -34,8 +34,9 @@ export function shownFor(f: LayoutField, id: string, ctx: QCtx): string {
 }
 
 // A File Upload field in the style of the quote form: a dashed Upload File button, a line about the limits, the files as chips
-export function QFiles({ fieldKey, label, files, maxFiles, onChange, onBusy, disabled }: {
+export function QFiles({ fieldKey, label, files, maxFiles, onChange, onBusy, disabled, slug = SLUG }: {
   fieldKey: string; label: string; files: FileDto[]; maxFiles: number; onChange: (files: FileDto[]) => void; onBusy?: (delta: number) => void; disabled?: boolean;
+  slug?: string; // the module the files belong to (quotes by default; the Customer form uses customers)
 }) {
   const toast = useToast();
   const input = useRef<HTMLInputElement>(null);
@@ -53,7 +54,7 @@ export function QFiles({ fieldKey, label, files, maxFiles, onChange, onBusy, dis
       setUploading(u => [...u, key]);
       onBusy?.(1);
       try {
-        const saved = await uploadRecordFile(SLUG, fieldKey, file);
+        const saved = await uploadRecordFile(slug, fieldKey, file);
         fresh.current.add(saved.id);
         current.current = [...current.current, saved];
         onChange(current.current);
@@ -67,7 +68,7 @@ export function QFiles({ fieldKey, label, files, maxFiles, onChange, onBusy, dis
   };
   const remove = (file: FileDto) => {
     onChange(files.filter(f => f.id !== file.id));
-    if (fresh.current.has(file.id)) { fresh.current.delete(file.id); void discardRecordFile(SLUG, file.id); }
+    if (fresh.current.has(file.id)) { fresh.current.delete(file.id); void discardRecordFile(slug, file.id); }
   };
 
   return (
@@ -172,7 +173,7 @@ export default function QField({ f, value, onChange, error, ctx, id, compact, in
           invalid={invalid}
           clearable
           emptyText={EMPTY[lookup] ?? 'Nothing found'}
-          icon={lookup === 'deal' ? <Search className="w-3.5 h-3.5 text-[#9ca0ab] shrink-0" aria-hidden /> : undefined}
+          icon={lookup === 'deal' || lookup === 'template' ? <Search className="w-3.5 h-3.5 text-[#9ca0ab] shrink-0" aria-hidden /> : undefined}
         />
       );
     }

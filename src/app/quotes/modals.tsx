@@ -2,87 +2,19 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { Search } from 'lucide-react';
-import { ApiError, callApi } from '@/lib/leads/client';
+import { callApi } from '@/lib/leads/client';
 import { useToast } from '@/components/ui/Toast';
 import { formatFy, renderNumber, validatePattern } from '@/lib/quotes/numbering';
-import { FY_FORMATS, type CustomerDto, type ItemDto, type NumberingSettings, type QuoteSettings, type TaxDef } from '@/lib/quotes/types';
+import { FY_FORMATS, type CustomerDto, type NumberingSettings, type QuoteSettings } from '@/lib/quotes/types';
 import { Button, Modal, Spinner, inputClass } from './ui';
 
 const label = 'block text-[13px] text-[#22263b] mb-1';
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
-const CUSTOMER_TYPES = ['Individual', 'Company', 'Builder', 'Architect', 'Interior Designer', 'Contractor'];
-
-// ---------------------------------------------------------------------------
-// New customer (from the quote form). The same phone or email is refused; the same name asks first.
-// ---------------------------------------------------------------------------
-type Dup = { message: string; hard: boolean; existing: CustomerDto };
-
-export function CustomerModal({ initialName = '', onClose, onCreated }: { initialName?: string; onClose: () => void; onCreated: (c: CustomerDto) => void }) {
-  const [form, setForm] = useState({ name: initialName, phone: '', email: '', gstin: '', customerType: 'Individual', address: '' });
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [dup, setDup] = useState<Dup | null>(null);
-  const set = (k: keyof typeof form, v: string) => { setForm(f => ({ ...f, [k]: v })); setDup(null); setError(''); };
-
-  const save = async (force = false) => {
-    if (!form.name.trim()) { setError('The customer name is required.'); return; }
-    setBusy(true);
-    setError('');
-    try {
-      const res = await callApi<{ customer: CustomerDto }>('/api/quotes/customers', 'POST', { ...form, ...(force ? { force: true } : {}) });
-      onCreated(res.customer);
-    } catch (e) {
-      const body = e instanceof ApiError ? (e.body as unknown as { code?: string; hard?: boolean; existing?: CustomerDto } | undefined) : undefined;
-      if (body?.code === 'DUPLICATE' && body.existing) setDup({ message: (e as Error).message, hard: !!body.hard, existing: body.existing });
-      else setError(e instanceof Error ? e.message : 'Could not save the customer');
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <Modal title="New Customer" onClose={onClose} busy={busy} width={560} footer={(
-      <>
-        <Button onClick={onClose} disabled={busy}>Cancel</Button>
-        <Button kind="blue" onClick={() => save(false)} busy={busy}>Save</Button>
-      </>
-    )}>
-      <form onSubmit={e => { e.preventDefault(); void save(false); }} className="space-y-3">
-        {error && <p role="alert" className="text-[13px] text-[#d9232b]">{error}</p>}
-        {dup && (
-          <div role="alert" className="rounded-[4px] border border-[#f3c97a] bg-[#fff8e6] px-3 py-2 text-[13px]">
-            <p>{dup.message}</p>
-            <p className="mt-1 text-[#6d7189]">{dup.existing.name}{dup.existing.phone ? ` · ${dup.existing.phone}` : ''}{dup.existing.email ? ` · ${dup.existing.email}` : ''}</p>
-            <div className="mt-2 flex gap-2">
-              <Button kind="blue" onClick={() => onCreated(dup.existing)}>Use this customer</Button>
-              {!dup.hard && <Button onClick={() => save(true)} busy={busy}>Add as a new customer</Button>}
-            </div>
-          </div>
-        )}
-        <div>
-          <label htmlFor="nc-name" className={`${label} text-[#d93b3b]`}>Customer Name*</label>
-          <input id="nc-name" autoFocus value={form.name} onChange={e => set('name', e.target.value)} maxLength={200} className={inputClass()} />
-        </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-          <div><label htmlFor="nc-phone" className={label}>Phone</label><input id="nc-phone" value={form.phone} onChange={e => set('phone', e.target.value)} maxLength={30} inputMode="tel" className={inputClass()} /></div>
-          <div><label htmlFor="nc-email" className={label}>Email</label><input id="nc-email" type="email" value={form.email} onChange={e => set('email', e.target.value)} maxLength={200} className={inputClass()} /></div>
-          <div><label htmlFor="nc-gstin" className={label}>GSTIN</label><input id="nc-gstin" value={form.gstin} onChange={e => set('gstin', e.target.value.toUpperCase())} maxLength={20} className={inputClass()} /></div>
-          <div>
-            <label htmlFor="nc-type" className={label}>Customer Type</label>
-            <select id="nc-type" value={form.customerType} onChange={e => set('customerType', e.target.value)} className={inputClass()}>{CUSTOMER_TYPES.map(t => <option key={t} value={t}>{t}</option>)}</select>
-          </div>
-        </div>
-        <div><label htmlFor="nc-address" className={label}>Billing Address</label><textarea id="nc-address" value={form.address} onChange={e => set('address', e.target.value)} maxLength={1000} rows={3} className={`${inputClass()} h-auto py-1.5`} /></div>
-        <button type="submit" hidden aria-hidden />
-      </form>
-    </Modal>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Search customers (the blue button next to Customer Name)
 // ---------------------------------------------------------------------------
-export function CustomerSearchModal({ onClose, onPick, onNew }: { onClose: () => void; onPick: (c: CustomerDto) => void; onNew: (name: string) => void }) {
+export function CustomerSearchModal({ onClose, onPick, onNew }: { onClose: () => void; onPick: (c: CustomerDto) => void; onNew?: (name: string) => void }) {
   const [q, setQ] = useState('');
   const [items, setItems] = useState<{ id: string; customer: CustomerDto }[]>([]);
   const [busy, setBusy] = useState(true);
@@ -103,7 +35,7 @@ export function CustomerSearchModal({ onClose, onPick, onNew }: { onClose: () =>
     return () => { live = false; clearTimeout(t); };
   }, [q]);
   return (
-    <Modal title="Search Customer" onClose={onClose} width={720} footer={<Button kind="ghost" onClick={() => onNew(q.trim())}>+ New Customer</Button>}>
+    <Modal title="Search Customer" onClose={onClose} width={760} footer={onNew ? <Button kind="ghost" onClick={() => onNew(q.trim())}>+ Add New Customer</Button> : undefined}>
       <div className="relative mb-3">
         <Search className="w-3.5 h-3.5 text-[#9ca0ab] absolute left-2.5 top-1/2 -translate-y-1/2" aria-hidden />
         <input autoFocus value={q} onChange={e => setQ(e.target.value)} placeholder="Name, phone, email or customer code" aria-label="Search customers" className={inputClass(false, 'pl-8')} />
@@ -112,14 +44,14 @@ export function CustomerSearchModal({ onClose, onPick, onNew }: { onClose: () =>
       {error && <p className="text-[13px] text-[#d9232b]">{error}</p>}
       <div className="border border-[#ebeaf2] rounded-[4px] overflow-hidden">
         <table className="w-full text-[13px]">
-          <thead className="bg-[#f9f9fb] text-[#6d7189] text-[12px] uppercase"><tr><th className="text-left px-3 h-[34px] font-medium">Name</th><th className="text-left px-3 font-medium">Phone</th><th className="text-left px-3 font-medium">Email</th><th className="text-left px-3 font-medium">GSTIN</th></tr></thead>
+          <thead className="bg-[#f9f9fb] text-[#6d7189] text-[12px] uppercase"><tr><th className="text-left px-3 h-[34px] font-medium">Name</th><th className="text-left px-3 font-medium">Customer No</th><th className="text-left px-3 font-medium">Phone</th><th className="text-left px-3 font-medium">Email</th><th className="text-left px-3 font-medium">GSTIN</th></tr></thead>
           <tbody>
             {items.map(i => (
               <tr key={i.id} onClick={() => onPick(i.customer)} className="h-[34px] border-t border-[#ebeaf2] cursor-pointer hover:bg-[#f1f1fa]">
-                <td className="px-3 text-[#355bd4]">{i.customer.name}</td><td className="px-3">{i.customer.phone ?? ''}</td><td className="px-3 truncate max-w-[200px]">{i.customer.email ?? ''}</td><td className="px-3">{i.customer.gstin ?? ''}</td>
+                <td className="px-3 text-[#355bd4]">{i.customer.name}</td><td className="px-3 whitespace-nowrap">{i.customer.code ?? ''}</td><td className="px-3">{i.customer.phone ?? ''}</td><td className="px-3 truncate max-w-[200px]">{i.customer.email ?? ''}</td><td className="px-3">{i.customer.gstin ?? ''}</td>
               </tr>
             ))}
-            {!busy && items.length === 0 && <tr><td colSpan={4} className="px-3 py-6 text-center text-[#6d7189]">No customers found</td></tr>}
+            {!busy && items.length === 0 && <tr><td colSpan={5} className="px-3 py-6 text-center text-[#6d7189]">No customers found</td></tr>}
           </tbody>
         </table>
       </div>
@@ -225,61 +157,6 @@ export function NumberingModal({ settings, canEdit, day, onClose, onSaved }: {
           <p className="mt-1 text-[#6d7189]">It has to be higher than every number already used in this series. Deleted quotes keep their numbers.</p>
         </div>
       </div>
-    </Modal>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// An item of the catalogue
-// ---------------------------------------------------------------------------
-export function ItemModal({ item, taxes, onClose, onSaved, initialName = '' }: { item?: ItemDto; taxes: TaxDef[]; onClose: () => void; onSaved: (item: ItemDto) => void; initialName?: string }) {
-  const [form, setForm] = useState({ name: item?.name ?? initialName, description: item?.description ?? '', hsn: item?.hsn ?? '', unit: item?.unit ?? '', rate: item ? String(item.rate) : '', taxId: item?.taxId ?? '', kind: item?.kind ?? 'Goods', isActive: item?.isActive ?? true });
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const set = (k: keyof typeof form, v: string | boolean) => { setForm(f => ({ ...f, [k]: v })); setError(''); };
-  const save = async () => {
-    setBusy(true);
-    setError('');
-    try {
-      const body = { ...form, rate: form.rate === '' ? 0 : Number(form.rate), taxId: form.taxId || null };
-      const res = item ? await callApi<{ item: ItemDto }>(`/api/quotes/items/${item.id}`, 'PUT', body) : await callApi<{ item: ItemDto }>('/api/quotes/items', 'POST', body);
-      onSaved(res.item);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Could not save the item');
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <Modal title={item ? 'Edit Item' : 'New Item'} onClose={onClose} busy={busy} width={560} footer={(
-      <>
-        <Button onClick={onClose} disabled={busy}>Cancel</Button>
-        <Button kind="blue" onClick={save} busy={busy}>Save</Button>
-      </>
-    )}>
-      <form onSubmit={e => { e.preventDefault(); void save(); }} className="space-y-3">
-        {error && <p role="alert" className="text-[13px] text-[#d9232b]">{error}</p>}
-        <div><label htmlFor="it-name" className={`${label} text-[#d93b3b]`}>Name*</label><input id="it-name" autoFocus value={form.name} onChange={e => set('name', e.target.value)} maxLength={500} className={inputClass()} /></div>
-        <div><label htmlFor="it-desc" className={label}>Description</label><textarea id="it-desc" value={form.description} onChange={e => set('description', e.target.value)} maxLength={2000} rows={2} className={`${inputClass()} h-auto py-1.5`} /></div>
-        <div className="grid grid-cols-2 gap-3">
-          <div><label htmlFor="it-rate" className={label}>Rate</label><input id="it-rate" inputMode="decimal" value={form.rate} onChange={e => set('rate', e.target.value)} className={inputClass()} /></div>
-          <div>
-            <label htmlFor="it-tax" className={label}>Tax</label>
-            <select id="it-tax" value={form.taxId} onChange={e => set('taxId', e.target.value)} className={inputClass()}>
-              <option value="">No tax</option>
-              {taxes.filter(t => t.active || t.id === item?.taxId).map(t => <option key={t.id} value={t.id}>{t.name} [{t.rate}%]</option>)}
-            </select>
-          </div>
-          <div><label htmlFor="it-hsn" className={label}>HSN/SAC</label><input id="it-hsn" value={form.hsn} onChange={e => set('hsn', e.target.value)} maxLength={20} className={inputClass()} /></div>
-          <div><label htmlFor="it-unit" className={label}>Unit</label><input id="it-unit" value={form.unit} onChange={e => set('unit', e.target.value)} maxLength={20} placeholder="nos" className={inputClass()} /></div>
-          <div>
-            <label htmlFor="it-kind" className={label}>Type</label>
-            <select id="it-kind" value={form.kind} onChange={e => set('kind', e.target.value)} className={inputClass()}><option value="Goods">Goods</option><option value="Service">Service</option></select>
-          </div>
-          <label className="flex items-end gap-2 pb-1 text-[13px]"><input type="checkbox" className="q-check" checked={form.isActive} onChange={e => set('isActive', e.target.checked)} /> Active</label>
-        </div>
-        <button type="submit" hidden aria-hidden />
-      </form>
     </Modal>
   );
 }

@@ -97,9 +97,13 @@ function cleanLabel(raw: string, max: number, what: string) {
   return label;
 }
 
+// The names of the fields that are on the form. A system field that was taken off the form (Requirements, Source, the categories) keeps its row but is not
+// a field any more, so its name can be used again.
+const FORM_FIELD_KEYS = [...SYSTEM_FIELDS.map(d => d.key), "dealStatusId"];
+
 async function assertFieldLabelFree(db: Tx | typeof prisma, label: string, exceptId?: string) {
   const clash = await db.leadField.findFirst({
-    where: { label: { equals: label, mode: "insensitive" }, ...(exceptId ? { id: { not: exceptId } } : {}) },
+    where: { label: { equals: label, mode: "insensitive" }, OR: [{ isSystem: false }, { key: { in: FORM_FIELD_KEYS } }], ...(exceptId ? { id: { not: exceptId } } : {}) },
     select: { id: true },
   });
   if (clash) throw new ServiceError(409, `Another field is already called "${label}".`);
@@ -301,7 +305,6 @@ const REFERENCE_FIELDS = {
   PRODUCT_OR_SERVICE: "productOrServiceId",
   REQUIREMENT: "requirementId",
   MAIN_CATEGORY: "mainCategoryId",
-  CATEGORY: "categoryId",
   SUBCATEGORY: "subcategoryId",
   LEAD_STATUS: "leadStatusId",
   LEAD_TYPE: "leadTypeId",

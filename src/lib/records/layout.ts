@@ -16,7 +16,7 @@ import { writeAudit, type SecurityAction } from "@/lib/audit";
 import { ServiceError } from "@/lib/users/service";
 import { assertSuperAdmin } from "@/lib/users/layout";
 import { removeObjects } from "@/lib/leads/storage";
-import { MODULES, type ModuleDef, type SystemField } from "./registry";
+import { MODULES, PROJECT_STATUS_DEFAULT, PROJECT_TEMPLATE_FIELD, type ModuleDef, type SystemField } from "./registry";
 import {
   CUSTOM_TYPE_SET, CURRENCY_CODES, DEFAULT_CURRENCY, FIELD_LABEL_MAX, MAX_CUSTOM_FIELDS, MAX_CUSTOM_SECTIONS, MAX_OPTIONS, OPTION_LABEL_MAX,
   SECTION_LABEL_MAX, TABLE_COLUMN_TYPES, typeChoicesFor,
@@ -138,7 +138,7 @@ export function buildLayout(def: ModuleDef, stored: Stored): ModuleLayoutDto {
   for (const c of stored.custom ?? []) {
     const inTable = tableSections.has(c.section);
     const section = inTable ? c.section : formIds.has(c.section) ? c.section : firstForm;
-    const options = c.type === "DROPDOWN" && Array.isArray(c.options) ? c.options : [];
+    const options = (c.type === "DROPDOWN" || c.type === "MULTISELECT") && Array.isArray(c.options) ? c.options : [];
     const currency = c.type === "CURRENCY" ? c.currency ?? DEFAULT_CURRENCY : DEFAULT_CURRENCY;
     fields.push({
       key: c.key,
@@ -152,8 +152,8 @@ export function buildLayout(def: ModuleDef, stored: Stored): ModuleLayoutDto {
       readOnly: false,
       inList: false,
       listable: !inTable && c.type !== "FILE",
-      defaultValue: c.type === "DROPDOWN" && c.defaultValue && !options.some(x => x.id === c.defaultValue) ? null : c.defaultValue ?? null,
-      defaultable: c.type !== "FILE" && c.type !== "LOOKUP",
+      defaultValue: c.type === "MULTISELECT" || (c.type === "DROPDOWN" && c.defaultValue && !options.some(x => x.id === c.defaultValue)) ? null : c.defaultValue ?? null,
+      defaultable: c.type !== "FILE" && c.type !== "LOOKUP" && c.type !== "MULTISELECT",
       options,
       lookup: c.type === "LOOKUP" && c.lookup && LOOKUP_TARGET_SET.has(c.lookup) ? c.lookup : null,
       prefix: c.type === "CURRENCY" ? currency : null,
@@ -233,7 +233,7 @@ function cleanOptionName(raw: string, existing: FieldOption[], exceptId?: string
 }
 
 function newOptions(names: string[]): FieldOption[] {
-  if (names.length > MAX_OPTIONS) throw new ServiceError(400, `A dropdown can have up to ${MAX_OPTIONS} options.`);
+  if (names.length > MAX_OPTIONS) throw new ServiceError(400, `A list can have up to ${MAX_OPTIONS} options.`);
   const options: FieldOption[] = [];
   for (const raw of names) options.push({ id: newOptionId(), label: cleanOptionName(raw, options) });
   return options;
@@ -280,11 +280,27 @@ function tableOf(def: ModuleDef, f: LayoutField) {
   return def.tables.find(t => t.section === f.section) ?? null;
 }
 
+// A project template is also the Work Type of Pre-Payment Records and the Task Template of items and quote lines: those count as uses of the template too
+const isTemplateOption = (moduleId: ModuleId, f: LayoutField, optionId?: string) => moduleId === "project" && f.key === PROJECT_TEMPLATE_FIELD && optionId !== undefined;
+
 export async function fieldUsage(moduleId: ModuleId, f: LayoutField, optionId?: string): Promise<number> {
+  const own = await ownFieldUsage(moduleId, f, optionId);
+  if (!isTemplateOption(moduleId, f, optionId)) return own;
+  const [pprs, items, lines] = await Promise.all([
+    prisma.prePayment.count({ where: { workTypeId: optionId, deletedAt: null } }),
+    prisma.catalogItem.count({ where: { taskTemplateId: optionId, deletedAt: null } }),
+    prisma.quoteItem.count({ where: { taskTemplateId: optionId, quote: { deletedAt: null } } }),
+  ]);
+  return own + pprs + items + lines;
+}
+
+async function ownFieldUsage(moduleId: ModuleId, f: LayoutField, optionId?: string): Promise<number> {
   const def = MODULES[moduleId];
   const table = tableOf(def, f);
   const parent = Prisma.raw(`"${def.table}"`);
   const key = f.key;
+  // a table without a deletedAt column (Customers) has no removed records to leave out
+  const alive = def.hardRecords ? Prisma.empty : Prisma.sql` AND "deletedAt" IS NULL`;
   if (f.type === "FILE") {
     const rows = await prisma.$queryRaw<{ n: number }[]>`SELECT count(DISTINCT "recordId")::int AS n FROM "ModuleFile" WHERE "module" = ${moduleId} AND "fieldKey" = ${key} AND "status" = 'READY' AND "deletedAt" IS NULL AND "recordId" IS NOT NULL`;
     return rows[0]?.n ?? 0;
@@ -293,20 +309,25 @@ export async function fieldUsage(moduleId: ModuleId, f: LayoutField, optionId?: 
     // A real column
     const where = optionId === undefined ? { [key]: { not: null } } : { [key]: optionId };
     const delegate = (prisma as unknown as Record<string, { count(args: unknown): Promise<number> }>)[table ? table.model : def.model];
-    return delegate.count({ where: table ? { ...where, [parentRelationOf(table)]: { deletedAt: null } } : { ...where, deletedAt: null } });
+    return delegate.count({ where: table ? { ...where, [parentRelationOf(table)]: { deletedAt: null } } : def.hardRecords ? where : { ...where, deletedAt: null } });
   }
-  // Stored in customFields
+  // Stored in customFields. A Multi-select holds a list of option ids: it uses an option when the id is in that list.
+  const several = f.type === "MULTISELECT";
   if (table) {
     const rowTable = Prisma.raw(`"${table.table}"`);
     const fk = Prisma.raw(`r."${parentKeyOf(table)}"`);
     const rows = optionId === undefined
       ? await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM ${rowTable} r JOIN ${parent} p ON p."id" = ${fk} WHERE p."deletedAt" IS NULL AND jsonb_exists(r."customFields", ${key}::text)`
-      : await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM ${rowTable} r JOIN ${parent} p ON p."id" = ${fk} WHERE p."deletedAt" IS NULL AND r."customFields"->>${key}::text = ${optionId}`;
+      : several
+        ? await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM ${rowTable} r JOIN ${parent} p ON p."id" = ${fk} WHERE p."deletedAt" IS NULL AND jsonb_typeof(r."customFields"->${key}::text) = 'array' AND jsonb_exists(r."customFields"->${key}::text, ${optionId}::text)`
+        : await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM ${rowTable} r JOIN ${parent} p ON p."id" = ${fk} WHERE p."deletedAt" IS NULL AND r."customFields"->>${key}::text = ${optionId}`;
     return rows[0]?.n ?? 0;
   }
   const rows = optionId === undefined
-    ? await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM ${parent} WHERE "deletedAt" IS NULL AND jsonb_exists("customFields", ${key}::text)`
-    : await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM ${parent} WHERE "deletedAt" IS NULL AND "customFields"->>${key}::text = ${optionId}`;
+    ? await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM ${parent} WHERE jsonb_exists("customFields", ${key}::text)${alive}`
+    : several
+      ? await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM ${parent} WHERE jsonb_typeof("customFields"->${key}::text) = 'array' AND jsonb_exists("customFields"->${key}::text, ${optionId}::text)${alive}`
+      : await prisma.$queryRaw<{ n: number }[]>`SELECT count(*)::int AS n FROM ${parent} WHERE "customFields"->>${key}::text = ${optionId}${alive}`;
   return rows[0]?.n ?? 0;
 }
 
@@ -315,6 +336,19 @@ async function clearValues(tx: Tx, moduleId: ModuleId, f: LayoutField, optionId?
   const def = MODULES[moduleId];
   const table = tableOf(def, f);
   const key = f.key;
+  if (moduleId === "project" && key === "status" && optionId !== undefined) {
+    // Project.status cannot be empty: the projects that had the removed status move to the first status that is left
+    const next = f.options.find(o => o.id !== optionId)?.id ?? PROJECT_STATUS_DEFAULT;
+    await tx.$executeRaw`UPDATE "Project" SET "status" = ${next} WHERE "status" = ${optionId}`;
+    return;
+  }
+  if (isTemplateOption(moduleId, f, optionId)) {
+    // the Work Type of Pre-Payment Records, the Task Template of items and quote lines and the Completed tick of the template go with it
+    await tx.$executeRaw`UPDATE "PrePayment" SET "workTypeId" = NULL WHERE "workTypeId" = ${optionId}`;
+    await tx.$executeRaw`UPDATE "CatalogItem" SET "taskTemplateId" = NULL WHERE "taskTemplateId" = ${optionId}`;
+    await tx.$executeRaw`UPDATE "QuoteItem" SET "taskTemplateId" = NULL WHERE "taskTemplateId" = ${optionId}`;
+    await tx.$executeRaw`DELETE FROM "ProjectWorkCoverage" WHERE "templateId" = ${optionId}`;
+  }
   const target = Prisma.raw(`"${table ? table.table : def.table}"`);
   if (f.isSystem) {
     const column = Prisma.raw(`"${key}"`);
@@ -323,7 +357,13 @@ async function clearValues(tx: Tx, moduleId: ModuleId, f: LayoutField, optionId?
     return;
   }
   if (optionId === undefined) await tx.$executeRaw`UPDATE ${target} SET "customFields" = "customFields" - ${key}::text WHERE jsonb_exists("customFields", ${key}::text)`;
-  else await tx.$executeRaw`UPDATE ${target} SET "customFields" = "customFields" - ${key}::text WHERE "customFields"->>${key}::text = ${optionId}`;
+  else if (f.type === "MULTISELECT") {
+    // the option leaves every list that has it; a list that is left empty is removed (a Multi-select is never stored as an empty list)
+    await tx.$executeRaw`UPDATE ${target} t SET "customFields" = (
+        SELECT CASE WHEN count(*) = 0 THEN t."customFields" - ${key}::text ELSE jsonb_set(t."customFields", ARRAY[${key}::text], jsonb_agg(e)) END
+        FROM jsonb_array_elements(t."customFields"->${key}::text) AS e WHERE e <> to_jsonb(${optionId}::text)
+      ) WHERE jsonb_typeof(t."customFields"->${key}::text) = 'array' AND jsonb_exists(t."customFields"->${key}::text, ${optionId}::text)`;
+  } else await tx.$executeRaw`UPDATE ${target} SET "customFields" = "customFields" - ${key}::text WHERE "customFields"->>${key}::text = ${optionId}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -350,6 +390,7 @@ export async function createField(ctx: AuthContext, moduleId: ModuleId, input: N
   if (!CUSTOM_TYPE_SET.has(input.type)) throw new ServiceError(400, "Choose a field type from the list.");
   const type = input.type as CustomFieldType;
   if (type === "LOOKUP" && !MODULES[moduleId].allowLookupFields) throw new ServiceError(400, "Choose a field type from the list.");
+  if (type === "MULTISELECT" && !MODULES[moduleId].allowMultiSelect) throw new ServiceError(400, "Choose a field type from the list.");
   const layout = await getLayout(moduleId);
   const sectionId = input.section ?? layout.sections.find(s => s.kind === "FORM")!.id;
   const section = sectionOf(layout, sectionId);
@@ -368,8 +409,9 @@ export async function createField(ctx: AuthContext, moduleId: ModuleId, input: N
 
   let options: FieldOption[] = [];
   let defaultValue: string | null = null;
-  if (type === "DROPDOWN") {
+  if (type === "DROPDOWN" || type === "MULTISELECT") {
     options = newOptions(input.options ?? []);
+    if (type === "MULTISELECT" && (input.defaultOption !== undefined && input.defaultOption !== null || input.defaultValue)) throw new ServiceError(400, "A multi-select field cannot have a default value.");
     if (input.defaultOption !== undefined && input.defaultOption !== null) {
       const chosen = options[input.defaultOption];
       if (!chosen) throw new ServiceError(400, "Default value must be one of the options in the list.");
@@ -393,7 +435,7 @@ export async function createField(ctx: AuthContext, moduleId: ModuleId, input: N
     custom: [...(s.custom ?? []), field],
     order: [...current.fields.map(f => f.key), field.key],
     ...(wantsColumn ? { columns: [...current.columns, field.key] } : {}),
-  }), { action: "MODULE_FIELD_CREATED", newValue: { key: field.key, label, type, section: sectionId, required: field.required, ...(type === "DROPDOWN" ? { options: options.map(o => o.label) } : {}) } });
+  }), { action: "MODULE_FIELD_CREATED", newValue: { key: field.key, label, type, section: sectionId, required: field.required, ...(type === "DROPDOWN" || type === "MULTISELECT" ? { options: options.map(o => o.label) } : {}) } });
   return { field: next.fields.find(f => f.key === field.key)!, layout: next };
 }
 
@@ -415,7 +457,7 @@ export async function updateField(ctx: AuthContext, moduleId: ModuleId, key: str
   }
   if (patch.required !== undefined && patch.required !== f.required) {
     if (f.requiredLocked || f.type === "CALC") throw new ServiceError(400, "This property cannot be changed for this system field.");
-    if (patch.required && f.type === "DROPDOWN" && f.options.length === 0) throw new ServiceError(400, `Add at least one option before making "${f.label}" required.`);
+    if (patch.required && (f.type === "DROPDOWN" || f.type === "MULTISELECT") && f.options.length === 0) throw new ServiceError(400, `Add at least one option before making "${f.label}" required.`);
     change.required = patch.required;
   }
   if (patch.enabled !== undefined && patch.enabled !== f.enabled) {
@@ -541,7 +583,7 @@ export async function setColumns(ctx: AuthContext, moduleId: ModuleId, orderedKe
 async function dropdown(moduleId: ModuleId, key: string) {
   const layout = await getLayout(moduleId);
   const f = fieldOf(layout, key);
-  if (f.type !== "DROPDOWN") throw new ServiceError(400, `"${f.label}" is not a dropdown.`);
+  if (f.type !== "DROPDOWN" && f.type !== "MULTISELECT") throw new ServiceError(400, `"${f.label}" has no list of options (it is not a dropdown or a multi-select).`);
   return { layout, f };
 }
 
@@ -563,7 +605,7 @@ export async function listFieldOptions(ctx: AuthContext, moduleId: ModuleId, key
 export async function addFieldOption(ctx: AuthContext, moduleId: ModuleId, key: string, rawName: string) {
   assertSuperAdmin(ctx);
   const { f } = await dropdown(moduleId, key);
-  if (f.options.length >= MAX_OPTIONS) throw new ServiceError(400, `A dropdown can have up to ${MAX_OPTIONS} options.`);
+  if (f.options.length >= MAX_OPTIONS) throw new ServiceError(400, `A list can have up to ${MAX_OPTIONS} options.`);
   const name = cleanOptionName(rawName, f.options);
   const option = { id: newOptionId(), label: name };
   await saveLayout(ctx, moduleId, s => withOptions(s, f, [...f.options, option]), {

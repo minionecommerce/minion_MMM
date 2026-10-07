@@ -13,6 +13,8 @@ import { hasPermission } from "@/lib/rbac/effective";
 import { ServiceError } from "@/lib/users/service";
 import { ATTACHMENT_BLOCKED_HINT, isAttachmentAllowed, storageExtension, UNKNOWN_MIME_TYPE } from "@/lib/leads/constants";
 import { createReadUrls, createUploadUrl, removeObjects, statObject } from "@/lib/leads/storage";
+import { customerAbilities } from "@/lib/customers/access";
+import { ITEM_IMAGE_HINT, ITEM_IMAGE_MAX_BYTES, ITEM_IMAGE_MAX_MB, isItemImageName } from "@/lib/quotes/item-constants";
 import { getLayout } from "./layout";
 import { isId, stripControl } from "./values";
 import { MODULES } from "./registry";
@@ -25,6 +27,8 @@ const MAX_PENDING_PER_PERSON = 100;
 // Anyone who can create or edit the module's records may upload
 function needWrite(ctx: AuthContext, moduleId: ModuleId) {
   const perm = MODULES[moduleId].permission;
+  // a customer is added and corrected from the quote form: the people who make quotes may attach its documents
+  if (moduleId === "customer" && (customerAbilities(ctx).create || customerAbilities(ctx).edit)) return;
   if (!hasPermission(ctx.permissions, perm, "create") && !hasPermission(ctx.permissions, perm, "edit")) {
     throw new ServiceError(403, `You do not have permission to upload files for ${MODULES[moduleId].plural.toLowerCase()}.`);
   }
@@ -51,6 +55,11 @@ export async function signUpload(ctx: AuthContext, moduleId: ModuleId, input: { 
   if (!isAttachmentAllowed(name)) throw new ServiceError(400, `${name}: not allowed (${ATTACHMENT_BLOCKED_HINT})`);
   if (!Number.isInteger(input.size) || input.size <= 0) throw new ServiceError(400, `${name}: the file is empty.`);
   if (input.size > MAX_FILE_BYTES) throw new ServiceError(400, `${name}: larger than ${MAX_FILE_MB} MB.`);
+  // the pictures of an item: pictures only, 5 MB each
+  if (moduleId === "item") {
+    if (!isItemImageName(name)) throw new ServiceError(400, `${name}: not a picture. ${ITEM_IMAGE_HINT}`);
+    if (input.size > ITEM_IMAGE_MAX_BYTES) throw new ServiceError(400, `${name}: larger than ${ITEM_IMAGE_MAX_MB} MB.`);
+  }
 
   await sweepAbandoned(ctx.userId);
   const pending = await prisma.moduleFile.count({ where: { uploadedById: ctx.userId, recordId: null, deletedAt: null } });
@@ -79,6 +88,11 @@ export async function completeUpload(ctx: AuthContext, moduleId: ModuleId, fileI
     await removeObjects([row.storagePath]);
     await prisma.moduleFile.update({ where: { id: row.id }, data: { deletedAt: new Date() } });
     throw new ServiceError(400, `${row.fileName}: the file is empty, larger than ${MAX_FILE_MB} MB, or not an allowed type.`);
+  }
+  if (moduleId === "item" && (stat.size > ITEM_IMAGE_MAX_BYTES || !isItemImageName(row.fileName))) {
+    await removeObjects([row.storagePath]);
+    await prisma.moduleFile.update({ where: { id: row.id }, data: { deletedAt: new Date() } });
+    throw new ServiceError(400, `${row.fileName}: not a picture, or larger than ${ITEM_IMAGE_MAX_MB} MB.`);
   }
   await prisma.moduleFile.update({ where: { id: row.id }, data: { status: "READY", size: stat.size, mimeType: stat.mimeType || row.mimeType } });
   return { id: row.id, fileName: row.fileName, size: stat.size, mimeType: stat.mimeType || row.mimeType, url: null };

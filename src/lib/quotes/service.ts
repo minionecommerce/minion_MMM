@@ -13,7 +13,7 @@ import { DEAL_NUMBER_PREFIX } from "@/lib/leads/constants";
 import { isRealDay, todayDay } from "@/lib/leads/format";
 import { getLayout } from "@/lib/records/layout";
 import { bindFiles, filesOf, type FileSlot } from "@/lib/records/files";
-import { buildRefs, emptyRefIds, type RefIds } from "@/lib/records/lookups";
+import { buildRefs, emptyRefIds, projectTemplates, type RefIds } from "@/lib/records/lookups";
 import { cleanValue, displayValue, isEmptyValue, isId, stripControl } from "@/lib/records/values";
 import type { FileDto, LayoutField, ModuleLayoutDto, RecordRefs } from "@/lib/records/types";
 import { needQuotes } from "./access";
@@ -22,6 +22,7 @@ import { calcTotals } from "./calc";
 import { allocateNumber } from "./numbering-server";
 import { loadSettings } from "./settings";
 import { getCustomer } from "./lookups";
+import { loadItemExtras, type ItemExtras } from "./catalog";
 import {
   MAX_LINES, QUOTE_STATUSES, STATUS_ACTIONS, isQuoteStatus,
   type ActivityDto, type CalcOut, type CalcInput, type LineDto, type QuoteBody, type QuoteDto, type QuoteListData, type QuoteListParams,
@@ -221,9 +222,11 @@ function taxInfoOf(settings: QuoteSettings, line: { taxId: string | null; taxNam
   return { id: line.taxId ?? name, name, rate: line.taxRate, components: [{ name, rate: line.taxRate }] };
 }
 
-function lineDto(l: LineRow): LineDto {
+function lineDto(l: LineRow, x: ItemExtras): LineDto {
   return {
     id: l.id, itemId: l.itemId, name: l.name ?? l.description, description: l.name ? l.description : "", hsn: l.hsn ?? "", unit: l.unit ?? "", quantity: dec(l.quantity), rate: dec(l.rate),
+    kind: l.kind === "Goods" || l.kind === "Service" ? l.kind : null, taskTemplateId: l.taskTemplateId, taskTemplateName: l.taskTemplateId ? x.templates.get(l.taskTemplateId) ?? "" : "",
+    imageFileId: l.itemId ? x.images.get(l.itemId) ?? null : null,
     taxId: l.taxId, taxName: l.taxName, taxRate: l.taxRate === null ? null : dec(l.taxRate), amount: dec(l.amount), custom: isObject(l.customFields) ? (l.customFields as Record<string, unknown>) : {},
   };
 }
@@ -276,7 +279,8 @@ export async function buildQuoteDto(row: QuoteRow, layout: ModuleLayoutDto, sett
     else if (f.type === "CHECKBOX") values[f.key] = f.key === "retainerInvoice" ? row.retainerInvoice : storedValue(f, row as unknown as Record<string, unknown>) === true;
     else values[f.key] = storedValue(f, row as unknown as Record<string, unknown>);
   }
-  const lines = row.lineItems.map(lineDto);
+  const extras = await loadItemExtras(row.lineItems.flatMap(l => (l.itemId ? [l.itemId] : [])));
+  const lines = row.lineItems.map(l => lineDto(l, extras));
   const calc = calcOfRow(row, settings);
   const customer = row.customerId ? await getCustomer(row.customerId) : null;
   return {
@@ -364,6 +368,8 @@ async function checkInput(ctx: AuthContext, layout: ModuleLayoutDto, settings: Q
   if (rawLines.length > MAX_LINES) issues.push(issue(["lines"], `A quote can have ${MAX_LINES} items at most`));
   const mine = new Map((existing?.lineItems ?? []).map(l => [l.id, l]));
   const activeTax = new Map(settings.taxes.map(t => [t.id, t]));
+  const templateIds = new Set((await projectTemplates()).map(o => o.id));
+  const templateColumn = itemColumnsOf(layout).find(c => c.key === "taskTemplateId");
   const calcLines: { quantity: number; rate: number; tax: TaxInfo | null }[] = [];
   rawLines.slice(0, MAX_LINES).forEach((l, i) => {
     const at = (k: string) => ["lines", i, k];
@@ -391,6 +397,17 @@ async function checkInput(ctx: AuthContext, layout: ModuleLayoutDto, settings: Q
     const tax = taxId ? activeTax.get(taxId) : undefined;
     const before = id ? mine.get(id) : undefined;
     if (taxId && (!tax || (!tax.active && before?.taxId !== taxId))) { issues.push(issue(at("taxId"), "Choose a tax from the list")); return; }
+    // Goods or Service (decides HSN or SAC), and the Task Template (one of the project templates)
+    const kindRaw = l.kind === undefined || l.kind === null || l.kind === "" ? null : l.kind;
+    if (kindRaw !== null && kindRaw !== "Goods" && kindRaw !== "Service") { issues.push(issue(at("kind"), "must be Goods or Service")); return; }
+    const kind: "Goods" | "Service" | null = kindRaw;
+    const tplRaw = l.taskTemplateId === undefined || l.taskTemplateId === null || l.taskTemplateId === "" ? null : l.taskTemplateId;
+    if (tplRaw !== null && typeof tplRaw !== "string") { issues.push(issue(at("taskTemplateId"), "Choose a Task Template from the list")); return; }
+    let taskTemplateId: string | null = tplRaw;
+    if (taskTemplateId && !templateIds.has(taskTemplateId)) {
+      if (before?.taskTemplateId === taskTemplateId) taskTemplateId = null; // the template was deleted since this line was saved
+      else { issues.push(issue(at("taskTemplateId"), "Choose a Task Template from the list")); return; }
+    }
     const customIn = isObject(l.custom) ? l.custom : {};
     for (const k of Object.keys(customIn)) if (!knownCols.has(k)) issues.push(issue(["lines", i, "custom", k], "A column no longer exists. Reload the page and try again."));
     const custom: Record<string, unknown> = {};
@@ -406,12 +423,13 @@ async function checkInput(ctx: AuthContext, layout: ModuleLayoutDto, settings: Q
     if (blank) return; // an empty row is simply dropped
     for (const c of missing) issues.push(issue(["lines", i, "custom", c.key], `${c.label} is required`));
     if (!name) { issues.push(issue(at("name"), "Item Details is required")); return; }
+    if (templateColumn?.enabled && templateColumn.required && !taskTemplateId) { issues.push(issue(at("taskTemplateId"), `${templateColumn.label} is required`)); return; }
     const taxInfo: TaxInfo | null = tax ? { id: tax.id, name: tax.name, rate: tax.rate, components: tax.components } : null;
     calcLines.push({ quantity: qty, rate, tax: taxInfo });
     out.lines.push({
       id,
       data: {
-        sortOrder: out.lines.length, itemId, name, description: description ?? "", hsn: hsn || null, unit: unit ?? "", category: "General", quantity: qty, rate, amount: 0,
+        sortOrder: out.lines.length, itemId, name, description: description ?? "", hsn: hsn || null, kind, taskTemplateId, unit: unit ?? "", category: "General", quantity: qty, rate, amount: 0,
         taxId: tax ? tax.id : null, taxName: tax ? tax.name : null, taxRate: tax ? tax.rate : null, taxAmount: 0, customFields: json(custom),
       },
       out: { amount: 0, taxAmount: 0 },
@@ -649,7 +667,7 @@ export async function updateQuote(ctx: AuthContext, id: string, body: QuoteBody)
 
     const before = { ...(row as unknown as Record<string, unknown>), ...Object.fromEntries(Object.entries(isObject(row.customFields) ? row.customFields : {}).map(([k, v]) => [`customFields.${k}`, v])) };
     const changes = changesOf(before, { ...checked.columns, ...Object.fromEntries(Object.entries(checked.custom).map(([k, v]) => [`customFields.${k}`, v])) });
-    const linesChanged = JSON.stringify(row.lineItems.map(l => [l.name, dec(l.quantity), dec(l.rate), l.taxId, l.description])) !== JSON.stringify(checked.lines.map(l => [l.data.name, l.data.quantity, l.data.rate, l.data.taxId, l.data.description]));
+    const linesChanged = JSON.stringify(row.lineItems.map(l => [l.name, dec(l.quantity), dec(l.rate), l.taxId, l.description, l.taskTemplateId])) !== JSON.stringify(checked.lines.map(l => [l.data.name, l.data.quantity, l.data.rate, l.data.taxId, l.data.description, l.data.taskTemplateId ?? null]));
     const totalChanged = cents(dec(row.amount)) !== cents(checked.totals.total);
     const filesChanged = checked.slots.length > 0;
     await log(tx, ctx, id, "Updated", { ...changes.from }, { ...changes.to, ...(linesChanged ? { lines: checked.lines.length } : {}), ...(totalChanged ? { total: checked.totals.total } : {}), ...(filesChanged ? { files: true } : {}) }, (checked.columns.dealId as string | null | undefined) ?? row.dealId);

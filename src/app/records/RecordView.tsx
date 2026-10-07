@@ -20,7 +20,10 @@ function Value({ f, raw, refs, slug, approvedAt }: { f: LayoutField; raw: unknow
   if (f.type === 'APPROVER' && approvedAt) return <span>{text}<span className="ml-2 text-[12px] text-gray-500">on {formatDealStamp(new Date(approvedAt))}</span></span>;
   if (f.type === 'LOOKUP' && f.lookup) {
     const id = String(raw);
-    const href = f.lookup === 'deal' ? `/deals?q=${encodeURIComponent(refs.deals[id]?.code ?? '')}` : `${VENDOR_PAGE[f.lookup]}/${id}`;
+    if (f.lookup === 'template') return <span className="break-words">{text}</span>; // a project template has no page of its own
+    // A converted deal is not in the Deals list any more: its project is the page to open
+    const projectId = f.lookup === 'deal' ? refs.deals[id]?.projectId : null;
+    const href = projectId ? `/projects/${projectId}` : f.lookup === 'deal' ? `/deals?q=${encodeURIComponent(refs.deals[id]?.code ?? '')}` : `${VENDOR_PAGE[f.lookup]}/${id}`;
     return <Link href={href} className="text-[#1a56c4] hover:underline break-words">{text}</Link>;
   }
   if (f.type === 'URL') return <a href={String(raw)} target="_blank" rel="noopener noreferrer" className="text-[#1a56c4] hover:underline break-all">{text}</a>;

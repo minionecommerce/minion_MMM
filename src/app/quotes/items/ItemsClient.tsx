@@ -8,7 +8,8 @@ import { callApi } from '@/lib/leads/client';
 import { useToast } from '@/components/ui/Toast';
 import { formatMoney } from '@/lib/quotes/format';
 import type { DisplaySettings, ItemDto, QuoteAbilities, TaxDef } from '@/lib/quotes/types';
-import { ItemModal } from '../modals';
+import ItemOverlay from '../ItemOverlay';
+import { itemImageSrc } from '../item-client';
 import { Button, Modal } from '../ui';
 
 type Data = { rows: ItemDto[]; total: number; showing: number; page: number; pageCount: number; pageSize: number };
@@ -95,15 +96,17 @@ export default function ItemsClient({ data, params, taxes, display, abilities }:
       </div>
 
       <div className="flex-1 overflow-x-auto q-scroll">
-        <table className="w-full min-w-[900px] border-collapse">
+        <table className="w-full min-w-[1100px] border-collapse">
           <thead>
             <tr className="h-[36px] bg-[#f9f9fb] border-y border-[#ebeaf2] text-[11px] font-medium uppercase tracking-[0.2px] text-[#6d7189]">
               <th className="text-left pl-[25px] pr-[15px] font-medium">Name</th>
+              <th className="text-left px-[15px] font-medium">Category</th>
               <th className="text-left px-[15px] font-medium">HSN/SAC</th>
               <th className="text-left px-[15px] font-medium">Unit</th>
               <th className="text-right px-[15px] font-medium">Rate</th>
               <th className="text-left px-[15px] font-medium">Tax</th>
               <th className="text-left px-[15px] font-medium">Type</th>
+              <th className="text-left px-[15px] font-medium">Task Template</th>
               <th className="text-left px-[15px] font-medium">Status</th>
               <th className="w-[90px]" />
             </tr>
@@ -111,12 +114,22 @@ export default function ItemsClient({ data, params, taxes, display, abilities }:
           <tbody>
             {data.rows.map(i => (
               <tr key={i.id} className="h-[46px] border-b border-[#ebeaf2] text-[13px] text-[#333]" data-item-row>
-                <td className="pl-[25px] pr-[15px] max-w-[420px]"><div className="truncate font-medium" title={i.name}>{i.name}</div>{i.description && <div className="truncate text-[12px] text-[#6d7189]" title={i.description}>{i.description}</div>}</td>
+                <td className="pl-[25px] pr-[15px] max-w-[420px]">
+                  <div className="flex items-center gap-[10px]">
+                    {i.imageFileId && (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={itemImageSrc(i.imageFileId)} alt="" className="w-[30px] h-[30px] shrink-0 rounded-[4px] object-cover border border-[#ebeaf2]" />
+                    )}
+                    <div className="min-w-0"><div className="truncate font-medium" title={i.name}>{i.name}</div>{(i.description || i.sku) && <div className="truncate text-[12px] text-[#6d7189]" title={i.description}>{[i.sku && `SKU ${i.sku}`, i.description].filter(Boolean).join(' · ')}</div>}</div>
+                  </div>
+                </td>
+                <td className="px-[15px]">{i.category}</td>
                 <td className="px-[15px]">{i.hsn}</td>
                 <td className="px-[15px]">{i.unit}</td>
                 <td className="px-[15px] text-right whitespace-nowrap">{formatMoney(i.rate, display.currencySymbol, display.grouping)}</td>
                 <td className="px-[15px]">{taxName(i.taxId)}</td>
                 <td className="px-[15px]">{i.kind}</td>
+                <td className="px-[15px]">{i.taskTemplateName}</td>
                 <td className="px-[15px]"><span className="uppercase text-[12px]" style={{ color: i.isActive ? '#2fa070' : '#7f8c8d' }}>{i.isActive ? 'Active' : 'Inactive'}</span></td>
                 <td className="px-[15px] text-right whitespace-nowrap">
                   {abilities.edit && <button type="button" onClick={() => setEditing(i)} aria-label={`Edit ${i.name}`} className="w-7 h-7 rounded hover:bg-[#f1f1fa] text-[#575a6f]"><Pencil className="w-3.5 h-3.5 mx-auto" /></button>}
@@ -125,7 +138,7 @@ export default function ItemsClient({ data, params, taxes, display, abilities }:
               </tr>
             ))}
             {data.rows.length === 0 && (
-              <tr><td colSpan={8} className="py-16 text-center text-[#6d7189]"><Package className="w-8 h-8 mx-auto text-[#c9cbd6] mb-2" aria-hidden /><p className="text-[14px]">{params.q || params.active !== 'all' ? 'No items match.' : 'There are no items yet. Add one, or import a CSV file.'}</p></td></tr>
+              <tr><td colSpan={10} className="py-16 text-center text-[#6d7189]"><Package className="w-8 h-8 mx-auto text-[#c9cbd6] mb-2" aria-hidden /><p className="text-[14px]">{params.q || params.active !== 'all' ? 'No items match.' : 'There are no items yet. Add one, or import a CSV file.'}</p></td></tr>
             )}
           </tbody>
         </table>
@@ -140,7 +153,7 @@ export default function ItemsClient({ data, params, taxes, display, abilities }:
         </div>
       </div>
 
-      {editing && <ItemModal item={editing === 'new' ? undefined : editing} taxes={taxes} onClose={() => setEditing(null)} onSaved={i => { setEditing(null); toast.success(`${i.name} saved`); router.refresh(); }} />}
+      {editing && <ItemOverlay itemId={editing === 'new' ? null : editing.id} taxes={taxes} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); router.refresh(); }} />}
       {removing && (
         <Modal title="Delete item?" onClose={() => !busy && setRemoving(null)} busy={busy} width={440} footer={<><Button onClick={() => setRemoving(null)} disabled={busy}>Cancel</Button><Button kind="danger" onClick={remove} busy={busy}>Delete</Button></>}>
           <p className="text-[13px]">&ldquo;{removing.name}&rdquo; will be removed from the catalogue. Quotes that already use it keep their own copy of its name and rate.</p>

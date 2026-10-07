@@ -10,7 +10,7 @@ type Params = { params: Promise<{ id: string }> };
 export async function GET(request: Request, { params }: Params) {
   return withAuthRoute(request, async ctx => {
     const { id } = await params;
-    return NextResponse.json(await listLeadFollowUps(ctx, await leadIdOf(ctx, id, "view"), "deal"));
+    return NextResponse.json(await listLeadFollowUps(ctx, await leadIdOf(ctx, id, "view", { allowConverted: true }), "deal")); // a converted deal's follow-ups can still be read
   });
 }
 

@@ -1,23 +1,27 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { CheckCircle2, ChevronDown, GripVertical, ImageIcon, MoreHorizontal, Plus, Search, X } from 'lucide-react';
+import { CheckCircle2, ChevronDown, GripVertical, ImageIcon, MoreHorizontal, Pencil, Plus, Search, X } from 'lucide-react';
 import { callApi } from '@/lib/leads/client';
 import type { LayoutField } from '@/lib/records/types';
 import { formatAmount, formatMoney } from '@/lib/quotes/format';
+import { digitsOnly, taxCodePrint } from '@/lib/quotes/item-constants';
 import type { ItemDto, QuoteSettings } from '@/lib/quotes/types';
+import { searchLookup } from '../records/client';
 import QField, { type QCtx } from './QField';
-import { Button, Menu, MenuItem, MenuRule, Modal, Spinner, inputClass, useDismiss } from './ui';
-import { ItemModal } from './modals';
-import { blankLine, isBlankLine, lineFromItem, newKey, type LineState } from './form-state';
+import { Button, Combo, Menu, MenuItem, MenuRule, Modal, Spinner, inputClass, useDismiss } from './ui';
+import ItemOverlay from './ItemOverlay';
+import { itemImageSrc } from './item-client';
+import { defaultTaxId } from '@/lib/quotes/taxes';
+import { blankLine, isBlankLine, lineFromItem, newKey, syncLineWithItem, type LineState } from './form-state';
 
 const cell = 'w-full h-[34px] px-[8px] text-[13px] bg-transparent border border-transparent rounded-[4px] hover:border-[#d7d5e1] focus:border-[#548df6] focus:bg-white focus:outline-none';
 
 // ---------------------------------------------------------------------------
-// "Type or click to select an item": a box that lists the items of the catalogue under it
+// "Type or click to select an item": a box that lists the items of the Item Master under it
 // ---------------------------------------------------------------------------
-function ItemPicker({ id, value, invalid, onType, onPick, canAdd, onAddNew, display }: {
-  id: string; value: string; invalid?: boolean; onType: (text: string) => void; onPick: (item: ItemDto) => void; canAdd: boolean; onAddNew: (name: string) => void; display: QuoteSettings['display'];
+function ItemPicker({ id, value, linked, invalid, onType, onPick, canAdd, onAddNew, display }: {
+  id: string; value: string; linked: boolean; invalid?: boolean; onType: (text: string) => void; onPick: (item: ItemDto) => void; canAdd: boolean; onAddNew: (name: string) => void; display: QuoteSettings['display'];
 }) {
   const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState('');
@@ -34,7 +38,7 @@ function ItemPicker({ id, value, invalid, onType, onPick, canAdd, onAddNew, disp
   // The list is placed on the screen (not inside the table) so the table never clips it
   const place = useCallback(() => {
     const r = input.current?.getBoundingClientRect();
-    if (r) setBox({ left: r.left, top: r.bottom + 2, width: Math.max(r.width + 40, 380) });
+    if (r) setBox({ left: r.left, top: r.bottom + 2, width: Math.max(r.width + 140, 480) });
   }, []);
   useEffect(() => {
     if (!open) return;
@@ -62,6 +66,7 @@ function ItemPicker({ id, value, invalid, onType, onPick, canAdd, onAddNew, disp
   }, [typed, open]);
 
   const pick = (item: ItemDto) => { onPick(item); setOpen(false); setTyped(''); };
+  const tall = !value.trim() || open; // an empty or open box is two lines tall (as in the reference); the box of a chosen item is one line
 
   return (
     <div ref={wrap} className="relative">
@@ -83,26 +88,26 @@ function ItemPicker({ id, value, invalid, onType, onPick, canAdd, onAddNew, disp
           else if (e.key === 'Enter' && open && items[active] && typed) { e.preventDefault(); pick(items[active]); }
           else if (e.key === 'Escape') setOpen(false);
         }}
-        className={`w-full h-[34px] px-[10px] text-[13px] bg-white border rounded-[4px] placeholder:text-[#9ca0ab] focus:outline-none ${invalid ? 'border-[#e5484d]' : open ? 'border-[#548df6]' : 'border-[#d7d5e1] hover:border-[#9ca0ab]'}`}
+        className={`w-full px-[8px] text-[14px] text-[#22263b] bg-white border rounded-[4px] placeholder:text-[#9ca0ab] focus:outline-none ${tall ? 'h-[51px] pt-[7px] pb-[26px] leading-[18px]' : 'h-[34px]'} ${linked ? 'font-medium' : ''} ${invalid ? 'border-[#e5484d]' : open ? 'border-[#548df6]' : 'border-transparent hover:border-[#d7d5e1]'}`}
       />
       {open && box && (
-        <div style={{ position: 'fixed', left: box.left, top: box.top, width: box.width }} className="z-[60] bg-white border border-[#d7d5e1] rounded-[4px] shadow-[0_8px_24px_rgba(34,38,59,0.18)]">
-          <ul role="listbox" aria-label="Items" className="max-h-[290px] overflow-y-auto q-scroll py-1">
+        <div style={{ position: 'fixed', left: box.left, top: box.top, width: box.width }} className="z-[60] bg-white border border-[#d7d5e1] rounded-[6px] shadow-[0_8px_24px_rgba(34,38,59,0.18)] overflow-hidden" data-item-list>
+          <ul role="listbox" aria-label="Items" className="max-h-[300px] overflow-y-auto q-scroll p-[4px]">
             {busy && items.length === 0 && <li className="px-3 py-3 text-[13px] text-[#6d7189] flex items-center gap-2"><Spinner className="w-3.5 h-3.5" /> Loading items…</li>}
             {error && <li className="px-3 py-2 text-[13px] text-[#d9232b]">{error}</li>}
-            {!busy && !error && items.length === 0 && <li className="px-3 py-3 text-[13px] text-[#6d7189]">{typed ? 'No item matches. Keep typing to use it as a one-off item.' : 'The catalogue has no items yet.'}</li>}
+            {!busy && !error && items.length === 0 && <li className="px-3 py-3 text-[13px] text-[#6d7189]">{typed ? 'No item matches. Keep typing to use it as a one-off item, or add it as a new item.' : 'The Item Master has no items yet.'}</li>}
             {items.map((item, i) => (
-              <li key={item.id} role="option" aria-selected={i === active} className={i > 0 && i !== active && i - 1 !== active ? 'border-t border-[#ebeaf2] mx-2' : ''}>
-                <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => pick(item)} onMouseEnter={() => setActive(i)} className={`w-full text-left px-3 py-[7px] ${i === active ? 'bg-[#548df6] text-white' : ''}`}>
-                  <span className={`block text-[13px] truncate ${i === active ? '' : 'text-[#22263b]'}`}>{item.name}</span>
-                  <span className={`block text-[12px] ${i === active ? 'text-white/90' : 'text-[#6d7189]'}`}>Rate: {formatMoney(item.rate, display.currencySymbol, display.grouping)}</span>
+              <li key={item.id} role="option" aria-selected={i === active} className={i > 0 && i !== active && i - 1 !== active ? 'border-t border-[#e5e6ee] mx-[10px]' : ''}>
+                <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => pick(item)} onMouseEnter={() => setActive(i)} className={`w-full text-left px-[10px] py-[8px] rounded-[4px] ${i === active ? 'bg-[#4a8cf7] text-white' : ''}`}>
+                  <span className={`block text-[14px] leading-[20px] truncate ${i === active ? '' : 'text-[#22263b]'}`}>{item.name}</span>
+                  <span className={`block text-[12px] leading-[18px] ${i === active ? 'text-white/90' : 'text-[#6d7189]'}`}>Rate: {formatMoney(item.rate, display.currencySymbol, display.grouping)}</span>
                 </button>
               </li>
             ))}
           </ul>
           {canAdd && (
             <div className="border-t border-[#ebeaf2]">
-              <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => { setOpen(false); onAddNew(typed.trim()); }} className="w-full flex items-center gap-2 px-3 h-[32px] text-[13px] text-[#548df6] hover:bg-[#f1f1fa]"><Plus className="w-3.5 h-3.5" /> Add New Item</button>
+              <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => { setOpen(false); onAddNew(typed.trim()); }} className="w-full flex items-center gap-[10px] px-[14px] h-[42px] text-[13px] text-[#548df6] hover:bg-[#f1f1fa]"><Plus className="w-4 h-4 rounded-full bg-[#548df6] text-white p-[2px]" aria-hidden /> Add New Item</button>
             </div>
           )}
         </div>
@@ -112,7 +117,33 @@ function ItemPicker({ id, value, invalid, onType, onPick, canAdd, onAddNew, disp
 }
 
 // ---------------------------------------------------------------------------
-// Add Items in Bulk: tick items of the catalogue, add them all at once
+// Under the description: GOODS  HSN Code: 998391 ✎   /   SERVICE  SAC Code: 998391 ✎
+// ---------------------------------------------------------------------------
+function TaxCodeLine({ kind, code, onChange }: { kind: LineState['kind']; code: string; onChange: (code: string) => void }) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(code);
+  if (!kind && !code) return null;
+  const commit = () => { setEditing(false); const next = draft.trim(); if (next !== code) onChange(next); };
+  return (
+    <div className="mt-[10px] flex items-center gap-[8px] text-[13px] leading-[20px] min-h-[22px]" data-tax-code>
+      {kind && <span className="inline-flex items-center h-[18px] px-[6px] rounded-[3px] bg-[#1e9bf0] text-white text-[10px] font-bold tracking-[0.3px] uppercase">{kind}</span>}
+      <span className="text-[#6d7189]">{taxCodePrint(kind || null)}:</span>
+      {editing ? (
+        <input autoFocus value={draft} onChange={e => setDraft(digitsOnly(e.target.value))} onBlur={commit} inputMode="numeric" autoComplete="off" placeholder="Numbers only" aria-label={taxCodePrint(kind || null)}
+          onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); commit(); } else if (e.key === 'Escape') { setDraft(code); setEditing(false); } }}
+          className="h-[26px] w-[120px] px-[6px] text-[13px] border border-[#548df6] rounded-[4px] focus:outline-none" />
+      ) : (
+        <>
+          <button type="button" onClick={() => { setDraft(code); setEditing(true); }} className="text-[#355bd4] hover:underline">{code || 'Add'}</button>
+          <button type="button" onClick={() => { setDraft(code); setEditing(true); }} aria-label={`Edit the ${taxCodePrint(kind || null)}`} className="text-[#7f8497] hover:text-[#548df6]"><Pencil className="w-[13px] h-[13px]" /></button>
+        </>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Add Items in Bulk: tick items of the Item Master, add them all at once
 // ---------------------------------------------------------------------------
 function BulkModal({ display, onClose, onAdd }: { display: QuoteSettings['display']; onClose: () => void; onAdd: (items: ItemDto[]) => void }) {
   const [q, setQ] = useState('');
@@ -137,11 +168,11 @@ function BulkModal({ display, onClose, onAdd }: { display: QuoteSettings['displa
   }, [q]);
   const toggle = (item: ItemDto) => setPicked(m => { const n = new Map(m); if (n.has(item.id)) n.delete(item.id); else n.set(item.id, item); return n; });
   return (
-    <Modal title="Add Items in Bulk" onClose={onClose} width={640} footer={(
+    <Modal title="Add Items in Bulk" onClose={onClose} width={680} footer={(
       <>
-        <span className="mr-auto text-[13px] text-[#6d7189]">{picked.size} selected</span>
+        <span className="mr-auto text-[13px] text-[#6d7189]" data-bulk-count>{picked.size} selected</span>
         <Button onClick={onClose}>Cancel</Button>
-        <Button kind="blue" disabled={picked.size === 0} onClick={() => onAdd(Array.from(picked.values()))}>Add {picked.size || ''} Item{picked.size === 1 ? '' : 's'}</Button>
+        <Button kind="blue" disabled={picked.size === 0} onClick={() => onAdd(Array.from(picked.values()))}>Add Selected Items</Button>
       </>
     )}>
       <div className="relative mb-3">
@@ -155,7 +186,10 @@ function BulkModal({ display, onClose, onAdd }: { display: QuoteSettings['displa
           <li key={item.id}>
             <label className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-[#f1f1fa]">
               <input type="checkbox" className="q-check" checked={picked.has(item.id)} onChange={() => toggle(item)} />
-              <span className="min-w-0 flex-1"><span className="block text-[13px] truncate">{item.name}</span>{item.description && <span className="block text-[12px] text-[#6d7189] truncate">{item.description}</span>}</span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-[13px] truncate">{item.name}</span>
+                <span className="block text-[12px] text-[#6d7189] truncate">{[item.kind === 'Service' ? `SAC ${item.hsn}` : item.hsn ? `HSN ${item.hsn}` : '', item.taskTemplateName, item.description].filter(Boolean).join(' · ')}</span>
+              </span>
               <span className="text-[13px] text-[#6d7189] whitespace-nowrap">{formatMoney(item.rate, display.currencySymbol, display.grouping)}</span>
             </label>
           </li>
@@ -166,10 +200,20 @@ function BulkModal({ display, onClose, onAdd }: { display: QuoteSettings['displa
   );
 }
 
+// The picture box at the left of a row
+function Thumb({ fileId }: { fileId: string | null }) {
+  return fileId ? (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={itemImageSrc(fileId)} alt="" className="w-[30px] h-[30px] shrink-0 rounded-[4px] object-cover border border-[#ebeaf2] bg-[#f9f9fb]" data-line-image />
+  ) : (
+    <div className="w-[30px] h-[28px] shrink-0 rounded-[4px] bg-[#e7e8ee] flex items-center justify-center text-white" aria-hidden><ImageIcon className="w-[20px] h-[20px]" strokeWidth={1.6} /></div>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // The Item Table of the quote form
 // ---------------------------------------------------------------------------
-export default function LineItems({ title, lines, setLines, columns, settings, amounts, errors, ctx, canAddItem, aside, below }: {
+export default function LineItems({ title, lines, setLines, columns, settings, amounts, errors, ctx, canAddItem, canEditItem = false, aside, below }: {
   title: string;
   aside?: React.ReactNode; // beside the Add buttons (the calculation panel)
   below?: React.ReactNode; // at the bottom of the column of the Add buttons (the customer notes)
@@ -180,23 +224,25 @@ export default function LineItems({ title, lines, setLines, columns, settings, a
   amounts: number[];
   errors: Record<string, string>;
   ctx: QCtx;
-  canAddItem: boolean;
+  canAddItem: boolean; // may add an item to the Item Master (New Item)
+  canEditItem?: boolean; // may change an item of the Item Master (Edit item)
 }) {
   const [bulk, setBulk] = useState(false);
-  const [newItemFor, setNewItemFor] = useState<{ key: string; name: string } | null>(null);
+  const [itemWindow, setItemWindow] = useState<{ key: string; itemId: string | null; name: string } | null>(null);
   const [dragKey, setDragKey] = useState<string | null>(null);
   const [armed, setArmed] = useState<string | null>(null);
   const [overKey, setOverKey] = useState<string | null>(null);
   const display = settings.display;
+  const defaultTax = defaultTaxId(settings.taxes); // what a new row starts with
 
   const col = (key: string) => columns.find(c => c.key === key);
   const custom = columns.filter(c => !c.isSystem);
-  const hsn = col('hsn'); const unit = col('unit'); const qty = col('quantity'); const rate = col('rate'); const tax = col('taxId'); const amount = col('lineAmount');
-  const colCount = 2 + (hsn ? 1 : 0) + (unit ? 1 : 0) + (qty ? 1 : 0) + (rate ? 1 : 0) + (tax ? 1 : 0) + custom.length + (amount ? 1 : 0);
+  const tpl = col('taskTemplateId'); const hsn = col('hsn'); const unit = col('unit'); const qty = col('quantity'); const rate = col('rate'); const tax = col('taxId'); const amount = col('lineAmount');
+  const colCount = 1 + (tpl ? 1 : 0) + (hsn ? 1 : 0) + (unit ? 1 : 0) + (qty ? 1 : 0) + (rate ? 1 : 0) + (tax ? 1 : 0) + custom.length + (amount ? 1 : 0);
 
   const patch = (key: string, p: Partial<LineState>) => setLines(cur => cur.map(l => (l.key === key ? { ...l, ...p } : l)));
-  const remove = (key: string) => setLines(cur => { const next = cur.filter(l => l.key !== key); return next.length ? next : [blankLine()]; });
-  const insert = (index: number, line: LineState = blankLine()) => setLines(cur => [...cur.slice(0, index), line, ...cur.slice(index)]);
+  const remove = (key: string) => setLines(cur => { const next = cur.filter(l => l.key !== key); return next.length ? next : [blankLine(defaultTax)]; });
+  const insert = (index: number, line: LineState = blankLine(defaultTax)) => setLines(cur => [...cur.slice(0, index), line, ...cur.slice(index)]);
   const move = (from: string, to: string) => setLines(cur => {
     const a = cur.findIndex(l => l.key === from); const b = cur.findIndex(l => l.key === to);
     if (a < 0 || b < 0 || a === b) return cur;
@@ -206,10 +252,11 @@ export default function LineItems({ title, lines, setLines, columns, settings, a
   const clone = (l: LineState, index: number) => insert(index + 1, { ...l, key: newKey(), id: undefined });
   const addMany = (items: ItemDto[]) => setLines(cur => {
     const keep = cur.length && isBlankLine(cur[cur.length - 1]) ? cur.slice(0, -1) : cur;
-    return [...keep, ...items.map(i => lineFromItem(i))];
+    return [...keep, ...items.map(i => lineFromItem(i, undefined, defaultTax))];
   });
   const taxOptions = (current: string) => settings.taxes.filter(t => t.active || t.id === current);
-  const headerCls = 'text-left px-[10px] h-[44px] text-[12px] font-medium uppercase text-[#6d7189] whitespace-nowrap';
+  const headerCls = 'text-left px-[10px] h-[44px] text-[11px] font-semibold uppercase tracking-[0.4px] text-[#6d7189]';
+  const descRows = (text: string) => Math.min(14, Math.max(3, text.split('\n').reduce((n, line) => n + Math.max(1, Math.ceil(line.length / 74)), 0)));
 
   return (
     <div>
@@ -223,9 +270,9 @@ export default function LineItems({ title, lines, setLines, columns, settings, a
               {close => (
                 <>
                   <MenuItem onClick={() => { close(); setBulk(true); }}>Add Items in Bulk</MenuItem>
-                  <MenuItem onClick={() => { close(); setLines(cur => cur.filter(l => !isBlankLine(l)).length ? cur.filter(l => !isBlankLine(l)) : [blankLine()]); }}>Remove empty rows</MenuItem>
+                  <MenuItem onClick={() => { close(); setLines(cur => cur.filter(l => !isBlankLine(l)).length ? cur.filter(l => !isBlankLine(l)) : [blankLine(defaultTax)]); }}>Remove empty rows</MenuItem>
                   <MenuRule />
-                  <MenuItem danger onClick={() => { close(); setLines(() => [blankLine()]); }}>Clear all rows</MenuItem>
+                  <MenuItem danger onClick={() => { close(); setLines(() => [blankLine(defaultTax)]); }}>Clear all rows</MenuItem>
                 </>
               )}
             </Menu>
@@ -233,21 +280,22 @@ export default function LineItems({ title, lines, setLines, columns, settings, a
           <table className="w-full border-collapse" style={{ tableLayout: 'auto' }} data-item-table>
             <thead>
               <tr className="border-b border-[#ebeaf2]">
-                <th className={`${headerCls} w-auto min-w-[260px]`}>{col('name')?.label ?? 'Item Details'}</th>
+                <th className={`${headerCls} w-auto min-w-[300px]`}>{col('name')?.label ?? 'Item Details'}</th>
+                {tpl && <th className={`${headerCls} w-[170px] border-l border-[#ebeaf2]`}>{tpl.label}</th>}
                 {hsn && <th className={`${headerCls} w-[110px]`}>{hsn.label}</th>}
                 {unit && <th className={`${headerCls} w-[80px]`}>{unit.label}</th>}
                 {custom.map(c => <th key={c.key} className={`${headerCls} w-[130px]`}>{c.label}</th>)}
-                {qty && <th className={`${headerCls} w-[140px] text-right`}>{qty.label}</th>}
+                {qty && <th className={`${headerCls} w-[140px] text-right border-l border-[#ebeaf2]`}>{qty.label}</th>}
                 {rate && <th className={`${headerCls} w-[150px] text-right border-l border-[#ebeaf2]`}>{rate.label}</th>}
                 {tax && <th className={`${headerCls} w-[180px] border-l border-[#ebeaf2]`}>{tax.label}</th>}
                 {amount && <th className={`${headerCls} w-[140px] text-right border-l border-[#ebeaf2]`}>{amount.label}</th>}
-                <th className="w-0 p-0" aria-hidden />
               </tr>
             </thead>
             <tbody>
               {lines.map((l, i) => {
                 const err = (k: string) => errors[`lines.${i}.${k}`];
                 const rowErr = errors[`lines.${i}`];
+                const filled = !isBlankLine(l);
                 return (
                   <tr
                     key={l.key}
@@ -257,31 +305,70 @@ export default function LineItems({ title, lines, setLines, columns, settings, a
                     onDragOver={e => { if (dragKey) { e.preventDefault(); setOverKey(l.key); } }}
                     onDrop={e => { e.preventDefault(); if (dragKey) move(dragKey, l.key); setDragKey(null); setOverKey(null); setArmed(null); }}
                     onDragEnd={() => { setDragKey(null); setOverKey(null); setArmed(null); }}
-                    className={`align-top border-b border-[#ebeaf2] last:border-b-0 ${overKey === l.key && dragKey !== l.key ? 'bg-[#f1f1fa]' : ''} ${dragKey === l.key ? 'opacity-50' : ''}`}
+                    className={`group align-top border-b border-[#ebeaf2] last:border-b-0 ${overKey === l.key && dragKey !== l.key ? 'bg-[#f1f1fa]' : ''} ${dragKey === l.key ? 'opacity-50' : ''}`}
                   >
-                    <td className="relative px-[10px] py-[10px]">
+                    <td className="relative pl-[14px] pr-[10px] py-[11px]">
                       <button type="button" aria-label="Drag to move this row" onMouseDown={() => setArmed(l.key)} onMouseUp={() => setArmed(null)} className="absolute -left-[22px] top-[20px] w-[16px] h-[22px] flex items-center justify-center text-[#c9cbd6] hover:text-[#6d7189] cursor-grab"><GripVertical className="w-4 h-4" /></button>
-                      <div className="flex items-start gap-2">
-                        <div className="w-[34px] h-[34px] shrink-0 rounded-[4px] border border-[#ebeaf2] bg-[#f9f9fb] flex items-center justify-center text-[#c9cbd6]" aria-hidden><ImageIcon className="w-5 h-5" /></div>
+                      <div className="flex items-start gap-[18px]">
+                        <div className="mt-[4px]"><Thumb fileId={l.imageFileId} /></div>
                         <div className="flex-1 min-w-0">
-                          <ItemPicker
-                            id={`line-${i}-name`}
-                            value={l.name}
-                            invalid={!!err('name') || !!rowErr}
-                            display={display}
-                            canAdd={canAddItem}
-                            onType={text => patch(l.key, { name: text, itemId: null })}
-                            onPick={item => patch(l.key, { ...lineFromItem(item, l), quantity: l.quantity || '1' })}
-                            onAddNew={name => setNewItemFor({ key: l.key, name })}
-                          />
+                          <div className="pr-[58px]">
+                            <ItemPicker
+                              id={`line-${i}-name`}
+                              value={l.name}
+                              linked={!!l.itemId}
+                              invalid={!!err('name') || !!rowErr}
+                              display={display}
+                              canAdd={canAddItem}
+                              onType={text => patch(l.key, { name: text, itemId: null, imageFileId: null })}
+                              onPick={item => patch(l.key, { ...lineFromItem(item, l, defaultTax), quantity: l.quantity || '1' })}
+                              onAddNew={name => setItemWindow({ key: l.key, itemId: null, name })}
+                            />
+                          </div>
                           {(l.showDesc || l.description) && (
-                            <textarea value={l.description} onChange={e => patch(l.key, { description: e.target.value })} rows={2} maxLength={2000} aria-label="Item description" placeholder="Add a description to your item" className={`${inputClass(!!err('description'))} h-auto mt-1 py-1 resize-y`} />
+                            <textarea value={l.description} onChange={e => patch(l.key, { description: e.target.value })} rows={descRows(l.description)} maxLength={2000} aria-label="Item description" placeholder="Add a description to your item"
+                              className={`${inputClass(!!err('description'))} !h-auto mt-[6px] !px-[14px] py-[10px] !text-[14px] leading-[24px] resize-y !rounded-[6px] ${err('description') ? '' : '!border-transparent !bg-[#f7f7f9] focus:!bg-white focus:!border-[#548df6]'}`} />
                           )}
+                          <TaxCodeLine key={`${l.key}-${l.kind}-${l.hsn}`} kind={l.kind} code={l.hsn} onChange={code => patch(l.key, { hsn: code })} />
                           {(err('name') || rowErr) && <p role="alert" className="mt-1 text-[12px] text-[#d9232b]">{err('name') ?? rowErr}</p>}
                         </div>
                       </div>
+                      <div className={`absolute right-[10px] top-[14px] flex items-center gap-[8px] ${filled ? '' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100'}`}>
+                        <Menu align="right" width={190} trigger={({ toggle }) => (
+                          <button type="button" onClick={toggle} aria-label="Row options" aria-haspopup="menu" className="w-[22px] h-[22px] rounded-full border border-[#c9cbd6] bg-white flex items-center justify-center text-[#7f8497] hover:bg-[#f1f1fa]"><MoreHorizontal className="w-3.5 h-3.5" /></button>
+                        )}>
+                          {close => (
+                            <>
+                              {l.itemId && canEditItem && <MenuItem onClick={() => { close(); setItemWindow({ key: l.key, itemId: l.itemId, name: l.name }); }}>Edit item</MenuItem>}
+                              <MenuItem onClick={() => { close(); patch(l.key, { showDesc: true }); }}>Add description</MenuItem>
+                              <MenuItem onClick={() => { close(); clone(l, i); }}>Clone</MenuItem>
+                              <MenuItem onClick={() => { close(); insert(i); }}>Insert new row above</MenuItem>
+                              <MenuItem onClick={() => { close(); insert(i + 1); }}>Insert new row below</MenuItem>
+                            </>
+                          )}
+                        </Menu>
+                        <button type="button" onClick={() => remove(l.key)} aria-label="Remove this row" className="w-[22px] h-[22px] rounded-full border border-[#c9cbd6] bg-white flex items-center justify-center text-[#7f8497] hover:text-[#e5484d] hover:border-[#f3c2c4] hover:bg-[#fdeeee]"><X className="w-3.5 h-3.5" /></button>
+                      </div>
                     </td>
-                    {hsn && <td className="px-[4px] py-[8px]"><input value={l.hsn} onChange={e => patch(l.key, { hsn: e.target.value })} maxLength={20} aria-label="HSN/SAC" className={`${cell} ${err('hsn') ? '!border-[#e5484d]' : ''}`} /></td>}
+                    {tpl && (
+                      <td className="px-[8px] py-[10px] border-l border-[#ebeaf2]">
+                        <Combo
+                          htmlId={`line-${i}-taskTemplateId`}
+                          value={l.taskTemplateId || null}
+                          shown={l.taskTemplateName}
+                          search={q => searchLookup('quotes', 'templates', q)}
+                          onChange={(id, picked) => patch(l.key, { taskTemplateId: id ?? '', taskTemplateName: picked?.label ?? '' })}
+                          placeholder="Click to select Name"
+                          ariaLabel={tpl.label}
+                          invalid={!!err('taskTemplateId')}
+                          clearable
+                          emptyText="No task templates found"
+                          icon={<Search className="w-3 h-3 text-[#9ca0ab] shrink-0" aria-hidden />}
+                        />
+                        {err('taskTemplateId') && <p role="alert" className="mt-1 text-[12px] text-[#d9232b]">{err('taskTemplateId')}</p>}
+                      </td>
+                    )}
+                    {hsn && <td className="px-[4px] py-[8px]"><input value={l.hsn} onChange={e => patch(l.key, { hsn: digitsOnly(e.target.value) })} inputMode="numeric" autoComplete="off" aria-label="HSN/SAC" className={`${cell} ${err('hsn') ? '!border-[#e5484d]' : ''}`} /></td>}
                     {unit && <td className="px-[4px] py-[8px]"><input value={l.unit} onChange={e => patch(l.key, { unit: e.target.value })} maxLength={20} aria-label="Unit" className={`${cell} ${err('unit') ? '!border-[#e5484d]' : ''}`} /></td>}
                     {custom.map(c => (
                       <td key={c.key} className="px-[4px] py-[8px]">
@@ -289,7 +376,7 @@ export default function LineItems({ title, lines, setLines, columns, settings, a
                       </td>
                     ))}
                     {qty && (
-                      <td className="px-[4px] py-[8px]">
+                      <td className="px-[4px] py-[8px] border-l border-[#ebeaf2]">
                         <input value={l.quantity} onChange={e => patch(l.key, { quantity: e.target.value })} inputMode="decimal" aria-label="Quantity" aria-invalid={!!err('quantity') || undefined} className={`${cell} text-right text-[#2e3dba] ${err('quantity') ? '!border-[#e5484d]' : ''}`} />
                         {err('quantity') && <p role="alert" className="text-[12px] text-[#d9232b] text-right">{err('quantity')}</p>}
                       </td>
@@ -312,23 +399,6 @@ export default function LineItems({ title, lines, setLines, columns, settings, a
                       </td>
                     )}
                     {amount && <td className="relative px-[10px] py-[10px] border-l border-[#ebeaf2] text-right text-[13px] font-semibold text-black pt-[18px]" data-line-amount>{formatAmount(amounts[i] ?? 0, display.grouping)}</td>}
-                    <td className="relative w-0 p-0">
-                      <div className="absolute left-[14px] top-[14px] flex items-center gap-[8px]">
-                        <Menu align="left" width={190} trigger={({ toggle }) => (
-                          <button type="button" onClick={toggle} aria-label="Row options" aria-haspopup="menu" className="w-[26px] h-[26px] rounded-full border border-[#d7d5e1] bg-white flex items-center justify-center text-[#6d7189] hover:bg-[#f1f1fa]"><MoreHorizontal className="w-4 h-4" /></button>
-                        )}>
-                          {close => (
-                            <>
-                              <MenuItem onClick={() => { close(); patch(l.key, { showDesc: true }); }}>Add description</MenuItem>
-                              <MenuItem onClick={() => { close(); clone(l, i); }}>Clone</MenuItem>
-                              <MenuItem onClick={() => { close(); insert(i); }}>Insert new row above</MenuItem>
-                              <MenuItem onClick={() => { close(); insert(i + 1); }}>Insert new row below</MenuItem>
-                            </>
-                          )}
-                        </Menu>
-                        <button type="button" onClick={() => remove(l.key)} aria-label="Remove this row" className="w-[26px] h-[26px] rounded-full border border-[#f3c2c4] bg-white flex items-center justify-center text-[#e5484d] hover:bg-[#fdeeee]"><X className="w-4 h-4" /></button>
-                      </div>
-                    </td>
                   </tr>
                 );
               })}
@@ -341,15 +411,15 @@ export default function LineItems({ title, lines, setLines, columns, settings, a
       <div className="mt-[20px] ml-[20px] mr-[20px] lg:mr-[125px] flex flex-col lg:flex-row lg:items-stretch justify-between gap-[30px]">
       <div className="min-w-0 flex-1 flex flex-col justify-between gap-6">
       <div className="flex items-center gap-[12px]">
-        <div className="inline-flex h-[32px] rounded-[4px] bg-[#f1f1fa] text-[13px] font-medium text-[#548df6]">
-          <button type="button" onClick={() => setLines(cur => [...cur, blankLine()])} className="inline-flex items-center gap-[8px] px-[12px] hover:bg-[#e8e8f6] rounded-l-[4px]"><Plus className="w-4 h-4 rounded-full bg-[#548df6] text-white p-[2px]" /> Add New Row</button>
+        <div className="inline-flex h-[32px] rounded-[4px] bg-[#f1f1fa] text-[13px] font-medium text-[#22263b]">
+          <button type="button" onClick={() => setLines(cur => [...cur, blankLine(defaultTax)])} className="inline-flex items-center gap-[8px] px-[12px] hover:bg-[#e8e8f6] rounded-l-[4px]"><Plus className="w-4 h-4 rounded-full bg-[#548df6] text-white p-[2px]" /> Add New Row</button>
           <Menu align="left" width={170} trigger={({ toggle }) => (
-            <button type="button" onClick={toggle} aria-label="More ways to add rows" aria-haspopup="menu" className="h-full w-9 flex items-center justify-center border-l border-white hover:bg-[#e8e8f6] rounded-r-[4px]"><ChevronDown className="w-4 h-4" /></button>
+            <button type="button" onClick={toggle} aria-label="More ways to add rows" aria-haspopup="menu" className="h-full w-9 flex items-center justify-center border-l border-white hover:bg-[#e8e8f6] rounded-r-[4px] text-[#6d7189]"><ChevronDown className="w-4 h-4" /></button>
           )}>
-            {close => <MenuItem onClick={() => { close(); setLines(cur => [...cur, blankLine(), blankLine(), blankLine(), blankLine(), blankLine()]); }}>Add 5 new rows</MenuItem>}
+            {close => <MenuItem onClick={() => { close(); setLines(cur => [...cur, ...Array.from({ length: 5 }, () => blankLine(defaultTax))]); }}>Add 5 new rows</MenuItem>}
           </Menu>
         </div>
-        <button type="button" onClick={() => setBulk(true)} className="inline-flex items-center gap-[8px] h-[32px] px-[12px] rounded-[4px] bg-[#f1f1fa] hover:bg-[#e8e8f6] text-[13px] font-medium text-[#548df6]"><Plus className="w-4 h-4 rounded-full bg-[#548df6] text-white p-[2px]" /> Add Items in Bulk</button>
+        <button type="button" onClick={() => setBulk(true)} className="inline-flex items-center gap-[8px] h-[32px] px-[12px] rounded-[4px] bg-[#f1f1fa] hover:bg-[#e8e8f6] text-[13px] font-medium text-[#22263b]"><Plus className="w-4 h-4 rounded-full bg-[#548df6] text-white p-[2px]" /> Add Items in Bulk</button>
       </div>
       {below}
       </div>
@@ -357,13 +427,19 @@ export default function LineItems({ title, lines, setLines, columns, settings, a
       </div>
 
       {bulk && <BulkModal display={display} onClose={() => setBulk(false)} onAdd={items => { addMany(items); setBulk(false); }} />}
-      {newItemFor && (
-        <ItemModal
-          item={undefined}
+      {itemWindow && (
+        <ItemOverlay
+          itemId={itemWindow.itemId}
+          initialName={itemWindow.name}
           taxes={settings.taxes}
-          onClose={() => setNewItemFor(null)}
-          initialName={newItemFor.name}
-          onSaved={item => { patch(newItemFor.key, lineFromItem(item, lines.find(l => l.key === newItemFor.key) ?? blankLine())); setNewItemFor(null); }}
+          onClose={() => setItemWindow(null)}
+          onSaved={(after, before) => {
+            const target = itemWindow.key;
+            // a changed item refreshes every row made from it with what each row still had as the Item Master had it (a rate or a description changed on this
+            // quote stays); a new item fills the row it was added from
+            setLines(cur => cur.map(l => (before ? (l.itemId === after.id ? syncLineWithItem(l, before, after, defaultTax) : l) : l.key === target ? { ...lineFromItem(after, l, defaultTax), quantity: l.quantity || '1' } : l)));
+            setItemWindow(null);
+          }}
         />
       )}
     </div>

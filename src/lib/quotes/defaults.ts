@@ -12,7 +12,8 @@ function igst(rate: number): TaxDef {
   return { id: `igst${String(rate).replace(".", "_")}`, name: `IGST${rate}`, rate, active: true, components: [{ name: `IGST${rate}`, rate }] };
 }
 
-export const DEFAULT_TAXES: TaxDef[] = [gst(0), gst(5), gst(12), gst(18), gst(28), igst(0), igst(5), igst(12), igst(18), igst(28)];
+// GST18 is the tax a new item row starts with (Quote Settings → Taxes → Default)
+export const DEFAULT_TAXES: TaxDef[] = [gst(0), gst(5), gst(12), { ...gst(18), isDefault: true }, gst(28), igst(0), igst(5), igst(12), igst(18), igst(28)];
 
 export const DEFAULT_TDS: WithholdingDef[] = [
   { id: "tds_194c_1", name: "194C Contractors - Individual / HUF", rate: 1, active: true },

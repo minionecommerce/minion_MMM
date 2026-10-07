@@ -178,8 +178,14 @@ export async function searchLinks(ctx: AuthContext, kind: "lead" | "project" | "
     });
     return deals.map(d => ({ id: d.id, label: `${d.dealNumber ?? "Deal"} · ${d.title}` }));
   }
-  const projects = await prisma.project.findMany({ where: q ? { name: has } : {}, select: { id: true, name: true }, orderBy: { createdAt: "desc" }, take: 20 });
-  return projects.map(p => ({ id: p.id, label: p.name }));
+  // A project of the Projects module is found by its code (MP1) as well as its name; a removed one is not offered
+  const projects = await prisma.project.findMany({
+    where: { deletedAt: null, ...(q ? { OR: [{ name: has }, { projectCode: has }] } : {}) },
+    select: { id: true, name: true, projectCode: true },
+    orderBy: { createdAt: "desc" },
+    take: 20,
+  });
+  return projects.map(p => ({ id: p.id, label: p.projectCode ? `${p.projectCode} · ${p.name}` : p.name }));
 }
 
 // ---------------------------------------------------------------------------

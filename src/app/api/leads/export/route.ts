@@ -19,10 +19,10 @@ export async function GET(request: Request) {
     const [rows, options] = await Promise.all([listLeadsForExport(params), getFormOptions()]);
     const customFields = options.fields.filter(f => !f.isSystem);
     const optionLabel = (key: string) => (id: string) => (options.customOptions[key] ?? []).find(o => o.id === id)?.label;
-    const header = ["Lead ID", "Date", "Time", "Customer", "Contact Number", "Lead Type", "Exact Requirement", "Amount", "Task Assigned Person", "Lead Person", "Lead Status", "Conventional Rate %", "Source", "Mode of Customer", "Main Category", "Category", "Subcategory", "Location", "Exact Location", "Location Link", "Notes", ...customFields.map(f => f.label)];
+    const header = ["Lead ID", "Date", "Time", "Customer", "Contact Number", "Lead Type", "Exact Requirement", "Amount", "Task Assigned Person", "Lead Person", "Lead Status", "Conventional Rate %", "Source", "Mode of Customer", "Main Category", "Subcategory", "Location", "Exact Location", "Location Link", "Notes", ...customFields.map(f => f.label)];
     const lines = [header.map(cell).join(",")];
     for (const r of rows) {
-      lines.push([r.code, r.date, r.time, r.customerName, r.contactNumber, r.leadTypeLabel, r.exactRequirement, r.amount, r.taskPerson?.name, r.leadPerson?.name, r.leadStatus?.label, r.conventionalRate, r.sourceLabel, r.modeOfCustomerLabel, r.mainCategoryLabel, r.categoryLabel, r.subcategoryLabel, r.location, r.exactLocation, r.locationLink, r.notes, ...customFields.map(f => { const v = displayCustomValue(f, r.customFields?.[f.key], optionLabel(f.key)); return v === "—" ? "" : v; })].map(cell).join(","));
+      lines.push([r.code, r.date, r.time, r.customerName, r.contactNumber, r.leadTypeLabel, r.exactRequirement, r.amount, r.taskPerson?.name, r.leadPerson?.name, r.leadStatus?.label, r.conventionalRate, r.sourceLabel, r.modeOfCustomerLabel, r.mainCategoryLabel, r.subcategoryLabel, r.location, r.exactLocation, r.locationLink, r.notes, ...customFields.map(f => { const v = displayCustomValue(f, r.customFields?.[f.key], optionLabel(f.key)); return v === "—" ? "" : v; })].map(cell).join(","));
     }
     return new Response("﻿" + lines.join("\r\n"), {
       headers: { "Content-Type": "text/csv; charset=utf-8", "Content-Disposition": `attachment; filename="leads-${new Date().toISOString().slice(0, 10)}.csv"` },

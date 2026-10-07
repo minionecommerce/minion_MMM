@@ -105,13 +105,16 @@ export default function SettingsClient({ settings: initial, images: initialImage
 }
 
 // ---------------------------------------------------------------------------
-function TaxesCard({ initial, edit, onSaved }: { initial: TaxDef[]; edit: boolean; onSaved: (s: QuoteSettings) => void }) {
+export function TaxesCard({ initial, edit, onSaved }: { initial: TaxDef[]; edit: boolean; onSaved: (s: QuoteSettings) => void }) {
   const [rows, setRows] = useState<TaxDef[]>(initial);
   const { busy, error, save, clear } = useSave('taxes', onSaved);
   const set = (i: number, p: Partial<TaxDef>) => { setRows(r => r.map((x, k) => (k === i ? { ...x, ...p } : x))); clear(); };
+  // only one tax is the default, and a tax that is switched off cannot be it
+  const setDefault = (i: number, on: boolean) => { setRows(r => r.map((x, k) => ({ ...x, isDefault: k === i ? on : false }))); clear(); };
+  const setActive = (i: number, on: boolean) => set(i, on ? { active: true } : { active: false, isDefault: false });
   const setPart = (i: number, j: number, p: Partial<{ name: string; rate: number }>) => set(i, { components: rows[i].components.map((c, k) => (k === j ? { ...c, ...p } : c)) });
   return (
-    <Card title="Taxes" note="A tax can be split into parts: GST18 = CGST9 + SGST9. The parts must add up to the rate. A tax that quotes use cannot be deleted; switch it off instead." footer={edit ? <Button kind="blue" onClick={() => save(rows)} busy={busy}>Save</Button> : undefined}>
+    <Card title="Taxes" note="A tax can be split into parts: GST18 = CGST9 + SGST9. The parts must add up to the rate. The Default tax is what a new item row on a quote starts with. A tax that quotes use cannot be deleted; switch it off instead." footer={edit ? <Button kind="blue" onClick={() => save(rows)} busy={busy}>Save</Button> : undefined}>
       {error && <p role="alert" className="mb-3 text-[13px] text-[#d9232b]">{error}</p>}
       <div className="space-y-3">
         {rows.map((t, i) => (
@@ -119,7 +122,8 @@ function TaxesCard({ initial, edit, onSaved }: { initial: TaxDef[]; edit: boolea
             <div className="flex flex-wrap items-end gap-3">
               <div><label className={lab}>Name</label><input value={t.name} disabled={!edit} onChange={e => set(i, { name: e.target.value })} maxLength={40} className={inputClass(false, 'w-[150px]')} /></div>
               <div><label className={lab}>Rate %</label><input value={t.rate} disabled={!edit} inputMode="decimal" onChange={e => { const n = Number(e.target.value); set(i, { rate: Number.isFinite(n) ? n : 0 }); }} className={inputClass(false, 'w-[90px]')} /></div>
-              <label className="flex items-center gap-2 text-[13px] pb-1"><input type="checkbox" className="q-check" checked={t.active} disabled={!edit} onChange={e => set(i, { active: e.target.checked })} /> Active</label>
+              <label className="flex items-center gap-2 text-[13px] pb-1"><input type="checkbox" className="q-check" checked={t.active} disabled={!edit} onChange={e => setActive(i, e.target.checked)} /> Active</label>
+              <label className="flex items-center gap-2 text-[13px] pb-1" title="A new item row on a quote starts with this tax"><input type="checkbox" className="q-check" checked={!!t.isDefault} disabled={!edit || !t.active} onChange={e => setDefault(i, e.target.checked)} data-tax-default /> Default</label>
               {edit && <button type="button" onClick={() => setRows(r => r.filter((_, k) => k !== i))} aria-label={`Delete ${t.name}`} className="ml-auto text-[#d9232b] hover:bg-[#fdeeee] rounded p-1.5"><Trash2 className="w-4 h-4" /></button>}
             </div>
             <div className="mt-2 flex flex-wrap items-end gap-3">

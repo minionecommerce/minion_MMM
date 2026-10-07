@@ -10,7 +10,11 @@ export type LineState = {
   itemId: string | null;
   name: string;
   description: string;
-  hsn: string;
+  hsn: string; // the HSN code of Goods, the SAC of a Service
+  kind: 'Goods' | 'Service' | ''; // decides HSN or SAC; empty for a line typed by hand
+  taskTemplateId: string;
+  taskTemplateName: string;
+  imageFileId: string | null; // the picture of the item, shown at the left of the row
   unit: string;
   quantity: string;
   rate: string;
@@ -24,18 +28,47 @@ export type CalcState = { discount: string; shipping: string; wKind: 'TDS' | 'TC
 let counter = 0;
 export const newKey = () => `l_${Date.now().toString(36)}_${(counter++).toString(36)}`;
 
-export const blankLine = (): LineState => ({ key: newKey(), itemId: null, name: '', description: '', hsn: '', unit: '', quantity: '1', rate: '', taxId: '', custom: {}, showDesc: false });
+// A new row starts with the default tax (taxId) of Quote Settings, if there is one
+export const blankLine = (taxId = ''): LineState => ({ key: newKey(), itemId: null, name: '', description: '', hsn: '', kind: '', taskTemplateId: '', taskTemplateName: '', imageFileId: null, unit: '', quantity: '1', rate: '', taxId, custom: {}, showDesc: false });
 
+// A row that has nothing in it (a Task Template alone does not make it a row: there is no item to do the work for)
 export const isBlankLine = (l: LineState) => !l.name.trim() && !l.description.trim() && !l.itemId && !(Number(l.rate) > 0) && !l.hsn.trim() && Object.keys(l.custom).length === 0;
 
-export function lineFromItem(item: ItemDto, base: LineState = blankLine()): LineState {
-  return { ...base, itemId: item.id, name: item.name, description: item.description, hsn: item.hsn, unit: item.unit, rate: String(item.rate), taxId: item.taxId ?? '', showDesc: !!item.description };
+// The row an item fills in: everything the Item Master holds about it. What was already chosen on the row (its Task Template) stays when the item has none.
+// A taxable item that has no tax of its own gets the default tax; an item that is not taxable gets none.
+export function lineFromItem(item: ItemDto, base: LineState = blankLine(), defaultTax = ''): LineState {
+  return {
+    ...base, itemId: item.id, name: item.name, description: item.description, hsn: item.hsn, kind: item.kind, unit: item.unit, rate: String(item.rate),
+    taxId: item.taxPreference === 'taxable' ? item.taxId ?? defaultTax : '', taskTemplateId: item.taskTemplateId ?? base.taskTemplateId,
+    taskTemplateName: item.taskTemplateId ? item.taskTemplateName : base.taskTemplateName, imageFileId: item.imageFileId, showDesc: !!item.description,
+  };
+}
+
+// The item was changed in the Item Master (Edit item on a row): the row takes the new values of what it still had as the master had it. A rate, a
+// description or a tax changed on this quote stays as it is.
+export function syncLineWithItem(line: LineState, before: ItemDto, after: ItemDto, defaultTax = ''): LineState {
+  const keep = <T,>(now: T, was: T, becomes: T) => (now === was ? becomes : now);
+  const taxOf = (i: ItemDto) => (i.taxPreference === 'taxable' ? i.taxId ?? defaultTax : ''); // the tax a row gets from the item
+  return {
+    ...line,
+    name: keep(line.name, before.name, after.name),
+    description: keep(line.description, before.description, after.description),
+    hsn: keep(line.hsn, before.hsn, after.hsn),
+    kind: keep<LineState['kind']>(line.kind, before.kind, after.kind),
+    unit: keep(line.unit, before.unit, after.unit),
+    rate: Number(line.rate) === before.rate ? String(after.rate) : line.rate,
+    taxId: keep(line.taxId, taxOf(before), taxOf(after)),
+    taskTemplateId: keep(line.taskTemplateId, before.taskTemplateId ?? '', after.taskTemplateId ?? ''),
+    taskTemplateName: line.taskTemplateId === (before.taskTemplateId ?? '') ? after.taskTemplateName : line.taskTemplateName,
+    imageFileId: after.imageFileId,
+    showDesc: line.showDesc || !!after.description,
+  };
 }
 
 export function lineFromDto(l: LineDto): LineState {
   return {
-    key: newKey(), id: l.id, itemId: l.itemId, name: l.name, description: l.description, hsn: l.hsn, unit: l.unit, quantity: String(l.quantity), rate: String(l.rate),
-    taxId: l.taxId ?? '', custom: l.custom ?? {}, showDesc: !!l.description,
+    key: newKey(), id: l.id, itemId: l.itemId, name: l.name, description: l.description, hsn: l.hsn, kind: l.kind ?? '', taskTemplateId: l.taskTemplateId ?? '', taskTemplateName: l.taskTemplateName,
+    imageFileId: l.imageFileId, unit: l.unit, quantity: String(l.quantity), rate: String(l.rate), taxId: l.taxId ?? '', custom: l.custom ?? {}, showDesc: !!l.description,
   };
 }
 
@@ -82,7 +115,7 @@ export function numberOrText(s: string, empty: number): number | string {
 // What the API takes for a row
 export function lineToInput(l: LineState): LineInput {
   return {
-    ...(l.id ? { id: l.id } : {}), itemId: l.itemId, name: l.name, description: l.description, hsn: l.hsn, unit: l.unit,
+    ...(l.id ? { id: l.id } : {}), itemId: l.itemId, name: l.name, description: l.description, hsn: l.hsn, kind: l.kind || null, taskTemplateId: l.taskTemplateId || null, unit: l.unit,
     quantity: numberOrText(l.quantity, 1) as number, rate: numberOrText(l.rate, 0) as number, taxId: l.taxId || null, custom: l.custom,
   };
 }

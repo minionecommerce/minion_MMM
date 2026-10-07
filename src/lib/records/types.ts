@@ -1,19 +1,21 @@
 // Types shared by the server and the browser for the four record modules: Material Vendor, Service Vendor,
 // Pre-Payment Records and Payment Collection Records. No server-only imports here.
 
-export const MODULE_IDS = ["materialVendor", "serviceVendor", "prePayment", "paymentCollection", "quote"] as const;
+export const MODULE_IDS = ["materialVendor", "serviceVendor", "prePayment", "paymentCollection", "quote", "project", "customer", "item"] as const;
 export type ModuleId = (typeof MODULE_IDS)[number];
 
 // AUTO (the record's own ID), APPROVER (Approved By) and CALC (a value the system works out: the totals of a quote) exist only as
 // standard fields. LOOKUP (a record of another CRM list) is standard in every module and can be added with New Field in the
-// modules that allow it (Quotes).
+// modules that allow it (Quotes, Projects). MULTISELECT (several choices from a list, held as an array of option ids) exists only as a
+// field added with New Field, in the modules that allow it (Projects).
 export type FieldType =
   | "TEXT" | "TEXTAREA" | "NUMBER" | "CURRENCY" | "DATE" | "DATETIME" | "EMAIL" | "PHONE" | "URL"
-  | "CHECKBOX" | "DROPDOWN" | "USER" | "FILE"
+  | "CHECKBOX" | "DROPDOWN" | "MULTISELECT" | "USER" | "FILE"
   | "AUTO" | "LOOKUP" | "APPROVER" | "CALC";
 
 export type CustomFieldType = Exclude<FieldType, "AUTO" | "APPROVER" | "CALC">;
-export type LookupKind = "deal" | "materialVendor" | "serviceVendor" | "customer" | "project" | "item" | "tax";
+// "template": a project template (the options of the Template dropdown in the Project layout), used by the Work Type of a Pre-Payment Record
+export type LookupKind = "deal" | "materialVendor" | "serviceVendor" | "customer" | "project" | "item" | "tax" | "template";
 export type FieldOption = { id: string; label: string };
 
 // What a Super Admin can pick in New Field. The same field-type list as Users → Edit Page Layout, plus Date & Time,
@@ -26,6 +28,7 @@ export const CUSTOM_FIELD_TYPES: { type: CustomFieldType; label: string; hint: s
   { type: "DATE", label: "Date", hint: "Calendar date" },
   { type: "DATETIME", label: "Date & Time", hint: "A date with a time" },
   { type: "DROPDOWN", label: "Dropdown", hint: "Choose one from a list you manage" },
+  { type: "MULTISELECT", label: "Multi-select", hint: "Choose one or more from a list you manage" },
   { type: "CHECKBOX", label: "Checkbox", hint: "Yes / No" },
   { type: "FILE", label: "File Upload", hint: "Documents or photos" },
   { type: "USER", label: "User Lookup", hint: "One of the active CRM users" },
@@ -45,11 +48,11 @@ export const LOOKUP_TARGETS: { kind: LookupKind; label: string }[] = [
 ];
 export const LOOKUP_TARGET_SET = new Set<string>(LOOKUP_TARGETS.map(t => t.kind));
 // A column of a table section (Price Detail, Remarks) is a simpler field: no User Lookup, no Date & Time
-export const TABLE_COLUMN_TYPES = new Set<string>(["TEXT", "TEXTAREA", "NUMBER", "CURRENCY", "DATE", "DROPDOWN", "CHECKBOX", "FILE", "EMAIL", "PHONE", "URL"]);
+export const TABLE_COLUMN_TYPES = new Set<string>(["TEXT", "TEXTAREA", "NUMBER", "CURRENCY", "DATE", "DROPDOWN", "MULTISELECT", "CHECKBOX", "FILE", "EMAIL", "PHONE", "URL"]);
 
 export const FIELD_TYPE_LABEL: Record<FieldType, string> = {
   TEXT: "Single Line", TEXTAREA: "Multi Line", NUMBER: "Number", CURRENCY: "Currency / Amount", DATE: "Date", DATETIME: "Date & Time",
-  EMAIL: "Email", PHONE: "Phone", URL: "URL", CHECKBOX: "Checkbox", DROPDOWN: "Dropdown", USER: "User Lookup", FILE: "File Upload",
+  EMAIL: "Email", PHONE: "Phone", URL: "URL", CHECKBOX: "Checkbox", DROPDOWN: "Dropdown", MULTISELECT: "Multi-select", USER: "User Lookup", FILE: "File Upload",
   AUTO: "Auto ID", LOOKUP: "Lookup", APPROVER: "Approval", CALC: "Calculation",
 };
 
@@ -97,7 +100,7 @@ export type LayoutField = {
   listable: boolean; // can be a column of the list page
   defaultValue: string | null; // option id / user id / "@me" / "@today" / "@now" / text
   defaultable: boolean;
-  options: FieldOption[]; // DROPDOWN
+  options: FieldOption[]; // DROPDOWN, MULTISELECT
   lookup: LookupKind | null;
   prefix: string | null; // CURRENCY: written before the number
   currency: string; // CURRENCY: the code that goes with the amounts
@@ -123,7 +126,7 @@ export type ModuleLayoutDto = {
 // Records
 // ---------------------------------------------------------------------------
 export type FileDto = { id: string; fileName: string; size: number; mimeType: string; url: string | null };
-export type RecordValues = Record<string, unknown>; // by field key: text, number, option id, user id, ... or FileDto[] for File Upload fields
+export type RecordValues = Record<string, unknown>; // by field key: text, number, option id, user id, ... FileDto[] for File Upload fields, string[] (option ids) for Multi-select fields
 export type RowDto = { id: string; values: RecordValues };
 
 export type RecordDto = {
@@ -138,7 +141,7 @@ export type RecordDto = {
 
 export type RecordRefs = {
   users: Record<string, string>; // id -> name
-  deals: Record<string, { code: string; name: string; customer: string | null; closed: boolean }>;
+  deals: Record<string, { code: string; name: string; customer: string | null; closed: boolean; projectId?: string | null }>; // projectId: the deal was converted to this project
   materialVendors: Record<string, { code: string; name: string }>;
   serviceVendors: Record<string, { code: string; name: string }>;
   lookups?: Record<string, Record<string, string>>; // customers, projects, ...: kind -> id -> name

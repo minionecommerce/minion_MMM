@@ -12,7 +12,7 @@ const uploadKey = (name: string) => `${name}-${Date.now()}-${Math.random().toStr
 
 // A File Upload field: pick files, they are sent to Storage straight away (so Save only has to attach them) and show as chips.
 // `compact` is the small version used inside a table row.
-export default function FileField({ slug, fieldKey, label, files, maxFiles, onChange, onBusy, disabled, compact, readOnly }: {
+export default function FileField({ slug, fieldKey, label, files, maxFiles, onChange, onBusy, disabled, compact, bare, readOnly }: {
   slug: string;
   fieldKey: string;
   label: string;
@@ -22,6 +22,7 @@ export default function FileField({ slug, fieldKey, label, files, maxFiles, onCh
   onBusy?: (delta: number) => void; // +1 when an upload starts, -1 when it ends: Save waits for all of them
   disabled?: boolean;
   compact?: boolean;
+  bare?: boolean; // the plainest version (the cells of the project tables): a file icon for each file and one small button to add another
   readOnly?: boolean;
 }) {
   const toast = useToast();
@@ -79,6 +80,37 @@ export default function FileField({ slug, fieldKey, label, files, maxFiles, onCh
       ))}
     </ul>
   );
+
+  if (bare) {
+    const editable = !readOnly && !disabled;
+    return (
+      <div className="flex flex-wrap items-center justify-center gap-2">
+        <input
+          ref={input}
+          type="file"
+          multiple={maxFiles > 1}
+          hidden
+          aria-label={`Upload ${label}`}
+          onChange={e => { const picked = Array.from(e.target.files ?? []); e.target.value = ''; void add(picked); }}
+        />
+        {files.map(f => (
+          <span key={f.id} className="inline-flex items-center gap-0.5">
+            {f.url ? (
+              <a href={f.url} target="_blank" rel="noopener noreferrer" title={`${f.fileName} · ${formatBytes(f.size)}`} aria-label={f.fileName} className="text-[#1a56c4] hover:text-[#0b3d91]"><FileText className="w-[22px] h-[22px]" aria-hidden /></a>
+            ) : (
+              <span title={f.fileName} className="text-gray-500"><FileText className="w-[22px] h-[22px]" aria-hidden /></span>
+            )}
+            {editable && <button type="button" onClick={() => remove(f)} aria-label={`Remove ${f.fileName}`} className="text-gray-300 hover:text-[#d9232b]"><X className="w-3.5 h-3.5" /></button>}
+          </span>
+        ))}
+        {uploading.map(u => <span key={u.key} title={`Uploading ${u.name}`} className="text-gray-400"><Loader2 className="w-4 h-4 animate-spin" aria-label={`Uploading ${u.name}`} /></span>)}
+        {editable && room > 0 && (
+          <button type="button" onClick={() => input.current?.click()} title={`Upload ${label}`} aria-label={`Upload ${label}`} className="inline-flex items-center justify-center w-7 h-7 rounded border border-dashed border-gray-300 text-gray-500 hover:border-gray-500 hover:text-gray-800"><Paperclip className="w-3.5 h-3.5" aria-hidden /></button>
+        )}
+        {!editable && files.length === 0 && <span className="text-gray-300">—</span>}
+      </div>
+    );
+  }
 
   if (readOnly) return files.length ? chips : <span className="text-gray-400">—</span>;
 

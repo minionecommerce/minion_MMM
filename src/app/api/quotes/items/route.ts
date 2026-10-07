@@ -1,17 +1,12 @@
 import { NextResponse } from "next/server";
 import { withAuthRoute, readJson } from "@/lib/api";
-import { z } from "zod";
 import { needQuoteWriter } from "@/lib/quotes/access";
 import { createItem, listItems } from "@/lib/quotes/catalog";
 import { searchCatalog } from "@/lib/quotes/lookups";
 import { stripControl } from "@/lib/records/values";
+import { itemBodySchema } from "../helpers";
 
-const bodySchema = z.object({
-  name: z.unknown(), description: z.unknown().optional(), hsn: z.unknown().optional(), unit: z.unknown().optional(), rate: z.unknown().optional(),
-  taxId: z.unknown().optional(), kind: z.unknown().optional(), isActive: z.unknown().optional(),
-}).strict();
-
-// GET /api/quotes/items?q=&page=&active=all|active|inactive — the catalogue page. With picker=1: the first 30 matches for the item picker
+// GET /api/quotes/items?q=&page=&active=all|active|inactive — the catalogue page. With picker=1: the first matches for the item picker
 // of a quote (needs create or edit).
 export async function GET(request: Request) {
   return withAuthRoute(request, async ctx => {
@@ -26,7 +21,7 @@ export async function GET(request: Request) {
   });
 }
 
-// POST /api/quotes/items — add an item. Needs create.
+// POST /api/quotes/items — add an item (the New Item form). Needs create. The pictures are the ids of files uploaded before: files: { front, rear, other }.
 export async function POST(request: Request) {
-  return withAuthRoute(request, async ctx => NextResponse.json({ item: await createItem(ctx, await readJson(request, bodySchema)) }, { status: 201 }));
+  return withAuthRoute(request, async ctx => NextResponse.json({ item: await createItem(ctx, await readJson(request, itemBodySchema)) }, { status: 201 }));
 }

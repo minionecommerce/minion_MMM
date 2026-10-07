@@ -1,4 +1,5 @@
 import { notFound } from "next/navigation";
+import { prisma } from "@/lib/db";
 import { requirePageAccess } from "@/lib/auth";
 import { hasPermission } from "@/lib/rbac/effective";
 import { ServiceError } from "@/lib/users/service";
@@ -31,7 +32,7 @@ export async function RecordsListPage(moduleId: ModuleId, searchParams: SearchPa
   return <RecordsListClient moduleId={moduleId} layout={layout} data={data} params={params} abilities={abilitiesOf(ctx, moduleId)} users={users} />;
 }
 
-export async function RecordFormPage(moduleId: ModuleId, mode: "create" | "edit", id?: string) {
+export async function RecordFormPage(moduleId: ModuleId, mode: "create" | "edit", id?: string, projectId?: string) {
   const def = MODULES[moduleId];
   const ctx = await requirePageAccess([def.permission], mode === "create" ? "create" : "edit");
   const layout = await getLayout(moduleId);
@@ -42,6 +43,16 @@ export async function RecordFormPage(moduleId: ModuleId, mode: "create" | "edit"
     peekNextCode(moduleId),
     mode === "edit" ? recordOr404(ctx, moduleId, id!) : Promise.resolve(null),
   ]);
+
+  // Create PPR / Create PCR from a project: the deal is the project's deal and cannot be changed on this form
+  let fromProject: { id: string; code: string; dealId: string; dealLabel: string } | undefined;
+  if (mode === "create" && projectId && (moduleId === "prePayment" || moduleId === "paymentCollection") && hasPermission(ctx.permissions, "projects", "view")) {
+    const project = await prisma.project.findFirst({
+      where: { id: projectId, deletedAt: null, projectCode: { not: null }, dealId: { not: null } },
+      select: { id: true, projectCode: true, dealId: true, deal: { select: { dealNumber: true, title: true } } },
+    });
+    if (project?.dealId && project.projectCode) fromProject = { id: project.id, code: project.projectCode, dealId: project.dealId, dealLabel: [project.deal?.dealNumber, project.deal?.title].filter(Boolean).join(" - ") };
+  }
   return (
     <div data-light-native className="bg-white text-[#333]">
       <RecordForm
@@ -57,6 +68,7 @@ export async function RecordFormPage(moduleId: ModuleId, mode: "create" | "edit"
         canApprove={hasPermission(ctx.permissions, def.permission, "approve")}
         canLayout={ctx.isSuperAdmin}
         nextCode={nextCode}
+        fromProject={fromProject}
       />
     </div>
   );

@@ -3,7 +3,6 @@
 import { useState } from 'react';
 import { Calendar, Download, FileInput, Filter, LayoutTemplate, Plus, RefreshCw } from 'lucide-react';
 import { DATE_FILTER_TYPES } from '@/lib/leads/constants';
-import type { LeadListParams } from '@/lib/leads/queries';
 
 const iconBtn = 'w-10 h-10 flex items-center justify-center text-gray-800 hover:text-black hover:bg-gray-100 rounded transition-colors';
 const field = 'w-full border border-gray-300 rounded px-3 py-2 text-[13px] text-gray-800 bg-white focus:outline-none focus:border-yellow-500';
@@ -12,7 +11,7 @@ const field = 'w-full border border-gray-300 rounded px-3 py-2 text-[13px] text-
 // download, import), shown on the summary / search row. The filter and calendar panels open right below the icons.
 // The Deals page uses it too: no Add button (canCreate false), its own layout label, noun and list of dates, and no Import placeholder.
 export default function LeadToolbar({ params, canCreate, canExport, canEditLayout, refreshing, onAdd, onEditLayout, onRefresh, onParams, exportHref, className = '', dateTypes = DATE_FILTER_TYPES, layoutLabel = 'Edit Page Layout', noun = 'leads', showImport = true }: {
-  params: Pick<LeadListParams, 'from' | 'to' | 'dateBy'>;
+  params: { from?: string; to?: string; dateBy?: string }; // the Leads, Deals and Projects pages each have their own list of dates
   canCreate: boolean;
   canExport: boolean;
   canEditLayout: boolean; // Super Admin only

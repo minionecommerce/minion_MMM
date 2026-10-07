@@ -3,10 +3,10 @@
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
-import { STATUS_FILTER_ITEMS, type ColumnFilterKey, type DealColumnId, type LeadFilterId, type LeadFormOptions } from '@/lib/leads/constants';
+import { STATUS_FILTER_ITEMS, type ColumnFilterKey, type DealColumnId, type LeadFormOptions } from '@/lib/leads/constants';
 import type { LeadFieldDto } from '@/lib/leads/layout-shared';
 import { callApi } from '@/lib/leads/client';
-import { DEAL_DATE_FILTER_TYPES, DEAL_FILTERS, type DealSortKey } from '@/lib/deals/constants';
+import { CONVERTED_FILTER, DEAL_DATE_FILTER_TYPES, DEAL_FILTERS, type DealFilterId, type DealSortKey } from '@/lib/deals/constants';
 import type { DealListParams, DealRow } from '@/lib/deals/queries';
 import { useToast } from '@/components/ui/Toast';
 import LeadHeader from '@/app/leads/components/LeadHeader';
@@ -21,6 +21,7 @@ import FollowUpFilesModal from '@/app/leads/components/FollowUpFilesModal';
 import CloseLeadModal from '@/app/leads/components/CloseLeadModal';
 import DealTable from './components/DealTable';
 import DealLayoutEditor from './components/DealLayoutEditor';
+import ConvertProjectModal, { type ConvertField } from './components/ConvertProjectModal';
 
 type Data = {
   rows: DealRow[];
@@ -30,11 +31,12 @@ type Data = {
   pageSize: number;
 };
 
-type Dialog = { kind: 'edit'; row: DealRow } | { kind: 'view'; row: DealRow } | { kind: 'delete'; row: DealRow } | { kind: 'duplicate'; row: DealRow } | { kind: 'revive'; row: DealRow } | { kind: 'layout' } | { kind: 'followup'; row: DealRow } | { kind: 'followups'; row: DealRow } | { kind: 'close'; row: DealRow } | null;
+type Dialog = { kind: 'edit'; row: DealRow } | { kind: 'view'; row: DealRow } | { kind: 'delete'; row: DealRow } | { kind: 'duplicate'; row: DealRow } | { kind: 'revive'; row: DealRow } | { kind: 'layout' } | { kind: 'followup'; row: DealRow } | { kind: 'followups'; row: DealRow } | { kind: 'close'; row: DealRow } | { kind: 'project'; row: DealRow } | null;
 
 // The Leads page, for the deals: the same layout and behaviour (live search, quick filters, header sort / filter menus, dates, paging in the
-// address, reset, download), with Close Deal, Edit, Duplicate and Delete in Actions.
-export default function DealsClient({ data, params, options, lists, columnOrder, statusField, currentEmployeeId, abilities, storageReady }: {
+// address, reset, download), with Convert to Project (the icon) and View, Edit, Close Deal, Duplicate and Delete (the three dots) in Actions.
+// The Converted Deals filter shows the deals that became projects; every other view leaves them out.
+export default function DealsClient({ data, params, options, lists, columnOrder, statusField, currentEmployeeId, abilities, storageReady, convertFields }: {
   data: Data;
   params: DealListParams;
   options: LeadFormOptions;
@@ -42,8 +44,9 @@ export default function DealsClient({ data, params, options, lists, columnOrder,
   columnOrder: DealColumnId[];
   statusField: LeadFieldDto | null; // the Deal Status list's editor row (Super Admin only)
   currentEmployeeId: string | null;
-  abilities: { edit: boolean; create: boolean; delete: boolean; export: boolean; layout: boolean };
+  abilities: { edit: boolean; create: boolean; delete: boolean; export: boolean; layout: boolean; project: boolean };
   storageReady: boolean;
+  convertFields: ConvertField[]; // the Convert to Project popup's fields, from the Project layout
 }) {
   const router = useRouter();
   const search = useSearchParams();
@@ -91,6 +94,7 @@ export default function DealsClient({ data, params, options, lists, columnOrder,
   const handlersFor = (row: DealRow) => ({
     onView: () => setDialog({ kind: 'view', row }),
     onEdit: () => setDialog({ kind: 'edit', row }),
+    onConvertToProject: () => setDialog({ kind: 'project', row }),
     onCloseDeal: () => setDialog({ kind: 'close', row }),
     onRevive: () => setDialog({ kind: 'revive', row }),
     onDuplicate: () => setDialog({ kind: 'duplicate', row }),
@@ -140,7 +144,7 @@ export default function DealsClient({ data, params, options, lists, columnOrder,
         <div className="mt-6 flex flex-col lg:flex-row lg:flex-wrap lg:items-center gap-x-5 gap-y-3 pb-5 border-b-[3px] border-gray-200">
           <LeadSummary noun="Deals" total={data.summary.total} showing={data.summary.showing} onShowAll={showAll} />
           <LeadSearch value={q} onChange={setQ} placeholder="Search deals..." />
-          <LeadFilters active={params.filter} filters={DEAL_FILTERS} onChange={(id: LeadFilterId | undefined) => setParams({ filter: id })} />
+          <LeadFilters active={params.filter} filters={DEAL_FILTERS} onChange={(id: DealFilterId | undefined) => setParams({ filter: id })} />
           <LeadToolbar
             className="self-end lg:self-auto lg:ml-auto"
             params={params}
@@ -164,6 +168,7 @@ export default function DealsClient({ data, params, options, lists, columnOrder,
           <DealTable
             rows={data.rows}
             totalDeals={data.summary.total}
+            convertedView={params.filter === CONVERTED_FILTER}
             sort={params.sort}
             dir={params.dir === 'asc' ? 'asc' : 'desc'}
             abilities={abilities}
@@ -208,6 +213,9 @@ export default function DealsClient({ data, params, options, lists, columnOrder,
       {dialog?.kind === 'followups' && <FollowUpFilesModal row={dialog.row} apiBase="/api/deals" noun="Deal" onClose={() => setDialog(null)} />}
       {dialog?.kind === 'close' && abilities.edit && (
         <CloseLeadModal key={dialog.row.id} row={dialog.row} apiBase="/api/deals" noun="Deal" onClose={() => setDialog(null)} onSaved={() => afterSave(`Deal ${dialog.row.code} closed`)} />
+      )}
+      {dialog?.kind === 'project' && abilities.project && (
+        <ConvertProjectModal key={dialog.row.id} row={dialog.row} fields={convertFields} onClose={() => setDialog(null)} onSaved={r => afterSave(`Deal ${r.dealNumber} converted to project ${r.code}`)} />
       )}
       {dialog?.kind === 'view' && <ViewLeadModal key={dialog.row.id} leadId={dialog.row.leadId} endpoint={`/api/deals/${dialog.row.id}`} title={`Deal ${dialog.row.code}`} options={options} onClose={() => setDialog(null)} />}
 

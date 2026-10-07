@@ -50,7 +50,8 @@ export default function FieldProperties({ slug, layout, field: initial, createTy
   const inTable = targetSection?.kind === 'TABLE';
   const locked = !!initial?.requiredLocked;
   const calculated = type === 'CALC'; // a value the system works out (the totals of a quote): it can be renamed and hidden, never mandatory
-  const defaultable = initial ? initial.defaultable : effectiveType !== 'FILE' && effectiveType !== 'LOOKUP';
+  const hasOptions = effectiveType === 'DROPDOWN' || effectiveType === 'MULTISELECT';
+  const defaultable = initial ? initial.defaultable : effectiveType !== 'FILE' && effectiveType !== 'LOOKUP' && effectiveType !== 'MULTISELECT';
   const listable = initial ? initial.listable : !inTable && effectiveType !== 'FILE';
   const moveable = creating || (!!initial && layout.sections.find(s => s.id === initial.section)?.kind === 'FORM');
   const choices = creating ? draft.map(o => ({ id: o.id, label: o.name })) : options;
@@ -74,14 +75,14 @@ export default function FieldProperties({ slug, layout, field: initial, createTy
   const save = async () => {
     setError('');
     if (!label.trim()) { setError('Field label is required'); return; }
-    if (creating && effectiveType === 'DROPDOWN' && draft.length === 0) { setError('Add at least one option for the dropdown.'); return; }
+    if (creating && hasOptions && draft.length === 0) { setError(`Add at least one option for the ${effectiveType === 'MULTISELECT' ? 'multi-select' : 'dropdown'}.`); return; }
     setSaving(true);
     try {
       if (creating) {
         const defaultOption = draft.findIndex(o => o.id === defaultValue);
         const res = await callApi<{ field: LayoutField; layout: ModuleLayoutDto }>(api(slug, '/layout/fields'), 'POST', {
           label, type: effectiveType, section, required, inList: listable && inList,
-          ...(effectiveType === 'DROPDOWN' ? { options: draft.map(o => o.name), defaultOption: defaultOption >= 0 ? defaultOption : null } : defaultValue ? { defaultValue } : {}),
+          ...(effectiveType === 'DROPDOWN' ? { options: draft.map(o => o.name), defaultOption: defaultOption >= 0 ? defaultOption : null } : effectiveType === 'MULTISELECT' ? { options: draft.map(o => o.name) } : defaultValue ? { defaultValue } : {}),
           ...(effectiveType === 'CURRENCY' ? { currency } : {}),
           ...(effectiveType === 'FILE' ? { maxFiles } : {}),
           ...(effectiveType === 'LOOKUP' ? { lookup } : {}),
@@ -203,7 +204,7 @@ export default function FieldProperties({ slug, layout, field: initial, createTy
                   {LOOKUP_TARGETS.map(t => <option key={t.kind} value={t.kind}>{t.label}</option>)}
                 </select>
               ) : (
-                <div id="rf-lookup" className={`${box} flex items-center bg-gray-50 text-gray-700`}>{LOOKUP_TARGETS.find(t => t.kind === initial?.lookup)?.label ?? (initial?.lookup === 'item' ? 'Items' : initial?.lookup === 'tax' ? 'Taxes' : 'A CRM list')}</div>
+                <div id="rf-lookup" className={`${box} flex items-center bg-gray-50 text-gray-700`}>{LOOKUP_TARGETS.find(t => t.kind === initial?.lookup)?.label ?? (initial?.lookup === 'item' ? 'Items' : initial?.lookup === 'tax' ? 'Taxes' : initial?.lookup === 'template' ? 'Project templates (Project → Edit Page Layout)' : 'A CRM list')}</div>
               )}
               <p className={help}>{creating ? 'People pick one record from this list. The list cannot be changed later.' : 'The list this field shows cannot be changed.'}</p>
             </div>
@@ -261,9 +262,9 @@ export default function FieldProperties({ slug, layout, field: initial, createTy
             )}
           </div>
 
-          {effectiveType === 'DROPDOWN' && (
+          {hasOptions && (
             <div>
-              <div className="block text-[13px] font-medium text-gray-700 mb-1.5">Dropdown Options</div>
+              <div className="block text-[13px] font-medium text-gray-700 mb-1.5">{effectiveType === 'MULTISELECT' ? 'Multi-select Options' : 'Dropdown Options'}</div>
               {creating ? (
                 <>
                   <DraftPickList items={draft} onChange={setDraft} />

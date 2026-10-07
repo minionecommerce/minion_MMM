@@ -291,11 +291,11 @@ export function SourceCell({ row }: { row: LeadRow }) {
   );
 }
 
+// Main Category (red) and, under it, the Subcategory
 export function CategoryCell({ row }: { row: LeadRow }) {
   return (
     <div className="space-y-0.5 max-w-[220px]">
       <div className="text-[13px] text-[#d9232b]">{row.mainCategoryLabel ?? '—'}</div>
-      <div className="text-[13px] font-semibold text-[#333]">{row.categoryLabel}</div>
       <div className="text-[12px] italic text-gray-500">{row.subcategoryLabel}</div>
     </div>
   );

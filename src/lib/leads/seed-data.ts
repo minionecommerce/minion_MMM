@@ -16,9 +16,8 @@ export const SEED_OPTIONS: SeedOption[] = [
     Open: "open", "Follow-up": "follow_up", Revive: "revive", Pending: "pending", "Work Given To Opponent": "work_given_to_opponent",
   }),
   ...flat("LEAD_TYPE", "type", ["Standard"]),
-  // Main Category -> Category -> Subcategory
+  // Main Category -> Subcategory
   { id: "lo_main_automation", type: "MAIN_CATEGORY", label: "Automation Solutions" },
-  { id: "lo_cat_integration", type: "CATEGORY", label: "Integration, Control & Voice", parentId: "lo_main_automation" },
-  { id: "lo_sub_touch_panels", type: "SUBCATEGORY", label: "Touch Panels & Touch Switches", parentId: "lo_cat_integration" },
-  { id: "lo_sub_water_controller", type: "SUBCATEGORY", label: "Water Controller", parentId: "lo_cat_integration" },
+  { id: "lo_sub_touch_panels", type: "SUBCATEGORY", label: "Touch Panels & Touch Switches", parentId: "lo_main_automation" },
+  { id: "lo_sub_water_controller", type: "SUBCATEGORY", label: "Water Controller", parentId: "lo_main_automation" },
 ];

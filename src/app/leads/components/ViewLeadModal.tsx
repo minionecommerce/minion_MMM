@@ -95,7 +95,6 @@ export default function ViewLeadModal({ leadId, endpoint, title, options, onClos
                 <Item label={name('sourceId', 'Source')}>{l.sourceLabel}</Item>
                 <div className="sm:col-span-2"><Item label={name('exactRequirement', 'Exact Requirement')}>{l.exactRequirement}</Item></div>
                 <Item label={name('mainCategoryId', 'Main Category')}>{l.mainCategoryLabel}</Item>
-                <Item label={name('categoryId', 'Category')}>{l.categoryLabel}</Item>
                 <Item label={name('subcategoryId', 'Subcategory')}>{l.subcategoryLabel}</Item>
                 <Item label={name('leadTypeId', 'Type Of Lead')}>{l.leadTypeLabel}</Item>
                 <Item label={name('location', 'Location')}>{l.location}</Item>

@@ -87,10 +87,20 @@ export default function QuoteDocument({ doc, watermark = true }: { doc: QuoteDoc
         {/* To */}
         <div className={`bg-[#f2f3f4] px-[7px] ${body} font-bold leading-[19px] text-[#333]`} style={{ borderTop: line }}>To:</div>
         <div className="px-[7px] pt-[4px] pb-[10px]" style={{ borderTop: line }}>
-          <div className="font-bold text-[#548df6]" style={{ fontSize: 12, lineHeight: '17px' }}>{customer.name}</div>
-          <div className={`${body} leading-[15px] text-black`}>
-            {customer.address.map((l, i) => <div key={i}>{l}</div>)}
-            {customer.gstin && <div>GSTIN {customer.gstin}</div>}
+          <div className={customer.shipTo.length ? 'grid grid-cols-2 gap-x-[14px]' : ''}>
+            <div>
+              <div className="font-bold text-[#548df6]" style={{ fontSize: 12, lineHeight: '17px' }}>{customer.name}</div>
+              <div className={`${body} leading-[15px] text-black`}>
+                {customer.address.map((l, i) => <div key={i}>{l}</div>)}
+                {customer.gstin && <div>GSTIN {customer.gstin}</div>}
+              </div>
+            </div>
+            {customer.shipTo.length > 0 && (
+              <div>
+                <div className="font-bold text-[#333]" style={{ fontSize: 12, lineHeight: '17px' }}>Ship To</div>
+                <div className={`${body} leading-[15px] text-black`}>{customer.shipTo.map((l, i) => <div key={i}>{l}</div>)}</div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -125,7 +135,7 @@ export default function QuoteDocument({ doc, watermark = true }: { doc: QuoteDoc
                 <td className="px-[7px] pt-[1px] pb-[20px] leading-[17px]" style={{ borderRight: line }}>
                   <div className="whitespace-pre-line">{l.name}</div>
                   {l.description && <div className="whitespace-pre-line">{l.description}</div>}
-                  {doc.showHsn && l.hsn && <div>HSN : {l.hsn}</div>}
+                  {doc.showHsn && l.hsn && <div>{l.taxCodeLabel} : {l.hsn}</div>}
                 </td>
                 {doc.extraColumns.map(c => <td key={c.key} className="px-[7px] pt-[1px] pb-[20px] leading-[17px]" style={{ borderRight: line }}>{l.extra[c.key]}</td>)}
                 <td className="px-[7px] pt-[1px] pb-[20px] text-right leading-[19px]" style={{ borderRight: line }}>

@@ -2,8 +2,8 @@
 
 import { LEAD_FILTERS, type LeadFilterId } from '@/lib/leads/constants';
 
-// The Deals page passes its own buttons (Open Deal, Follow-up Deal, Revive Deal, Today Follow-up)
-export default function LeadFilters({ active, onChange, filters = LEAD_FILTERS }: { active?: string; onChange: (id: LeadFilterId | undefined) => void; filters?: readonly { id: LeadFilterId; label: string }[] }) {
+// The Deals page passes its own buttons (Open Deal, Follow-up Deal, Revive Deal, Today Follow-up, Converted Deals)
+export default function LeadFilters<T extends string = LeadFilterId>({ active, onChange, filters = LEAD_FILTERS as unknown as readonly { id: T; label: string }[] }: { active?: string; onChange: (id: T | undefined) => void; filters?: readonly { id: T; label: string }[] }) {
   return (
     <div className="flex flex-wrap gap-2.5">
       {filters.map(f => {

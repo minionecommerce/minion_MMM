@@ -8,7 +8,6 @@ export const OPTION_TYPES = [
   "MODE_OF_CUSTOMER",
   "PRODUCT_OR_SERVICE",
   "MAIN_CATEGORY",
-  "CATEGORY",
   "SUBCATEGORY",
   "LEAD_STATUS",
   "LEAD_TYPE",
@@ -32,7 +31,6 @@ export type LeadFormOptions = {
   modesOfCustomer: LeadOptionDto[];
   productOrService: LeadOptionDto[];
   mainCategories: LeadOptionDto[];
-  categories: LeadOptionDto[];
   subcategories: LeadOptionDto[];
   leadStatuses: LeadOptionDto[];
   dealStatuses: LeadOptionDto[];

@@ -38,7 +38,7 @@ export type LeadFieldDto = {
   defaultValue: string | null; // text; for pick lists the option id; for checkboxes "true"/"false"
   defaultable: boolean; // a default value can be set
   optionType: string | null; // which LeadOption list a pick list uses
-  parentOptionType: string | null; // cascading pick lists (Category under Main Category)
+  parentOptionType: string | null; // cascading pick lists (Subcategory under Main Category)
   sortOrder: number;
 };
 
@@ -65,8 +65,7 @@ export const SYSTEM_FIELDS: SystemDef[] = [
   { key: "exactLocation", label: "Exact Location", type: "TEXT", required: false, defaultable: true },
   { key: "locationLink", label: "Location Link", type: "URL", required: false, defaultable: true },
   { key: "mainCategoryId", label: "Main Category", type: "DROPDOWN", required: true, optionType: "MAIN_CATEGORY", defaultable: false },
-  { key: "categoryId", label: "Category", type: "DROPDOWN", required: true, optionType: "CATEGORY", parentOptionType: "MAIN_CATEGORY", defaultable: false },
-  { key: "subcategoryId", label: "Subcategory", type: "DROPDOWN", required: true, optionType: "SUBCATEGORY", parentOptionType: "CATEGORY", defaultable: false },
+  { key: "subcategoryId", label: "Subcategory", type: "DROPDOWN", required: true, optionType: "SUBCATEGORY", parentOptionType: "MAIN_CATEGORY", defaultable: false },
   { key: "leadPersonId", label: "Lead Person", type: "PERSON", required: false },
   { key: "leadStatusId", label: "Lead Status", type: "DROPDOWN", required: true, optionType: "LEAD_STATUS", defaultable: true },
   { key: "amount", label: "Amount", type: "NUMBER", required: false, defaultable: true },
