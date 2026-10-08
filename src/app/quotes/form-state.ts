@@ -34,21 +34,26 @@ export const blankLine = (taxId = ''): LineState => ({ key: newKey(), itemId: nu
 // A row that has nothing in it (a Task Template alone does not make it a row: there is no item to do the work for)
 export const isBlankLine = (l: LineState) => !l.name.trim() && !l.description.trim() && !l.itemId && !(Number(l.rate) > 0) && !l.hsn.trim() && Object.keys(l.custom).length === 0;
 
+// The tax an item gives a row: a taxable item's Inter State Tax Rate when the quote is for another state (and it has one), else its Intra State Tax Rate, else the
+// default tax; an item that is not taxable gives none.
+export const itemTaxId = (item: ItemDto, defaultTax = '', interState = false): string =>
+  item.taxPreference === 'taxable' ? (interState && item.interTaxId ? item.interTaxId : item.taxId) ?? defaultTax : '';
+
 // The row an item fills in: everything the Item Master holds about it. What was already chosen on the row (its Task Template) stays when the item has none.
 // A taxable item that has no tax of its own gets the default tax; an item that is not taxable gets none.
-export function lineFromItem(item: ItemDto, base: LineState = blankLine(), defaultTax = ''): LineState {
+export function lineFromItem(item: ItemDto, base: LineState = blankLine(), defaultTax = '', interState = false): LineState {
   return {
     ...base, itemId: item.id, name: item.name, description: item.description, hsn: item.hsn, kind: item.kind, unit: item.unit, rate: String(item.rate),
-    taxId: item.taxPreference === 'taxable' ? item.taxId ?? defaultTax : '', taskTemplateId: item.taskTemplateId ?? base.taskTemplateId,
+    taxId: itemTaxId(item, defaultTax, interState), taskTemplateId: item.taskTemplateId ?? base.taskTemplateId,
     taskTemplateName: item.taskTemplateId ? item.taskTemplateName : base.taskTemplateName, imageFileId: item.imageFileId, showDesc: !!item.description,
   };
 }
 
 // The item was changed in the Item Master (Edit item on a row): the row takes the new values of what it still had as the master had it. A rate, a
 // description or a tax changed on this quote stays as it is.
-export function syncLineWithItem(line: LineState, before: ItemDto, after: ItemDto, defaultTax = ''): LineState {
+export function syncLineWithItem(line: LineState, before: ItemDto, after: ItemDto, defaultTax = '', interState = false): LineState {
   const keep = <T,>(now: T, was: T, becomes: T) => (now === was ? becomes : now);
-  const taxOf = (i: ItemDto) => (i.taxPreference === 'taxable' ? i.taxId ?? defaultTax : ''); // the tax a row gets from the item
+  const taxOf = (i: ItemDto) => itemTaxId(i, defaultTax, interState); // the tax a row gets from the item
   return {
     ...line,
     name: keep(line.name, before.name, after.name),

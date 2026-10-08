@@ -26,4 +26,6 @@ export const itemBodySchema = z.object({
   trackInventory: z.unknown().optional(), inventoryTracking: z.unknown().optional(), inventoryAccount: z.unknown().optional(), valuationMethod: z.unknown().optional(),
   reorderPoint: z.unknown().optional(), returnable: z.unknown().optional(), dimLength: z.unknown().optional(), dimWidth: z.unknown().optional(), dimHeight: z.unknown().optional(),
   dimUnit: z.unknown().optional(), weight: z.unknown().optional(), weightUnit: z.unknown().optional(), taskTemplateId: z.unknown().optional(), files: z.unknown().optional(),
+  purchaseInfo: z.unknown().optional(), costPrice: z.unknown().optional(), purchaseAccount: z.unknown().optional(), purchaseDescription: z.unknown().optional(), receivable: z.unknown().optional(), interTaxId: z.unknown().optional(),
+  brand: z.unknown().optional(), manufacturer: z.unknown().optional(), mrp: z.unknown().optional(),
 }).strict();

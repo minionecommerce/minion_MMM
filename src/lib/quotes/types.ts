@@ -79,6 +79,11 @@ export type TemplateSettings = {
   defaultValidDays: number | null; // Expiry Date = Quote Date + this many days when a new quote is started
 };
 
+// Terms & Conditions templates of the quote form (the list behind the dropdown and the Settings window next to it). `configured` is false until a
+// Super Admin has saved the list once: the form then offers the standard text of the layout as the only template.
+export type TermsTemplate = { id: string; title: string; content: string };
+export type TermsSettings = { configured: boolean; templates: TermsTemplate[] };
+
 // The details printed in the two columns under the company block of the quote document (# / Quote Date ... Place Of Supply / Task Person).
 // Which rows, their printed labels, their column and their order are set in Edit Page Layout. A row without a value on the quote is not printed.
 export type HeaderKey = "number" | "date" | "expiry" | "reference" | "place" | "person" | "project" | "deal";
@@ -105,6 +110,7 @@ export type QuoteSettings = {
   display: DisplaySettings;
   company: CompanySettings;
   templates: TemplateSettings;
+  terms: TermsSettings;
   document: DocumentSettings;
 };
 
@@ -148,7 +154,8 @@ export type ItemDto = {
   hsn: string; // the HSN code of Goods, the SAC of a Service
   unit: string;
   rate: number;
-  taxId: string | null;
+  taxId: string | null; // the Intra State Tax Rate: the tax a row starts with when the quote is for the same state
+  interTaxId: string | null; // the Inter State Tax Rate: the tax a row starts with when the quote is for another state
   kind: "Goods" | "Service";
   isActive: boolean;
   createdAt: string;
@@ -173,6 +180,16 @@ export type ItemDetailDto = ItemDto & {
   valuationMethod: string;
   reorderPoint: number | null;
   returnable: boolean;
+  brand: string;
+  manufacturer: string;
+  mrp: number | null;
+  externalId: string | null; // the Item ID of the file the item was imported from
+  extra: Record<string, string>; // the columns of that file that have no field of their own, as { "Column name": "value" }
+  purchaseInfo: boolean; // Purchase Information is ticked: the four values below are kept
+  costPrice: number | null;
+  purchaseAccount: string;
+  purchaseDescription: string;
+  receivable: boolean;
   dimLength: number | null;
   dimWidth: number | null;
   dimHeight: number | null;
@@ -180,6 +197,14 @@ export type ItemDetailDto = ItemDto & {
   weight: number | null;
   weightUnit: string;
   images: ItemImages;
+};
+
+// The HSN code / SAC that fits an item name (GET /api/quotes/items/suggest-code), see ./hsn-sac
+export type CodeSuggestion = { code: string; description: string; score: number };
+export type CodeSuggestions = {
+  best: CodeSuggestion | null; // good enough to be put in the box; null when nothing fits well
+  others: CodeSuggestion[]; // other codes worth a look (when best is null: the nearest ones)
+  switchTo: { kind: "Goods" | "Service"; best: CodeSuggestion } | null; // nothing fits as this kind, but the name is clearly an item of the other kind
 };
 
 // A customer as the pick-lists, the quote form and the quote document use it. `address` is the Billing Address as printed lines; the new fields are

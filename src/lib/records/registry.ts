@@ -124,7 +124,7 @@ const MATERIAL_VENDOR: ModuleDef = {
     { key: "city", label: "City", type: "TEXT", section: "info", listed: true, max: 100 },
     { key: "vendorType", label: "Vendor Type", type: "DROPDOWN", section: "info", listed: true, options: ids(["Manufacturer", "Distributor", "Dealer", "Retailer", "Wholesaler", "Trader"]) },
     { key: "shopType", label: "Shop Type", type: "DROPDOWN", section: "info", listed: true, options: ids(["Retail Shop", "Wholesale Shop", "Warehouse", "Showroom", "Online Store", "Factory"]) },
-    { key: "taskPersonId", label: "Task Person", type: "USER", section: "info", listed: true, relation: "taskPerson" },
+    { key: "taskPersonId", label: "Task Person", type: "USER", section: "info", listed: true, default: "@me", relation: "taskPerson" },
     { key: "email", label: "Email", type: "EMAIL", section: "info", listed: true },
     { key: "exchangeRate", label: "Exchange Rate", type: "NUMBER", section: "info", readOnly: true, default: "1", min: 0 },
     // right column
@@ -199,7 +199,7 @@ const SERVICE_VENDOR: ModuleDef = {
     { key: "city", label: "City", type: "TEXT", section: "info", required: true, listed: true, max: 100 },
     { key: "vendorType", label: "Vendor Type", type: "DROPDOWN", section: "info", required: true, listed: true, options: ids(["Individual", "Contractor", "Company", "Agency", "Freelancer"]) },
     { key: "serviceLocation", label: "Service Location", type: "TEXTAREA", section: "info", required: true, max: 1000 },
-    { key: "taskPersonId", label: "Task Person", type: "USER", section: "info", required: true, listed: true, relation: "taskPerson" },
+    { key: "taskPersonId", label: "Task Person", type: "USER", section: "info", required: true, listed: true, default: "@me", relation: "taskPerson" },
     { key: "companyName", label: "Company Name", type: "TEXT", section: "info", max: 200 },
     { key: "gstCertificate", label: "GST or Incorporation Certificate", type: "FILE", section: "info", maxFiles: 3 },
     { key: "exchangeRate", label: "Exchange Rate", type: "NUMBER", section: "info", readOnly: true, default: "1", min: 0 },
@@ -271,7 +271,7 @@ function paymentModule(kind: "pre" | "collection"): ModuleDef {
       // left column
       { key: "code", label: `${noun} ID`, type: "AUTO", section: "info", required: true, requiredLocked: true, readOnly: true },
       { key: "dealId", label: "Deals ID", type: "LOOKUP", section: "info", required: true, listed: true, lookup: "deal", relation: "deal" },
-      { key: "taskPersonId", label: "Task Person", type: "USER", section: "info", required: true, listed: true, relation: "taskPerson" },
+      { key: "taskPersonId", label: "Task Person", type: "USER", section: "info", required: true, listed: true, default: "@me", relation: "taskPerson" },
       {
         key: "paymentMode", label: `${noun} Mode`, type: "DROPDOWN", section: "info", required: true, listed: true,
         options: ids(["DBS - MINION", "Cash", "UPI", "Cheque", "NEFT / RTGS / IMPS", "Credit Card", "Other"]), default: "dbs_minion",

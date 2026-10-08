@@ -1,10 +1,14 @@
 import { formatAmount, formatMoney, formatQuantity } from '@/lib/quotes/format';
 import type { DocHeaderRow, QuoteDoc } from '@/lib/quotes/doc';
+import { WATERMARK } from '@/lib/quotes/watermark';
+import { DOC_FONT_FAMILY } from './doc-font';
 
 // The quote as a printed page: company, customer, items, totals, notes, bank details, terms, signature. Drawn from one model (QuoteDoc) so
 // the Quote Details page, the print / PDF page and the page a customer opens with the share link all look the same. Fixed A4 width.
 // Measured against the reference page (Zoho Books): text is 8pt (10.67px), the company name 12pt, the title 22pt, labels #333.
 // The status band (Sent, Accepted ...) is not drawn here: it belongs to the CRM viewer (StatusBand), so a printout or a PDF never has it.
+// The logo is a watermark behind the whole page, the item table included (the box has no white of its own). The PDF (forPdf) is drawn on a see-through
+// background and puts the watermark on every page itself, so a page that is cut is not left without it.
 const line = '1px solid #9e9e9e';
 const body = 'text-[10.67px]';
 
@@ -22,7 +26,7 @@ function HeaderColumn({ rows }: { rows: DocHeaderRow[] }) {
   );
 }
 
-export default function QuoteDocument({ doc, watermark = true }: { doc: QuoteDoc; watermark?: boolean }) {
+export default function QuoteDocument({ doc, watermark = true, forPdf = false }: { doc: QuoteDoc; watermark?: boolean; forPdf?: boolean }) {
   const { company, customer, totals, currency } = doc;
   const money = (n: number) => formatMoney(n, currency.symbol, currency.grouping);
   const amount = (n: number) => formatAmount(n, currency.grouping);
@@ -43,22 +47,23 @@ export default function QuoteDocument({ doc, watermark = true }: { doc: QuoteDoc
   return (
     <div
       data-quote-document
-      className="relative bg-white text-black mx-auto"
-      style={{ width: 794, minHeight: 1123, padding: '68px 40px 48px 53px', fontFamily: '"Times New Roman", Times, "Liberation Serif", serif' }}
+      className={`relative text-black mx-auto ${forPdf ? '' : 'bg-white'}`}
+      style={{ width: 794, minHeight: 1123, padding: '68px 40px 48px 53px', fontFamily: DOC_FONT_FAMILY }}
     >
-      {watermark && company.logo && (
+      {watermark && !forPdf && company.logo && (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={company.logo} alt="" aria-hidden className="absolute pointer-events-none select-none" style={{ top: 12, left: 250, width: 300, opacity: 0.2 }} />
+        <img src={company.logo} alt="" aria-hidden data-watermark className="absolute print:fixed pointer-events-none select-none"
+          style={{ top: WATERMARK.centerY, left: WATERMARK.centerX - WATERMARK.width / 2, width: WATERMARK.width, opacity: WATERMARK.opacity, transform: 'translateY(-50%)' }} />
       )}
 
-      <div data-pdf-box className="relative bg-white" style={{ border: line }}>
+      <div data-pdf-box className="relative" style={{ border: line }}>
         {/* Company and title */}
         <div className="flex" style={{ minHeight: 180 }}>
           <div className="flex-1 min-w-0 flex">
             {company.logo && (
               <div className="shrink-0 flex items-center" style={{ width: 180, paddingLeft: 21, paddingBottom: 6 }}>
                 {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={company.logo} alt={company.name ? `${company.name} logo` : 'Logo'} style={{ width: 130, maxHeight: 130, objectFit: 'contain' }} />
+                <img src={company.logo} alt={company.name ? `${company.name} logo` : 'Logo'} data-company-logo style={{ width: 130, maxHeight: 130, objectFit: 'contain' }} />
               </div>
             )}
             <div className="min-w-0 py-[3px] pr-2" style={{ paddingLeft: company.logo ? 0 : 10 }}>

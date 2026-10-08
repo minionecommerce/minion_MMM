@@ -11,13 +11,14 @@ import { ServiceError } from "@/lib/users/service";
 import { assertSuperAdmin } from "@/lib/users/layout";
 import { isId, stripControl } from "@/lib/records/values";
 import {
-  DEFAULT_COMPANY, DEFAULT_DISPLAY, DEFAULT_DOCUMENT, DEFAULT_HEADER, DEFAULT_NUMBERING, DEFAULT_SETTINGS, DEFAULT_TAXES, DEFAULT_TCS, DEFAULT_TDS, DEFAULT_TEMPLATES, SETTING_GROUPS,
+  DEFAULT_COMPANY, DEFAULT_DISPLAY, DEFAULT_DOCUMENT, DEFAULT_HEADER, DEFAULT_NUMBERING, DEFAULT_SETTINGS, DEFAULT_TAXES, DEFAULT_TCS, DEFAULT_TDS, DEFAULT_TEMPLATES, DEFAULT_TERMS, SETTING_GROUPS,
   type SettingGroup,
 } from "./defaults";
 import { validatePattern } from "./numbering";
+import { TERMS_CONTENT_MAX, TERMS_MAX_TEMPLATES, TERMS_TITLE_MAX } from "./terms";
 import {
   FY_FORMATS, HEADER_KEYS, HEADER_NAMES, ROUNDING_MODES,
-  type CompanySettings, type DisplaySettings, type DocumentSettings, type FyFormat, type HeaderKey, type HeaderRow, type NumberingSettings, type QuoteSettings, type RoundingMode, type TaxDef, type TemplateSettings, type WithholdingDef,
+  type CompanySettings, type DisplaySettings, type DocumentSettings, type FyFormat, type HeaderKey, type HeaderRow, type NumberingSettings, type QuoteSettings, type RoundingMode, type TaxDef, type TemplateSettings, type TermsSettings, type WithholdingDef,
 } from "./types";
 
 type Db = Prisma.TransactionClient | typeof prisma;
@@ -180,6 +181,27 @@ function parseTemplates(v: unknown): TemplateSettings {
   };
 }
 
+// The Terms & Conditions templates of the quote form: a title and the text each. The titles differ (capital letters do not count), the text is not empty.
+export function parseTerms(v: unknown): TermsSettings {
+  if (!isObject(v) || !Array.isArray(v.templates)) return bad("The Terms & Conditions templates are not valid.");
+  if (v.templates.length > TERMS_MAX_TEMPLATES) bad(`There can be ${TERMS_MAX_TEMPLATES} templates at most.`);
+  const titles = new Set<string>();
+  const ids = new Set<string>();
+  const templates = v.templates.map((raw, i) => {
+    if (!isObject(raw)) return bad(`Template ${i + 1} is not valid.`);
+    const title = tidy(raw.title, TERMS_TITLE_MAX, "A template title", true);
+    if (titles.has(title.toLowerCase())) bad(`There are two templates called "${title}".`);
+    titles.add(title.toLowerCase());
+    const content = tidyLines(raw.content, TERMS_CONTENT_MAX, `The Terms & Conditions of "${title}"`);
+    if (!content) bad(`Write the Terms & Conditions of "${title}".`);
+    let id = typeof raw.id === "string" && /^[a-z0-9_]{1,40}$/.test(raw.id) ? raw.id : newId("terms");
+    if (ids.has(id)) id = newId("terms");
+    ids.add(id);
+    return { id, title, content };
+  });
+  return { configured: true, templates };
+}
+
 // The rows under the company block of the quote document. Every row is listed once; a row that is missing (settings saved before it
 // existed) is added at the end with its defaults. The quote number and the quote date cannot be switched off.
 export function parseDocument(v: unknown): DocumentSettings {
@@ -215,6 +237,7 @@ async function parseGroup(group: SettingGroup, v: unknown, db: Db): Promise<unkn
     case "display": return parseDisplay(v);
     case "company": return parseCompany(v, db);
     case "templates": return parseTemplates(v);
+    case "terms": return parseTerms(v);
     case "document": return parseDocument(v);
   }
 }
@@ -234,7 +257,7 @@ async function readGroup<T>(group: SettingGroup, stored: unknown, fallback: T, d
 export async function loadSettings(db: Db = prisma): Promise<QuoteSettings> {
   const rows = await db.quoteSetting.findMany();
   const by = new Map(rows.map(r => [r.key, r.value]));
-  const [numbering, taxes, tds, tcs, rounding, display, company, templates, document] = await Promise.all([
+  const [numbering, taxes, tds, tcs, rounding, display, company, templates, terms, document] = await Promise.all([
     readGroup("numbering", by.get("numbering"), DEFAULT_NUMBERING, db),
     readGroup("taxes", by.get("taxes"), DEFAULT_TAXES, db),
     readGroup("tds", by.get("tds"), DEFAULT_TDS, db),
@@ -243,9 +266,10 @@ export async function loadSettings(db: Db = prisma): Promise<QuoteSettings> {
     readGroup("display", by.get("display"), DEFAULT_DISPLAY, db),
     readGroup("company", by.get("company"), DEFAULT_COMPANY, db),
     readGroup("templates", by.get("templates"), DEFAULT_TEMPLATES, db),
+    readGroup("terms", by.get("terms"), DEFAULT_TERMS, db),
     readGroup("document", by.get("document"), DEFAULT_DOCUMENT, db),
   ]);
-  return { numbering, taxes, tds, tcs, rounding, display, company, templates, document };
+  return { numbering, taxes, tds, tcs, rounding, display, company, templates, terms, document };
 }
 
 // ---------------------------------------------------------------------------

@@ -15,6 +15,7 @@ import { formatMoney, formatQuoteDay } from '@/lib/quotes/format';
 import { QUOTE_STATUSES, STATUS_ACTIONS, type ShareInfo, type ActivityDto, type QuoteAbilities, type QuoteDto, type QuoteListData, type QuoteListParams, type QuoteSettings, type QuoteStatus } from '@/lib/quotes/types';
 import { LayoutEditor } from '../records/layout-editor/LayoutEditor';
 import QuoteDocument from './QuoteDocument';
+import FitWidth from './FitWidth';
 import QuoteDetails from './QuoteDetails';
 import StatusBand from './StatusBand';
 import { NumberingModal } from './modals';
@@ -177,6 +178,9 @@ export default function QuoteView({ quote, doc, layout, settings, abilities, lis
   const toggleOne = (id: string) => setSelected(s => { const n = new Set(s); if (n.has(id)) n.delete(id); else n.add(id); return n; });
 
   const printHref = `/quotes/${quote.id}/print`;
+  // What the page shows, chosen in the header: the document (PDF), the details, the activity or the quote number
+  const section = tab === 'details' ? view : tab;
+  const showSection = (id: 'pdf' | 'details' | 'activity' | 'number') => { if (id === 'pdf' || id === 'details') { setTab('details'); setView(id); } else setTab(id); };
 
   return (
     <div className="flex h-[calc(100vh-64px)] lg:h-screen overflow-hidden bg-white">
@@ -207,7 +211,7 @@ export default function QuoteView({ quote, doc, layout, settings, abilities, lis
             {close => (
               <>
                 <Link href={`/quotes${query}`} onClick={close} role="menuitem" className="flex items-center gap-2 px-3 h-[32px] hover:bg-[#f1f1fa]">View as a table</Link>
-                <Link href="/quotes/items" onClick={close} role="menuitem" className="flex items-center gap-2 px-3 h-[32px] hover:bg-[#f1f1fa]">Items</Link>
+                <Link href="/items" onClick={close} role="menuitem" className="flex items-center gap-2 px-3 h-[32px] hover:bg-[#f1f1fa]">Items</Link>
                 <Link href="/quotes/settings" onClick={close} role="menuitem" className="flex items-center gap-2 px-3 h-[32px] hover:bg-[#f1f1fa]">Quote Settings</Link>
               </>
             )}
@@ -215,15 +219,15 @@ export default function QuoteView({ quote, doc, layout, settings, abilities, lis
         </div>
         <ul className="flex-1 overflow-y-auto q-scroll border-t border-[#ebeaf2]" data-quote-list>
           {rows.map(r => (
-            <li key={r.id} className={`flex gap-3 px-[16px] py-[12px] border-b border-[#ebeaf2] ${r.id === quote.id ? 'bg-[#f1f1fa]' : 'hover:bg-[#fafafc]'}`} aria-current={r.id === quote.id ? 'true' : undefined}>
-              <input type="checkbox" className="q-check mt-[3px]" checked={selected.has(r.id)} onChange={() => toggleOne(r.id)} aria-label={`Select ${r.number}`} />
+            <li key={r.id} className={`flex gap-3 pl-[21px] pr-[16px] py-[14px] border-b border-[#ebeaf2] ${r.id === quote.id ? 'bg-[#f1f1fa]' : 'hover:bg-[#f6f6fa]'}`} aria-current={r.id === quote.id ? 'true' : undefined}>
+              <input type="checkbox" className="q-check q-check-lg mt-[6px]" checked={selected.has(r.id)} onChange={() => toggleOne(r.id)} aria-label={`Select ${r.number}`} />
               <Link href={`/quotes/${r.id}${query}`} className="min-w-0 flex-1 block">
                 <span className="flex items-baseline justify-between gap-2">
-                  <span className="truncate text-[14px] text-[#22263b]">{r.customer || '—'}</span>
-                  <span className="shrink-0 text-[14px] text-[#22263b]">{money(r.total)}</span>
+                  <span className="truncate text-[15.5px] text-[#21263c]">{r.customer || '—'}</span>
+                  <span className="shrink-0 text-[15.5px] text-[#21263c]">{money(r.total)}</span>
                 </span>
-                <span className="block text-[13px] text-[#6d7189] mt-[2px]">{r.number} <span aria-hidden>•</span> {formatQuoteDay(r.date)}</span>
-                <StatusText status={r.status} className="block mt-[6px]" />
+                <span className="block text-[13px] text-[#4c526c] mt-[2px]">{r.number} <span aria-hidden>•</span> {formatQuoteDay(r.date)}</span>
+                <StatusText status={r.status} size={13.75} className="block mt-[6px]" />
               </Link>
             </li>
           ))}
@@ -235,10 +239,15 @@ export default function QuoteView({ quote, doc, layout, settings, abilities, lis
       {/* The quote */}
       <section className="flex-1 min-w-0 flex flex-col bg-[#fafafc]">
         <div className="bg-white shrink-0">
-          <div className="h-[59px] px-[18px] flex items-center gap-3">
+          <div className="min-h-[59px] py-[8px] px-[18px] flex flex-wrap items-center gap-x-3 gap-y-2">
             <Link href={`/quotes${query}`} className="lg:hidden text-[13px] text-[#548df6]">All Quotes</Link>
             <h1 className="text-[18px] font-medium text-[#232535] truncate" data-quote-title>{quote.quoteNumber}</h1>
-            <div className="ml-auto flex items-center gap-2">
+            <div role="tablist" aria-label="View" className="ml-auto inline-flex rounded-[4px] bg-[#e9ebf3] p-[2px] text-[12px]" data-view-switch>
+              {([['pdf', 'PDF'], ['details', 'Details'], ['activity', 'Activity'], ['number', 'Number']] as const).map(([id, text]) => (
+                <button key={id} type="button" role="tab" aria-selected={section === id} onClick={() => showSection(id)} className={`h-[26px] px-[12px] rounded-[3px] ${section === id ? 'bg-white shadow-sm font-medium text-[#22263b]' : 'text-[#575a6f] hover:text-[#22263b]'}`}>{text}</button>
+              ))}
+            </div>
+            <div className="flex items-center gap-2">
               <Menu align="right" width={300} trigger={({ toggle }) => (
                 <button type="button" onClick={toggle} aria-label="Attachments" aria-haspopup="menu" title="Attachments" className="relative w-[34px] h-[34px] rounded-[4px] border border-[#d7d5e1] hover:bg-[#f1f1fa] flex items-center justify-center text-[#575a6f]">
                   <Paperclip className="w-4 h-4" />{quote.files.length > 0 && <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 rounded-full bg-[#548df6] text-white text-[10px] flex items-center justify-center">{quote.files.length}</span>}
@@ -299,31 +308,17 @@ export default function QuoteView({ quote, doc, layout, settings, abilities, lis
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto q-scroll px-[18px] lg:px-[36px] pt-[32px] pb-[24px]">
-          <div className="bg-white border border-[#ededf0] rounded-[8px] px-[24px] pt-[16px] pb-[24px] min-h-full">
-            <div className="flex items-center justify-between gap-4 border-b border-[#ebeaf2]">
-              <div role="tablist" className="flex gap-[28px]">
-                {([['details', 'Quote Details'], ['activity', 'Activity'], ['number', 'Quote Number']] as const).map(([id, text]) => (
-                  <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)} className={`pb-[14px] text-[14px] border-b-[3px] -mb-px ${tab === id ? 'border-[#548df6] text-[#2e3144] font-medium' : 'border-transparent text-[#575a6f] hover:text-[#22263b]'}`}>{text}</button>
-                ))}
-              </div>
-              {tab === 'details' && (
-                <div className="mb-[10px] inline-flex rounded-[4px] bg-[#e9ebf3] p-[2px] text-[12px]" role="group" aria-label="View">
-                  {([['details', 'Details'], ['pdf', 'PDF']] as const).map(([id, text]) => (
-                    <button key={id} type="button" onClick={() => setView(id)} aria-pressed={view === id} className={`h-[20px] px-[14px] rounded-[3px] ${view === id ? 'bg-white shadow-sm font-medium text-[#22263b]' : 'text-[#575a6f]'}`}>{text}</button>
-                  ))}
-                </div>
-              )}
+        <div className="flex-1 overflow-y-auto q-scroll">
+          {tab === 'details' && view === 'pdf' ? (
+            <div className="px-[12px] pt-[8px] pb-[16px]" data-pdf-view>
+              <FitWidth width={796}>
+                <div className="relative border border-[#e0e1ea] bg-white w-[794px]"><QuoteDocument doc={doc} /><StatusBand status={doc.status} /></div>
+              </FitWidth>
+              <p className="mt-4 text-[13px] text-[#575a6f]">To view additional quote information not displayed in the PDF, switch to the <button type="button" onClick={() => setView('details')} className="text-[#548df6] hover:underline">Quote Details View</button>.</p>
             </div>
-
-            {tab === 'details' && view === 'pdf' && (
-              <>
-                <div className="mt-[28px] overflow-auto q-scroll border border-[#ebeaf2] rounded-[4px] bg-white" data-pdf-view>
-                  <div className="py-[27px] px-[8px] min-w-[810px]"><div className="relative border border-[#e9eaf4] w-[794px] mx-auto"><QuoteDocument doc={doc} /><StatusBand status={doc.status} /></div></div>
-                </div>
-                <p className="mt-6 text-[13px] text-[#575a6f]">To view additional quote information not displayed in the PDF, switch to the <button type="button" onClick={() => setView('details')} className="text-[#548df6] hover:underline">Quote Details View</button>.</p>
-              </>
-            )}
+          ) : (
+          <div className="px-[18px] lg:px-[36px] pt-[20px] pb-[24px]">
+          <div className="bg-white border border-[#ededf0] rounded-[8px] px-[24px] pt-[8px] pb-[24px] min-h-full">
             {tab === 'details' && view === 'details' && <div className="mt-6"><QuoteDetails quote={quote} layout={layout} settings={settings} /></div>}
 
             {tab === 'activity' && (
@@ -357,10 +352,12 @@ export default function QuoteView({ quote, doc, layout, settings, abilities, lis
               </div>
             )}
           </div>
+          </div>
+          )}
         </div>
       </section>
 
-      {pdfBusy && createPortal(<div ref={exportRef} aria-hidden style={{ position: 'fixed', left: -10000, top: 0, width: 794, pointerEvents: 'none' }}><QuoteDocument doc={doc} /></div>, document.body)}
+      {pdfBusy && createPortal(<div ref={exportRef} aria-hidden style={{ position: 'fixed', left: -10000, top: 0, width: 794, pointerEvents: 'none' }}><QuoteDocument doc={doc} forPdf /></div>, document.body)}
       {send && <SendModal quote={quote} settings={settings} onClose={() => setSend(false)} onSent={() => { setSend(false); router.refresh(); }} />}
       {share !== false && share !== 'busy' && <ShareModal quote={quote} initial={share} onClose={() => setShare(false)} onChanged={() => router.refresh()} />}
       {layoutOpen && <LayoutEditor moduleId="quote" initial={layout} onClose={changed => { setLayoutOpen(false); if (changed) router.refresh(); }} />}

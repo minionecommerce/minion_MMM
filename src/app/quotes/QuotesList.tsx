@@ -138,7 +138,7 @@ export default function QuotesList({ layout, data, params, abilities, display }:
             {close => (
               <>
                 {abilities.export && <a href={`/api/quotes/export${queryOf(params, {})}`} onClick={close} role="menuitem" className="flex items-center gap-2 px-3 h-[32px] hover:bg-[#f1f1fa]"><span className="w-4 flex justify-center text-[#6d7189]"><Download className="w-3.5 h-3.5" /></span> Export quotes (CSV)</a>}
-                <Link href="/quotes/items" onClick={close} role="menuitem" className="flex items-center gap-2 px-3 h-[32px] hover:bg-[#f1f1fa]"><span className="w-4 flex justify-center text-[#6d7189]"><Package className="w-3.5 h-3.5" /></span> Items</Link>
+                <Link href="/items" onClick={close} role="menuitem" className="flex items-center gap-2 px-3 h-[32px] hover:bg-[#f1f1fa]"><span className="w-4 flex justify-center text-[#6d7189]"><Package className="w-3.5 h-3.5" /></span> Items</Link>
                 <MenuRule />
                 <Link href="/quotes/settings" onClick={close} role="menuitem" className="flex items-center gap-2 px-3 h-[32px] hover:bg-[#f1f1fa]"><span className="w-4 flex justify-center text-[#6d7189]"><Settings className="w-3.5 h-3.5" /></span> Quote Settings</Link>
                 {abilities.layout && <MenuItem icon={<LayoutTemplate className="w-3.5 h-3.5" />} onClick={() => { close(); setLayoutOpen(true); }}>Edit Page Layout</MenuItem>}
@@ -199,7 +199,7 @@ export default function QuotesList({ layout, data, params, abilities, display }:
           </thead>
           <tbody>
             {data.rows.map(r => (
-              <tr key={r.id} data-quote-row={r.id} onClick={e => { if (!(e.target as HTMLElement).closest('a,button,input,label')) router.push(`/quotes/${r.id}`); }} className={`h-[46px] border-b border-[#ebeaf2] text-[13px] text-[#333] cursor-pointer hover:bg-[#fafafc] ${selected.has(r.id) ? 'bg-[#f1f1fa]' : ''}`}>
+              <tr key={r.id} data-quote-row={r.id} onClick={e => { if (!(e.target as HTMLElement).closest('a,button,input,label')) router.push(`/quotes/${r.id}`); }} className={`h-[46px] border-b border-[#ebeaf2] text-[13px] text-black cursor-pointer hover:bg-[#fafafc] ${selected.has(r.id) ? 'bg-[#f1f1fa]' : ''}`}>
                 <td className="pl-[39px]"><input type="checkbox" className="q-check" checked={selected.has(r.id)} onChange={() => toggleOne(r.id)} aria-label={`Select ${r.number}`} /></td>
                 {columns.map(f => {
                   const v = r.cells[f.key] ?? '';

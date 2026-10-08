@@ -7,10 +7,10 @@ import type { LookupItem } from '@/lib/records/types';
 // The look of the Quotes screens (taken from the Zoho Books reference screens): Inter, 1px lavender lines, #548df6 as the one accent colour.
 export const COLOR = { primary: '#548df6', band: '#f9f9fb', line: '#ebeaf2', input: '#d7d5e1', head: '#6d7189', text: '#22263b', link: '#355bd4', lav: '#f1f1fa', red: '#e5484d', muted: '#9ca0ab' };
 
-export const STATUS_COLOR: Record<string, string> = { Draft: '#7f8c8d', Sent: '#548df6', Accepted: '#2fa070', Declined: '#e5484d', Invoiced: '#2fa070' };
+export const STATUS_COLOR: Record<string, string> = { Draft: '#7f8c8d', Sent: '#408dfb', Accepted: '#2fa070', Declined: '#e5484d', Invoiced: '#2fa070' };
 
-export function StatusText({ status, className = '' }: { status: string; className?: string }) {
-  return <span className={`uppercase text-[12px] tracking-[0.1px] ${className}`} style={{ color: STATUS_COLOR[status] ?? COLOR.head }}>{status}</span>;
+export function StatusText({ status, className = '', size }: { status: string; className?: string; size?: number }) {
+  return <span className={`uppercase text-[12px] tracking-[0.1px] ${className}`} style={{ color: STATUS_COLOR[status] ?? COLOR.head, ...(size ? { fontSize: size } : {}) }}>{status}</span>;
 }
 
 export const inputClass = (invalid?: boolean, extra = '') =>

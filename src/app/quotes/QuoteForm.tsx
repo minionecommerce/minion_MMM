@@ -15,8 +15,10 @@ import LineItems from './LineItems';
 import CalcPanel from './CalcPanel';
 import { NumberingModal } from './modals';
 import CustomerPicker from '../customers/CustomerPicker';
+import { TermsPicker, TermsTemplatesModal } from './TermsTemplates';
+import { matchTemplateId, termsTemplatesOf } from '@/lib/quotes/terms';
 import { Button, Combo, FormRow, Spinner, inputClass } from './ui';
-import { defaultTaxId } from '@/lib/quotes/taxes';
+import { defaultTaxId, isInterState } from '@/lib/quotes/taxes';
 import { blankLine, calcFromDto, computeTotals, emptyCalc, lineFromDto, lineToInput, type CalcState, type LineState } from './form-state';
 
 const EMPTY_REFS: RecordRefs = { users: {}, deals: {}, materialVendors: {}, serviceVendors: {}, lookups: {} };
@@ -65,6 +67,9 @@ export default function QuoteForm({ mode, layout, settings, quote, nextNumber, u
   const [manualNumber, setManualNumber] = useState<string | null>(null);
   const [numbering, setNumbering] = useState(false);
   const [layoutOpen, setLayoutOpen] = useState(false);
+  const [termsSettings, setTermsSettings] = useState(settings.terms); // the Terms & Conditions templates (the dropdown above the text)
+  const [termsPick, setTermsPick] = useState('');
+  const [termsOpen, setTermsOpen] = useState(false);
 
   const customerId = typeof values.customerId === 'string' ? values.customerId : '';
   const dateValue = typeof values.date === 'string' ? values.date : '';
@@ -351,6 +356,12 @@ export default function QuoteForm({ mode, layout, settings, quote, nextNumber, u
     );
   };
 
+  // Terms & Conditions templates: choosing one fills the text, which can still be changed for this quote
+  const termsStandard = fieldOf('terms')?.defaultValue;
+  const termsList = termsTemplatesOf(termsSettings, typeof termsStandard === 'string' ? termsStandard : '');
+  const termsText = typeof values.terms === 'string' ? values.terms : '';
+  const termsPicked = termsList.some(t => t.id === termsPick) ? termsPick : matchTemplateId(termsList, termsText);
+
   const termsBlock = (section: { id: string; label: string }) => {
     const fields = fieldsIn(section.id);
     if (!fields.length) return null;
@@ -365,6 +376,7 @@ export default function QuoteForm({ mode, layout, settings, quote, nextNumber, u
             {texts.map(f => (
               <div key={f.key}>
                 <label htmlFor={`f-${f.key}`} className="block text-[13px] mb-[6px] text-[#22263b]">{f.label}{f.required && <span className="text-[#d93b3b]"> *</span>}</label>
+                {f.key === 'terms' && <TermsPicker templates={termsList} pickedId={termsPicked} text={termsText} onPick={t => { setTermsPick(t.id); setValue('terms', t.content); }} onSettings={() => setTermsOpen(true)} />}
                 <div className="max-w-[686px]"><QField f={f} id={`f-${f.key}`} rows={4} value={valueOf(f)} onChange={v => setValue(f.key, v)} error={errOf(f)} ctx={ctx} /></div>
                 {errOf(f) && <p role="alert" className="mt-1 text-[12px] text-[#d9232b]">{errOf(f)}</p>}
               </div>
@@ -415,7 +427,7 @@ export default function QuoteForm({ mode, layout, settings, quote, nextNumber, u
       }
       nodes.push(
         <div key={section.id} className="mt-[40px]">
-          <LineItems title={section.label} lines={lines} setLines={setLines} columns={itemColumns} settings={settings} amounts={totals.lines.map(l => l.amount)} errors={errors} ctx={ctx} canAddItem={abilities.create} canEditItem={abilities.edit} aside={right} below={left} />
+          <LineItems title={section.label} lines={lines} setLines={setLines} columns={itemColumns} settings={settings} amounts={totals.lines.map(l => l.amount)} errors={errors} ctx={ctx} canAddItem={abilities.create} canEditItem={abilities.edit} interState={isInterState(values.placeOfSupply, settings.company.stateCode)} aside={right} below={left} />
         </div>,
       );
       return;
@@ -493,6 +505,9 @@ export default function QuoteForm({ mode, layout, settings, quote, nextNumber, u
       </form>
 
       {layoutOpen && <LayoutEditor moduleId="quote" initial={layout} onClose={changed => { setLayoutOpen(false); if (changed) router.refresh(); }} />}
+      {termsOpen && (
+        <TermsTemplatesModal templates={termsList} canEdit={abilities.settings} activeId={termsPicked} onClose={() => setTermsOpen(false)} onSaved={t => { setTermsSettings(t); setTermsOpen(false); }} />
+      )}
       {numbering && (
         <NumberingModal
           settings={settings}

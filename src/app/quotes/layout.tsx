@@ -12,6 +12,8 @@ const CSS = `
 .q-check:checked::after{content:'';position:absolute;left:4px;top:1px;width:4px;height:8px;border:solid #fff;border-width:0 2px 2px 0;transform:rotate(45deg)}
 .q-check:indeterminate::after{content:'';position:absolute;left:3px;top:6px;width:7px;height:2px;background:#fff}
 .q-check:focus-visible{outline:2px solid #548df6;outline-offset:1px}
+.q-check-lg{width:17px;height:17px}
+.q-check-lg:checked::after{left:5px;top:1px;width:4px;height:9px}
 .q-check:disabled{opacity:.5;cursor:not-allowed}
 .q-radio{appearance:none;-webkit-appearance:none;width:13px;height:13px;border:1px solid #9ca0ab;border-radius:50%;background:#fff;display:inline-block;vertical-align:middle;cursor:pointer;position:relative;margin:0;flex-shrink:0}
 .q-radio:checked{border-color:#548df6;border-width:4px}

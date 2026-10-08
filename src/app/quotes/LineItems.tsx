@@ -15,6 +15,9 @@ import { itemImageSrc } from './item-client';
 import { defaultTaxId } from '@/lib/quotes/taxes';
 import { blankLine, isBlankLine, lineFromItem, newKey, syncLineWithItem, type LineState } from './form-state';
 
+const PICK_PAGE = 100; // items the picker of a row loads at a time
+const BULK_PAGE = 200; // items Add Items in Bulk loads at a time
+
 const cell = 'w-full h-[34px] px-[8px] text-[13px] bg-transparent border border-transparent rounded-[4px] hover:border-[#d7d5e1] focus:border-[#548df6] focus:bg-white focus:outline-none';
 
 // ---------------------------------------------------------------------------
@@ -29,6 +32,8 @@ function ItemPicker({ id, value, linked, invalid, onType, onPick, canAdd, onAddN
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [active, setActive] = useState(0);
+  const [more, setMore] = useState(false); // there are more matches than the list holds: it goes on when it is scrolled to its end
+  const [loadingMore, setLoadingMore] = useState(false);
   const [box, setBox] = useState<{ left: number; top: number; width: number } | null>(null);
   const wrap = useRef<HTMLDivElement>(null);
   const input = useRef<HTMLInputElement>(null);
@@ -54,8 +59,8 @@ function ItemPicker({ id, value, linked, invalid, onType, onPick, canAdd, onAddN
     const t = setTimeout(async () => {
       setBusy(true);
       try {
-        const res = await callApi<{ items: ItemDto[] }>(`/api/quotes/items?picker=1&limit=100&q=${encodeURIComponent(typed)}`, 'GET');
-        if (live) { setItems(res.items); setActive(0); setError(''); }
+        const res = await callApi<{ items: ItemDto[] }>(`/api/quotes/items?picker=1&limit=${PICK_PAGE}&q=${encodeURIComponent(typed)}`, 'GET');
+        if (live) { setItems(res.items); setMore(res.items.length >= PICK_PAGE); setActive(0); setError(''); }
       } catch (e) {
         if (live) setError(e instanceof Error ? e.message : 'Could not load the items');
       } finally {
@@ -65,6 +70,19 @@ function ItemPicker({ id, value, linked, invalid, onType, onPick, canAdd, onAddN
     return () => { live = false; clearTimeout(t); };
   }, [typed, open]);
 
+  const loadMore = async () => {
+    if (!more || loadingMore || busy) return;
+    setLoadingMore(true);
+    try {
+      const res = await callApi<{ items: ItemDto[] }>(`/api/quotes/items?picker=1&limit=${PICK_PAGE}&offset=${items.length}&q=${encodeURIComponent(typed)}`, 'GET');
+      setItems(cur => [...cur, ...res.items.filter(n => !cur.some(c => c.id === n.id))]);
+      setMore(res.items.length >= PICK_PAGE);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not load more items');
+    } finally {
+      setLoadingMore(false);
+    }
+  };
   const pick = (item: ItemDto) => { onPick(item); setOpen(false); setTyped(''); };
   const tall = !value.trim() || open; // an empty or open box is two lines tall (as in the reference); the box of a chosen item is one line
 
@@ -92,7 +110,7 @@ function ItemPicker({ id, value, linked, invalid, onType, onPick, canAdd, onAddN
       />
       {open && box && (
         <div style={{ position: 'fixed', left: box.left, top: box.top, width: box.width }} className="z-[60] bg-white border border-[#d7d5e1] rounded-[6px] shadow-[0_8px_24px_rgba(34,38,59,0.18)] overflow-hidden" data-item-list>
-          <ul role="listbox" aria-label="Items" className="max-h-[300px] overflow-y-auto q-scroll p-[4px]">
+          <ul role="listbox" aria-label="Items" className="max-h-[300px] overflow-y-auto q-scroll p-[4px]" onScroll={e => { const el = e.currentTarget; if (el.scrollHeight - el.scrollTop - el.clientHeight < 80) void loadMore(); }}>
             {busy && items.length === 0 && <li className="px-3 py-3 text-[13px] text-[#6d7189] flex items-center gap-2"><Spinner className="w-3.5 h-3.5" /> Loading items…</li>}
             {error && <li className="px-3 py-2 text-[13px] text-[#d9232b]">{error}</li>}
             {!busy && !error && items.length === 0 && <li className="px-3 py-3 text-[13px] text-[#6d7189]">{typed ? 'No item matches. Keep typing to use it as a one-off item, or add it as a new item.' : 'The Item Master has no items yet.'}</li>}
@@ -100,10 +118,11 @@ function ItemPicker({ id, value, linked, invalid, onType, onPick, canAdd, onAddN
               <li key={item.id} role="option" aria-selected={i === active} className={i > 0 && i !== active && i - 1 !== active ? 'border-t border-[#e5e6ee] mx-[10px]' : ''}>
                 <button type="button" onMouseDown={e => e.preventDefault()} onClick={() => pick(item)} onMouseEnter={() => setActive(i)} className={`w-full text-left px-[10px] py-[8px] rounded-[4px] ${i === active ? 'bg-[#4a8cf7] text-white' : ''}`}>
                   <span className={`block text-[14px] leading-[20px] truncate ${i === active ? '' : 'text-[#22263b]'}`}>{item.name}</span>
-                  <span className={`block text-[12px] leading-[18px] ${i === active ? 'text-white/90' : 'text-[#6d7189]'}`}>Rate: {formatMoney(item.rate, display.currencySymbol, display.grouping)}</span>
+                  <span className={`block text-[12px] leading-[18px] ${i === active ? 'text-white/90' : 'text-[#6d7189]'}`}>Rate: {formatMoney(item.rate, display.currencySymbol, display.grouping)}{item.unit ? ` / ${item.unit}` : ''}{item.hsn ? ` · ${item.kind === 'Service' ? 'SAC' : 'HSN'} ${item.hsn}` : ''}</span>
                 </button>
               </li>
             ))}
+            {loadingMore && <li className="px-3 py-2 text-[13px] text-[#6d7189] flex items-center gap-2"><Spinner className="w-3.5 h-3.5" /> Loading more…</li>}
           </ul>
           {canAdd && (
             <div className="border-t border-[#ebeaf2]">
@@ -125,7 +144,7 @@ function TaxCodeLine({ kind, code, onChange }: { kind: LineState['kind']; code: 
   if (!kind && !code) return null;
   const commit = () => { setEditing(false); const next = draft.trim(); if (next !== code) onChange(next); };
   return (
-    <div className="mt-[10px] flex items-center gap-[8px] text-[13px] leading-[20px] min-h-[22px]" data-tax-code>
+    <div className="mt-[10px] flex flex-wrap items-center gap-x-[8px] gap-y-[2px] text-[13px] leading-[20px] min-h-[22px]" data-tax-code>
       {kind && <span className="inline-flex items-center h-[18px] px-[6px] rounded-[3px] bg-[#1e9bf0] text-white text-[10px] font-bold tracking-[0.3px] uppercase">{kind}</span>}
       <span className="text-[#6d7189]">{taxCodePrint(kind || null)}:</span>
       {editing ? (
@@ -150,14 +169,16 @@ function BulkModal({ display, onClose, onAdd }: { display: QuoteSettings['displa
   const [items, setItems] = useState<ItemDto[]>([]);
   const [picked, setPicked] = useState<Map<string, ItemDto>>(new Map());
   const [busy, setBusy] = useState(true);
+  const [more, setMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
   useEffect(() => {
     let live = true;
     const t = setTimeout(async () => {
       setBusy(true);
       try {
-        const res = await callApi<{ items: ItemDto[] }>(`/api/quotes/items?picker=1&limit=200&q=${encodeURIComponent(q)}`, 'GET');
-        if (live) { setItems(res.items); setError(''); }
+        const res = await callApi<{ items: ItemDto[] }>(`/api/quotes/items?picker=1&limit=${BULK_PAGE}&q=${encodeURIComponent(q)}`, 'GET');
+        if (live) { setItems(res.items); setMore(res.items.length >= BULK_PAGE); setError(''); }
       } catch (e) {
         if (live) setError(e instanceof Error ? e.message : 'Could not load the items');
       } finally {
@@ -166,6 +187,18 @@ function BulkModal({ display, onClose, onAdd }: { display: QuoteSettings['displa
     }, q ? 250 : 0);
     return () => { live = false; clearTimeout(t); };
   }, [q]);
+  const loadMore = async () => {
+    setLoadingMore(true);
+    try {
+      const res = await callApi<{ items: ItemDto[] }>(`/api/quotes/items?picker=1&limit=${BULK_PAGE}&offset=${items.length}&q=${encodeURIComponent(q)}`, 'GET');
+      setItems(cur => [...cur, ...res.items.filter(n => !cur.some(c => c.id === n.id))]);
+      setMore(res.items.length >= BULK_PAGE);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not load more items');
+    } finally {
+      setLoadingMore(false);
+    }
+  };
   const toggle = (item: ItemDto) => setPicked(m => { const n = new Map(m); if (n.has(item.id)) n.delete(item.id); else n.set(item.id, item); return n; });
   return (
     <Modal title="Add Items in Bulk" onClose={onClose} width={680} footer={(
@@ -195,6 +228,7 @@ function BulkModal({ display, onClose, onAdd }: { display: QuoteSettings['displa
           </li>
         ))}
         {!busy && items.length === 0 && <li className="px-3 py-6 text-center text-[13px] text-[#6d7189]">No items found</li>}
+        {more && <li className="p-2 text-center"><Button kind="ghost" onClick={() => void loadMore()} busy={loadingMore}>Load more items</Button></li>}
       </ul>
     </Modal>
   );
@@ -213,7 +247,7 @@ function Thumb({ fileId }: { fileId: string | null }) {
 // ---------------------------------------------------------------------------
 // The Item Table of the quote form
 // ---------------------------------------------------------------------------
-export default function LineItems({ title, lines, setLines, columns, settings, amounts, errors, ctx, canAddItem, canEditItem = false, aside, below }: {
+export default function LineItems({ title, lines, setLines, columns, settings, amounts, errors, ctx, canAddItem, canEditItem = false, interState = false, aside, below }: {
   title: string;
   aside?: React.ReactNode; // beside the Add buttons (the calculation panel)
   below?: React.ReactNode; // at the bottom of the column of the Add buttons (the customer notes)
@@ -226,6 +260,7 @@ export default function LineItems({ title, lines, setLines, columns, settings, a
   ctx: QCtx;
   canAddItem: boolean; // may add an item to the Item Master (New Item)
   canEditItem?: boolean; // may change an item of the Item Master (Edit item)
+  interState?: boolean; // the quote is for another state: a picked item gives its Inter State Tax Rate
 }) {
   const [bulk, setBulk] = useState(false);
   const [itemWindow, setItemWindow] = useState<{ key: string; itemId: string | null; name: string } | null>(null);
@@ -252,16 +287,16 @@ export default function LineItems({ title, lines, setLines, columns, settings, a
   const clone = (l: LineState, index: number) => insert(index + 1, { ...l, key: newKey(), id: undefined });
   const addMany = (items: ItemDto[]) => setLines(cur => {
     const keep = cur.length && isBlankLine(cur[cur.length - 1]) ? cur.slice(0, -1) : cur;
-    return [...keep, ...items.map(i => lineFromItem(i, undefined, defaultTax))];
+    return [...keep, ...items.map(i => lineFromItem(i, undefined, defaultTax, interState))];
   });
   const taxOptions = (current: string) => settings.taxes.filter(t => t.active || t.id === current);
-  const headerCls = 'text-left px-[10px] h-[44px] text-[11px] font-semibold uppercase tracking-[0.4px] text-[#6d7189]';
+  const headerCls = 'text-left px-[6px] lg:px-[10px] h-[44px] text-[10px] lg:text-[11px] font-semibold uppercase tracking-[0.2px] lg:tracking-[0.4px] text-[#6d7189]';
   const descRows = (text: string) => Math.min(14, Math.max(3, text.split('\n').reduce((n, line) => n + Math.max(1, Math.ceil(line.length / 74)), 0)));
 
   return (
     <div>
-      <div className="mr-[8px] ml-[30px] lg:mr-[125px] lg:ml-[20px] overflow-x-auto lg:overflow-visible pr-[78px] lg:pr-0">
-        <div className="border border-[#ebeaf2] rounded-[6px] min-w-[780px] lg:min-w-0">
+      <div className="mr-[10px] ml-[28px] lg:mr-[125px] lg:ml-[20px] overflow-x-auto min-[570px]:overflow-visible">
+        <div className="border border-[#ebeaf2] rounded-[6px] min-w-[526px] min-[570px]:min-w-0">
           <div className="h-[47px] px-[15px] flex items-center justify-between bg-[#f9f9fb] border-b border-[#ebeaf2] rounded-t-[6px]">
             <h2 className="text-[14px] font-semibold text-black">{title}</h2>
             <Menu align="right" width={190} trigger={({ toggle }) => (
@@ -280,15 +315,15 @@ export default function LineItems({ title, lines, setLines, columns, settings, a
           <table className="w-full border-collapse" style={{ tableLayout: 'auto' }} data-item-table>
             <thead>
               <tr className="border-b border-[#ebeaf2]">
-                <th className={`${headerCls} w-auto min-w-[300px]`}>{col('name')?.label ?? 'Item Details'}</th>
-                {tpl && <th className={`${headerCls} w-[170px] border-l border-[#ebeaf2]`}>{tpl.label}</th>}
-                {hsn && <th className={`${headerCls} w-[110px]`}>{hsn.label}</th>}
-                {unit && <th className={`${headerCls} w-[80px]`}>{unit.label}</th>}
-                {custom.map(c => <th key={c.key} className={`${headerCls} w-[130px]`}>{c.label}</th>)}
-                {qty && <th className={`${headerCls} w-[140px] text-right border-l border-[#ebeaf2]`}>{qty.label}</th>}
-                {rate && <th className={`${headerCls} w-[150px] text-right border-l border-[#ebeaf2]`}>{rate.label}</th>}
-                {tax && <th className={`${headerCls} w-[180px] border-l border-[#ebeaf2]`}>{tax.label}</th>}
-                {amount && <th className={`${headerCls} w-[140px] text-right border-l border-[#ebeaf2]`}>{amount.label}</th>}
+                <th className={`${headerCls} w-[40%] min-w-[130px]`}>{col('name')?.label ?? 'Item Details'}</th>
+                {tpl && <th className={`${headerCls} w-[19%] min-w-[92px] border-l border-[#ebeaf2]`}>{tpl.label}</th>}
+                {hsn && <th className={`${headerCls} w-[9%] min-w-[64px]`}>{hsn.label}</th>}
+                {unit && <th className={`${headerCls} w-[6%] min-w-[50px]`}>{unit.label}</th>}
+                {custom.map(c => <th key={c.key} className={`${headerCls} w-[10%] min-w-[84px]`}>{c.label}</th>)}
+                {qty && <th className={`${headerCls} w-[9%] min-w-[62px] text-right border-l border-[#ebeaf2]`}>{qty.label}</th>}
+                {rate && <th className={`${headerCls} w-[10%] min-w-[68px] text-right border-l border-[#ebeaf2]`}>{rate.label}</th>}
+                {tax && <th className={`${headerCls} w-[13%] min-w-[104px] border-l border-[#ebeaf2]`}>{tax.label}</th>}
+                {amount && <th className={`${headerCls} w-[10%] min-w-[70px] text-right border-l border-[#ebeaf2]`}>{amount.label}</th>}
               </tr>
             </thead>
             <tbody>
@@ -309,7 +344,7 @@ export default function LineItems({ title, lines, setLines, columns, settings, a
                   >
                     <td className="relative pl-[14px] pr-[10px] py-[11px]">
                       <button type="button" aria-label="Drag to move this row" onMouseDown={() => setArmed(l.key)} onMouseUp={() => setArmed(null)} className="absolute -left-[22px] top-[20px] w-[16px] h-[22px] flex items-center justify-center text-[#c9cbd6] hover:text-[#6d7189] cursor-grab"><GripVertical className="w-4 h-4" /></button>
-                      <div className="flex items-start gap-[18px]">
+                      <div className="flex items-start gap-[12px] lg:gap-[18px]">
                         <div className="mt-[4px]"><Thumb fileId={l.imageFileId} /></div>
                         <div className="flex-1 min-w-0">
                           <div className="pr-[58px]">
@@ -321,7 +356,7 @@ export default function LineItems({ title, lines, setLines, columns, settings, a
                               display={display}
                               canAdd={canAddItem}
                               onType={text => patch(l.key, { name: text, itemId: null, imageFileId: null })}
-                              onPick={item => patch(l.key, { ...lineFromItem(item, l, defaultTax), quantity: l.quantity || '1' })}
+                              onPick={item => patch(l.key, { ...lineFromItem(item, l, defaultTax, interState), quantity: l.quantity || '1' })}
                               onAddNew={name => setItemWindow({ key: l.key, itemId: null, name })}
                             />
                           </div>
@@ -377,20 +412,22 @@ export default function LineItems({ title, lines, setLines, columns, settings, a
                     ))}
                     {qty && (
                       <td className="px-[4px] py-[8px] border-l border-[#ebeaf2]">
-                        <input value={l.quantity} onChange={e => patch(l.key, { quantity: e.target.value })} inputMode="decimal" aria-label="Quantity" aria-invalid={!!err('quantity') || undefined} className={`${cell} text-right text-[#2e3dba] ${err('quantity') ? '!border-[#e5484d]' : ''}`} />
+                        <input value={l.quantity} onChange={e => patch(l.key, { quantity: e.target.value })} inputMode="decimal" aria-label="Quantity" aria-invalid={!!err('quantity') || undefined} className={`${cell} text-right text-[#222529] ${err('quantity') ? '!border-[#e5484d]' : ''}`} />
+                        {!unit && l.unit && <div className="px-[8px] pt-[3px] text-right text-[13px] leading-[18px] text-black" data-line-unit>{l.unit}</div>}
                         {err('quantity') && <p role="alert" className="text-[12px] text-[#d9232b] text-right">{err('quantity')}</p>}
                       </td>
                     )}
                     {rate && (
                       <td className="px-[4px] py-[8px] border-l border-[#ebeaf2]">
                         <input value={l.rate} onChange={e => patch(l.key, { rate: e.target.value })} inputMode="decimal" placeholder="0.00" aria-label="Rate" aria-invalid={!!err('rate') || undefined} className={`${cell} text-right ${err('rate') ? '!border-[#e5484d]' : ''}`} />
+                        {!unit && l.unit && <div className="px-[8px] pt-[3px] text-right text-[12px] leading-[18px] text-[#6d7189]" data-line-per>per {l.unit}</div>}
                         {err('rate') && <p role="alert" className="text-[12px] text-[#d9232b] text-right">{err('rate')}</p>}
                       </td>
                     )}
                     {tax && (
                       <td className="px-[4px] py-[8px] border-l border-[#ebeaf2]">
                         <div className="relative">
-                          <select value={l.taxId} onChange={e => patch(l.key, { taxId: e.target.value })} aria-label="Tax" className={`w-full h-[34px] pl-[10px] pr-8 text-[13px] rounded-[4px] border appearance-none bg-[#f9f9fb] focus:outline-none focus:border-[#548df6] ${err('taxId') ? 'border-[#e5484d]' : 'border-transparent hover:border-[#d7d5e1]'} ${l.taxId ? 'text-[#22263b]' : 'text-[#9ca0ab]'}`}>
+                          <select value={l.taxId} onChange={e => patch(l.key, { taxId: e.target.value })} aria-label="Tax" className={`w-full h-[34px] pl-[8px] pr-7 lg:pl-[10px] lg:pr-8 text-[12px] lg:text-[13px] rounded-[4px] border appearance-none bg-[#f9f9fb] focus:outline-none focus:border-[#548df6] ${err('taxId') ? 'border-[#e5484d]' : 'border-transparent hover:border-[#d7d5e1]'} ${l.taxId ? 'text-[#22263b]' : 'text-[#9ca0ab]'}`}>
                             <option value="">Select a Tax</option>
                             {taxOptions(l.taxId).map(t => <option key={t.id} value={t.id}>{t.name} [{t.rate}%]</option>)}
                           </select>
@@ -398,7 +435,7 @@ export default function LineItems({ title, lines, setLines, columns, settings, a
                         </div>
                       </td>
                     )}
-                    {amount && <td className="relative px-[10px] py-[10px] border-l border-[#ebeaf2] text-right text-[13px] font-semibold text-black pt-[18px]" data-line-amount>{formatAmount(amounts[i] ?? 0, display.grouping)}</td>}
+                    {amount && <td className="relative px-[6px] lg:px-[10px] py-[10px] border-l border-[#ebeaf2] text-right text-[13px] font-semibold text-black pt-[18px]" data-line-amount>{formatAmount(amounts[i] ?? 0, display.grouping)}</td>}
                   </tr>
                 );
               })}
@@ -410,16 +447,16 @@ export default function LineItems({ title, lines, setLines, columns, settings, a
 
       <div className="mt-[20px] ml-[20px] mr-[20px] lg:mr-[125px] flex flex-col lg:flex-row lg:items-stretch justify-between gap-[30px]">
       <div className="min-w-0 flex-1 flex flex-col justify-between gap-6">
-      <div className="flex items-center gap-[12px]">
+      <div className="flex flex-wrap items-center gap-x-[12px] gap-y-[8px]">
         <div className="inline-flex h-[32px] rounded-[4px] bg-[#f1f1fa] text-[13px] font-medium text-[#22263b]">
-          <button type="button" onClick={() => setLines(cur => [...cur, blankLine(defaultTax)])} className="inline-flex items-center gap-[8px] px-[12px] hover:bg-[#e8e8f6] rounded-l-[4px]"><Plus className="w-4 h-4 rounded-full bg-[#548df6] text-white p-[2px]" /> Add New Row</button>
+          <button type="button" onClick={() => setLines(cur => [...cur, blankLine(defaultTax)])} className="inline-flex items-center gap-[8px] px-[12px] whitespace-nowrap hover:bg-[#e8e8f6] rounded-l-[4px]"><Plus className="w-4 h-4 rounded-full bg-[#548df6] text-white p-[2px]" /> Add New Row</button>
           <Menu align="left" width={170} trigger={({ toggle }) => (
             <button type="button" onClick={toggle} aria-label="More ways to add rows" aria-haspopup="menu" className="h-full w-9 flex items-center justify-center border-l border-white hover:bg-[#e8e8f6] rounded-r-[4px] text-[#6d7189]"><ChevronDown className="w-4 h-4" /></button>
           )}>
             {close => <MenuItem onClick={() => { close(); setLines(cur => [...cur, ...Array.from({ length: 5 }, () => blankLine(defaultTax))]); }}>Add 5 new rows</MenuItem>}
           </Menu>
         </div>
-        <button type="button" onClick={() => setBulk(true)} className="inline-flex items-center gap-[8px] h-[32px] px-[12px] rounded-[4px] bg-[#f1f1fa] hover:bg-[#e8e8f6] text-[13px] font-medium text-[#22263b]"><Plus className="w-4 h-4 rounded-full bg-[#548df6] text-white p-[2px]" /> Add Items in Bulk</button>
+        <button type="button" onClick={() => setBulk(true)} className="inline-flex items-center gap-[8px] h-[32px] px-[12px] whitespace-nowrap rounded-[4px] bg-[#f1f1fa] hover:bg-[#e8e8f6] text-[13px] font-medium text-[#22263b]"><Plus className="w-4 h-4 rounded-full bg-[#548df6] text-white p-[2px]" /> Add Items in Bulk</button>
       </div>
       {below}
       </div>
@@ -437,7 +474,7 @@ export default function LineItems({ title, lines, setLines, columns, settings, a
             const target = itemWindow.key;
             // a changed item refreshes every row made from it with what each row still had as the Item Master had it (a rate or a description changed on this
             // quote stays); a new item fills the row it was added from
-            setLines(cur => cur.map(l => (before ? (l.itemId === after.id ? syncLineWithItem(l, before, after, defaultTax) : l) : l.key === target ? { ...lineFromItem(after, l, defaultTax), quantity: l.quantity || '1' } : l)));
+            setLines(cur => cur.map(l => (before ? (l.itemId === after.id ? syncLineWithItem(l, before, after, defaultTax, interState) : l) : l.key === target ? { ...lineFromItem(after, l, defaultTax, interState), quantity: l.quantity || '1' } : l)));
             setItemWindow(null);
           }}
         />
