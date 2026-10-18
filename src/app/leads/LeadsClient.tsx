@@ -31,20 +31,27 @@ type Data = {
 
 type Dialog = { kind: 'add' } | { kind: 'edit'; row: LeadRow } | { kind: 'view'; row: LeadRow } | { kind: 'delete'; row: LeadRow } | { kind: 'duplicate'; row: LeadRow } | { kind: 'layout' } | { kind: 'followup'; row: LeadRow } | { kind: 'followups'; row: LeadRow } | { kind: 'close'; row: LeadRow } | { kind: 'reopen'; row: LeadRow } | { kind: 'convert'; row: LeadRow } | { kind: 'needFollowUp'; row: LeadRow } | null;
 
-export default function LeadsClient({ data, params, options, currentEmployeeId, abilities, storageReady }: {
+export default function LeadsClient({ data, params, options, currentEmployeeId, abilities, storageReady, autoAdd = false }: {
   data: Data;
   params: LeadListParams;
   options: LeadFormOptions;
   currentEmployeeId: string | null;
   abilities: { create: boolean; edit: boolean; delete: boolean; convert: boolean; export: boolean; layout: boolean };
   storageReady: boolean;
+  autoAdd?: boolean; // opened from a dashboard Quick Action: the Add Lead form is open already
 }) {
   const router = useRouter();
   const search = useSearchParams();
   const toast = useToast();
   const [pending, startTransition] = useTransition();
   const [q, setQ] = useState(params.q ?? '');
-  const [dialog, setDialog] = useState<Dialog>(null);
+  const [dialog, setDialog] = useState<Dialog>(autoAdd && abilities.create ? { kind: 'add' } : null);
+  useEffect(() => {
+    if (!autoAdd) return;
+    const next = new URLSearchParams(window.location.search);
+    next.delete('create');
+    window.history.replaceState(null, '', `/leads${next.toString() ? `?${next}` : ''}`); // so a refresh does not open it again
+  }, [autoAdd]);
   const [busy, setBusy] = useState(false);
   // While a reset is on its way, the search box's own delayed update must not put the old search/filters back in the address
   const resetting = useRef(false);

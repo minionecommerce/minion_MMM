@@ -21,9 +21,10 @@ function watchContentLeft(onChange: () => void) {
 // The New Item form as a page over the page it was opened from (the quote form, the Items page): New Item (no id) or Edit Item. It leaves the site
 // navigator uncovered (and sits under it when the navigator opens), above the page and its menus, under Edit Page Layout (z-80), and it does not close on
 // Escape: what was typed would be lost.
-export default function ItemOverlay({ itemId, initialName = '', taxes, onClose, onSaved }: {
+export default function ItemOverlay({ itemId, initialName = '', initialKind, taxes, onClose, onSaved }: {
   itemId: string | null;
   initialName?: string;
+  initialKind?: 'Goods' | 'Service';
   taxes: TaxDef[];
   onClose: () => void;
   onSaved: (item: ItemDetailDto, before: ItemDetailDto | null) => void;
@@ -45,7 +46,7 @@ export default function ItemOverlay({ itemId, initialName = '', taxes, onClose, 
   return (
     <div className="fixed right-0 bottom-0 top-16 lg:top-0 z-[35] bg-white overflow-y-auto" style={{ left }} role="dialog" aria-modal="true" aria-label={itemId ? 'Edit Item' : 'New Item'} data-item-window>
       {!itemId || item ? (
-        <ItemForm item={item} initialName={initialName} taxes={taxes} onCancel={onClose} onSaved={saved => onSaved(saved, item)} />
+        <ItemForm item={item} initialName={initialName} initialKind={initialKind} taxes={taxes} onCancel={onClose} onSaved={saved => onSaved(saved, item)} />
       ) : (
         <div className="px-6 py-16 text-center text-[13px] text-[#22263b]">
           {error ? (

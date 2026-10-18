@@ -52,7 +52,8 @@ export type SecurityAction =
   | "MODULE_SECTION_DELETED"
   | "MODULE_SECTIONS_REORDERED"
   | "QUOTE_SETTINGS_UPDATED"
-  | "QUOTE_NUMBER_SET";
+  | "QUOTE_NUMBER_SET"
+  | "DASHBOARD_LAYOUT_CHANGED";
 
 type Db = Prisma.TransactionClient | typeof prisma;
 

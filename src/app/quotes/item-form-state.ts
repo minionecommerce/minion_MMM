@@ -24,9 +24,9 @@ const str = (n: number | null | undefined) => (n === null || n === undefined ? '
 
 // A new item: Goods, Taxable with the default tax (and the Inter State one that goes with it), stock tracked (as the reference form starts) with the first account
 // and FIFO already chosen, not returnable, Purchase Information unticked (its cost price starts at 0), cm and kg
-export function blankItemForm(name = '', defaultTax = '', defaultInterTax = ''): ItemFormState {
+export function blankItemForm(name = '', defaultTax = '', defaultInterTax = '', kind: ItemKind = 'Goods'): ItemFormState {
   return {
-    name, kind: 'Goods', category: '', hsn: '', hsnFilled: '', taxPreference: DEFAULT_TAX_PREFERENCE, unitMode: 'unit', unit: '', unitGroup: '', sku: '', identifiers: [],
+    name, kind, category: '', hsn: '', hsnFilled: '', taxPreference: DEFAULT_TAX_PREFERENCE, unitMode: 'unit', unit: '', unitGroup: '', sku: '', identifiers: [],
     description: '', rate: '', taxId: defaultTax, interTaxId: defaultInterTax, brand: '', manufacturer: '', mrp: '', purchaseInfo: false, costPrice: '0', purchaseAccount: '', purchaseDescription: '', receivable: false, trackInventory: true, inventoryTracking: 'none', inventoryAccount: INVENTORY_ACCOUNTS[0], valuationMethod: DEFAULT_VALUATION, reorderPoint: '',
     returnable: false, dimLength: '', dimWidth: '', dimHeight: '', dimUnit: DEFAULT_DIM_UNIT, weight: '', weightUnit: DEFAULT_WEIGHT_UNIT,
     taskTemplateId: '', taskTemplateName: '', isActive: true,

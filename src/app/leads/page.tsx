@@ -38,6 +38,7 @@ export default async function LeadsPage({ searchParams }: { searchParams: Promis
         layout: ctx.isSuperAdmin, // Edit Page Layout is Super Admin only (the API enforces it too)
       }}
       storageReady={isStorageConfigured()}
+      autoAdd={query.create === "1"}
     />
   );
 }
