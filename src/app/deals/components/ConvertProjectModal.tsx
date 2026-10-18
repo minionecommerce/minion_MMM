@@ -1,11 +1,14 @@
 'use client';
 
-import { useState } from 'react';
-import { CalendarDays, FolderKanban, Info, Link2, Loader2, MapPin, Tag, X } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { CalendarDays, FileText, FolderKanban, Info, Link2, Loader2, MapPin, Tag, X } from 'lucide-react';
 import { ApiError, callApi } from '@/lib/leads/client';
 import { todayDay } from '@/lib/leads/format';
 import type { DealRow } from '@/lib/deals/queries';
 import type { FieldOption } from '@/lib/records/types';
+import type { DealQuote } from '@/lib/projects/types';
+import { acceptedTotal, classifyKinds, POS_BOTH, POS_PRODUCT, POS_SERVICE } from '@/lib/projects/calc';
+import QuotePicker, { rupees } from './QuotePicker';
 
 // What the popup needs to know about each of its fields from the Project layout (Project -> Edit Page Layout): the name, whether it is
 // mandatory, whether it is shown, and the choices of Product / Service
@@ -36,6 +39,25 @@ export default function ConvertProjectModal({ row, fields, onClose, onSaved }: {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
 
+  // The quotes of this deal only. The accepted ones start ticked; choosing quotes decides Product / Service and the Project Value.
+  const [quotes, setQuotes] = useState<DealQuote[]>([]);
+  const [quotesLoading, setQuotesLoading] = useState(true);
+  const [quotesError, setQuotesError] = useState('');
+  const [quoteIds, setQuoteIds] = useState<string[]>([]);
+  useEffect(() => {
+    let live = true;
+    callApi<{ quotes: DealQuote[] }>(`/api/deals/${row.id}/quotes`, 'GET')
+      .then(r => { if (!live) return; setQuotes(r.quotes); setQuoteIds(r.quotes.filter(q => q.status === 'Accepted').map(q => q.id)); })
+      .catch(e => { if (live) setQuotesError(e instanceof Error ? e.message : 'Could not load the quotes of this deal'); })
+      .finally(() => { if (live) setQuotesLoading(false); });
+    return () => { live = false; };
+  }, [row.id]);
+  const picked = useMemo(() => quotes.filter(q => quoteIds.includes(q.id)), [quotes, quoteIds]);
+  const kind = classifyKinds(picked.flatMap(q => q.items.map(i => i.kind)));
+  const kindLabel = kind === POS_PRODUCT ? 'Product' : kind === POS_SERVICE ? 'Service' : kind === POS_BOTH ? 'Product & Service' : '';
+  const projectValue = acceptedTotal(picked.map(q => ({ id: q.id, status: q.status, amount: q.value })));
+  const acceptedCount = picked.filter(q => q.status === 'Accepted').length;
+
   const clear = (key: string) => setErrors(e => (e[key] ? { ...e, [key]: '' } : e));
 
   const submit = async (e: React.FormEvent) => {
@@ -44,7 +66,7 @@ export default function ConvertProjectModal({ row, fields, onClose, onSaved }: {
     const found: Record<string, string> = {};
     const need = (key: string, value: string, fallback: string) => { if (shown(key) && requiredOf(key) && !value.trim()) found[key] = `${labelOf(key, fallback)} is required`; };
     need('name', name, 'Project Name');
-    need('productOrService', productOrService, 'Product / Service');
+    need('productOrService', kind ?? productOrService, 'Product / Service');
     need('siteLocation', siteLocation, 'Site Location');
     need('siteLocationLink', siteLocationLink, 'Site Location Link');
     need('startDate', startDate, 'Project Start Date');
@@ -59,13 +81,14 @@ export default function ConvertProjectModal({ row, fields, onClose, onSaved }: {
     setSaving(true);
     try {
       const result = await callApi<ProjectConverted>(`/api/deals/${row.id}/convert-to-project`, 'POST', {
-        productOrService: shown('productOrService') ? productOrService || null : null,
+        productOrService: shown('productOrService') ? kind ?? (productOrService || null) : null,
         name: name.trim(),
         siteLocation: shown('siteLocation') ? siteLocation.trim() || null : null,
         siteLocationLink: shown('siteLocationLink') ? siteLocationLink.trim() || null : null,
         startDate: shown('startDate') ? startDate || null : null,
         expectedEndDate: shown('expectedEndDate') ? expectedEndDate || null : null,
         priorCompletionDate: shown('priorCompletionDate') ? priorCompletionDate || null : null,
+        quoteIds,
       });
       onSaved(result);
     } catch (err) {
@@ -99,15 +122,25 @@ export default function ConvertProjectModal({ row, fields, onClose, onSaved }: {
           {shown('productOrService') && (
             <div className="sm:col-span-2">
               <label htmlFor="cp-pos" className={labelClass}><Tag className="w-4 h-4 text-[#0d6efd]" aria-hidden="true" />{labelOf('productOrService', 'Product / Service')} {star('productOrService')}</label>
-              <select id="cp-pos" value={productOrService} disabled={saving} onChange={e => { setProductOrService(e.target.value); setTouched(true); clear('productOrService'); }}
+              <select id="cp-pos" value={kind ?? productOrService} disabled={saving || !!kind} onChange={e => { setProductOrService(e.target.value); setTouched(true); clear('productOrService'); }}
                 aria-describedby="cp-pos-help" className={`${control(errors.productOrService)} cursor-pointer ${touched || !productOrService ? 'text-gray-900' : 'text-gray-400'}`}>
                 <option value="">-None-</option>
                 {productOptions.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
               </select>
-              <small id="cp-pos-help" className="block mt-1 text-[12px] text-gray-500">{touched || !productOrService ? 'You can change it.' : 'Taken from the deal (shown lighter). You can change it.'}</small>
+              <small id="cp-pos-help" className="block mt-1 text-[12px] text-gray-500">{kind ? `Worked out from the items of the chosen quotes: ${kindLabel}.` : touched || !productOrService ? 'You can change it.' : 'Taken from the deal (shown lighter). You can change it.'}</small>
               {err('productOrService')}
             </div>
           )}
+
+          <div className="sm:col-span-2">
+            <label htmlFor="cp-quotes" className={labelClass}><FileText className="w-4 h-4 text-[#0d6efd]" aria-hidden="true" />Quotes</label>
+            <QuotePicker quotes={quotes} loading={quotesLoading} error={quotesError} value={quoteIds} onChange={setQuoteIds} disabled={saving} />
+            <small className="block mt-1 text-[12px] text-gray-500">
+              {quoteIds.length === 0
+                ? 'No quote chosen: every accepted quote of the deal counts in the Project Value.'
+                : <>Project Value: <b>{rupees(projectValue)}</b> from {acceptedCount} accepted {acceptedCount === 1 ? 'quote' : 'quotes'}{picked.length > acceptedCount ? '. A quote that is not accepted does not count.' : '.'}</>}
+            </small>
+          </div>
 
           <div className="sm:col-span-2">
             <label htmlFor="cp-name" className={labelClass}><FolderKanban className="w-4 h-4 text-[#0d6efd]" aria-hidden="true" />{labelOf('name', 'Project Name')} {star('name')}</label>

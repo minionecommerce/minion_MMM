@@ -413,7 +413,8 @@ const PROJECT_TEMPLATES = ids([
   "Gypsum False Ceiling", "PVC False Ceiling", "Wooden False Ceiling", "Carpentry", "Wardrobe", "Electrical", "Painting", "Flooring", "Wall Cladding",
   "Modular Furniture", "Plumbing", "Glass Work", "Aluminium Work", "Landscaping", "Automation", "CCTV", "Smart Home Automation", "Interior Works", "Exterior Works",
 ]);
-export const PROJECT_PRODUCT_OR_SERVICE: FieldOption[] = [{ id: "lo_pos_product", label: "Product" }, { id: "lo_pos_service", label: "Service" }]; // the ids of the Leads pick-list
+export const PROJECT_POS_BOTH: FieldOption = { id: "lo_pos_both", label: "Product & Service" }; // a project of Goods and Services (set from the quotes chosen in Convert to Project)
+export const PROJECT_PRODUCT_OR_SERVICE: FieldOption[] = [{ id: "lo_pos_product", label: "Product" }, { id: "lo_pos_service", label: "Service" }, PROJECT_POS_BOTH]; // the ids of the Leads pick-list
 export const PROJECT_STATUS_DEFAULT = "planning";
 
 // A worked-out column of a template table

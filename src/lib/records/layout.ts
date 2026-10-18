@@ -16,7 +16,7 @@ import { writeAudit, type SecurityAction } from "@/lib/audit";
 import { ServiceError } from "@/lib/users/service";
 import { assertSuperAdmin } from "@/lib/users/layout";
 import { removeObjects } from "@/lib/leads/storage";
-import { MODULES, PROJECT_STATUS_DEFAULT, PROJECT_TEMPLATE_FIELD, type ModuleDef, type SystemField } from "./registry";
+import { MODULES, PROJECT_POS_BOTH, PROJECT_STATUS_DEFAULT, PROJECT_TEMPLATE_FIELD, type ModuleDef, type SystemField } from "./registry";
 import {
   CUSTOM_TYPE_SET, CURRENCY_CODES, DEFAULT_CURRENCY, FIELD_LABEL_MAX, MAX_CUSTOM_FIELDS, MAX_CUSTOM_SECTIONS, MAX_OPTIONS, OPTION_LABEL_MAX,
   SECTION_LABEL_MAX, TABLE_COLUMN_TYPES, typeChoicesFor,
@@ -105,7 +105,9 @@ export function buildLayout(def: ModuleDef, stored: Stored): ModuleLayoutDto {
     const locked = !!f.requiredLocked;
     const type = f.type;
     const section = table || fixedIds.has(f.section) ? f.section : o.section && formIds.has(o.section) ? o.section : f.section;
-    const options = type === "DROPDOWN" ? (Array.isArray(o.options) ? o.options : f.options ?? []) : [];
+    let options = type === "DROPDOWN" ? (Array.isArray(o.options) ? o.options : f.options ?? []) : [];
+    // a Project made from quotes of Goods and Services is "Product & Service": a saved list of Product / Service choices gets that option too
+    if (def.id === "project" && f.key === "productOrService" && !options.some(x => x.id === PROJECT_POS_BOTH.id)) options = [...options, PROJECT_POS_BOTH];
     const defaultable = !(type === "AUTO" || type === "LOOKUP" || type === "APPROVER" || type === "FILE" || f.readOnly);
     let defaultValue: string | null = defaultable ? (o.defaultValue !== undefined ? o.defaultValue : f.default ?? null) : f.readOnly ? f.default ?? null : null;
     if (type === "DROPDOWN" && defaultValue && !options.some(x => x.id === defaultValue)) defaultValue = null;
