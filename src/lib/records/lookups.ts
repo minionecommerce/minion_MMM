@@ -89,6 +89,16 @@ export async function searchServiceVendors(q: string): Promise<LookupItem[]> {
   return rows.map(v => ({ id: v.id, label: v.code, sub: [v.name, v.city].filter(Boolean).join(" · ") }));
 }
 
+// One Vendor dropdown for Pre-Payment / Payment Collection: Material and Service Vendors together in one V1, V2 ... series, newest
+// first. `data.kind` says which table the id belongs to, so the form can fill the right relation.
+export async function searchVendors(q: string): Promise<LookupItem[]> {
+  const [material, service] = await Promise.all([searchMaterialVendors(q), searchServiceVendors(q)]);
+  const seqOf = (i: LookupItem) => Number(i.label.replace(/\D/g, "")) || 0;
+  return [...material.map(i => ({ ...i, tag: "Material", data: { kind: "material" } })), ...service.map(i => ({ ...i, tag: "Service", data: { kind: "service" } }))]
+    .sort((a, b) => seqOf(b) - seqOf(a))
+    .slice(0, LIMIT);
+}
+
 // ---------------------------------------------------------------------------
 // Names for the ids a record holds (the people and records a record points to, even if they are inactive or deleted by now)
 // ---------------------------------------------------------------------------

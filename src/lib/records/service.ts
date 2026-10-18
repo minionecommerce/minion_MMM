@@ -53,7 +53,7 @@ export function abilitiesOf(ctx: AuthContext, moduleId: ModuleId): Abilities {
 }
 
 // ---------------------------------------------------------------------------
-// IDs: MV1, SV1, PPR1, PCR1 ... one atomic counter row per module, taken inside the transaction that saves the record
+// IDs: V1 (Material and Service Vendors share one series), PPR1, PCR1 ... one atomic counter row per series, taken inside the transaction that saves the record
 // ---------------------------------------------------------------------------
 export async function nextSeq(db: Db, key: string): Promise<number> {
   const rows = await db.$queryRaw<{ value: number }[]>`
@@ -396,6 +396,15 @@ async function checkInput(ctx: AuthContext, def: ModuleDef, layout: ModuleLayout
       kept.push(row);
     });
     out.tables[t.section] = kept;
+  }
+  // Pre-Payment / Payment Collection: one Vendor (the unified dropdown), which is a Material OR a Service Vendor. A record that already
+  // had both keeps saving as it is; only choosing a second one is refused.
+  if (def.id === "prePayment" || def.id === "paymentCollection") {
+    const now = (k: string) => (k in out.columns ? out.columns[k] : existing ? existing.row[k] : null) ?? null;
+    const was = (k: string) => (existing ? existing.row[k] : null) ?? null;
+    if (now("materialVendorId") && now("serviceVendorId") && (now("materialVendorId") !== was("materialVendorId") || now("serviceVendorId") !== was("serviceVendorId"))) {
+      issues.push(issue(["values", "serviceVendorId"], "Choose one vendor: a record cannot have both a Material Vendor and a Service Vendor"));
+    }
   }
   if (issues.length) throw new ZodError(issues);
 

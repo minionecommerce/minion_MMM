@@ -19,6 +19,7 @@ export const QUICK_ACTIONS: Def[] = [
   { id: "create_pcr", label: "Create PCR", href: "/payment-collections/new", icon: "pcr", hint: "New Payment Collection Record", needs: [["payments", "create"]] },
   { id: "create_task", label: "Create Task", href: "/tasks?create=1", icon: "task", hint: "Opens the Create Task form", needs: [["tasks", "create"]] },
   { id: "new_project", label: "New Project", href: "dialog:new-project", icon: "project", hint: "Pick a deal and convert it to a project", needs: [["deals", "edit"], ["projects", "create"]] },
+  { id: "add_vendor", label: "Add Vendor", href: "/vendors?create=1", icon: "vendor", hint: "Choose Material or Service, then fill the form", needs: [["vendors", "create"]] },
   { id: "add_material_vendor", label: "Add Material Vendor", href: "/material-vendors/new", icon: "vendor", hint: "New Material Vendor", needs: [["vendors", "create"]] },
   { id: "add_service_vendor", label: "Add Service Vendor", href: "/service-vendors/new", icon: "vendor", hint: "New Service Vendor", needs: [["vendors", "create"]] },
   { id: "add_user", label: "Add User", href: "/users/new", icon: "user", hint: "Create a user account", needs: [["users", "create"]] },

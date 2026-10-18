@@ -92,7 +92,11 @@ export default function RecordsListClient({ moduleId, layout, data, params, abil
   // ---- columns
   const idField = layout.fields.find(f => f.type === 'AUTO');
   const idLabel = idField?.label ?? def.idLabel;
-  const fields = layout.columns.map(k => layout.fields.find(f => f.key === k)).filter((f): f is LayoutField => !!f);
+  const allFields = layout.columns.map(k => layout.fields.find(f => f.key === k)).filter((f): f is LayoutField => !!f);
+  // Pre-Payment / Payment Collection: the Material Vendor and Service Vendor columns are one Vendor column (a record has one or the other)
+  const mergedVendor = (moduleId === 'prePayment' || moduleId === 'paymentCollection') && allFields.some(f => f.key === 'materialVendorId') && allFields.some(f => f.key === 'serviceVendorId');
+  const fields = mergedVendor ? allFields.filter(f => f.key !== 'serviceVendorId').map(f => (f.key === 'materialVendorId' ? { ...f, label: 'Vendor' } : f)) : allFields;
+  const cellOf = (row: { cells: Record<string, string> }, f: LayoutField) => (mergedVendor && f.key === 'materialVendorId' ? row.cells.materialVendorId || row.cells.serviceVendorId || '' : row.cells[f.key] ?? '');
   const noneItem = { value: 'none', label: '(Empty)' };
   const filterGroups: Record<string, FilterGroup[]> = {};
   const columns: (HeaderColumn & { id: string; field?: LayoutField })[] = [
@@ -102,7 +106,7 @@ export default function RecordsListClient({ moduleId, layout, data, params, abil
         const items = f.type === 'DROPDOWN' ? f.options.map(o => ({ value: o.id, label: o.label })) : users.map(u => ({ value: u.id, label: u.label }));
         filterGroups[f.key] = [{ key: f.key, label: f.label, items: f.isSystem ? [noneItem, ...items] : items, selected: params.filters[f.key] ?? [] }];
       }
-      return { id: f.key, field: f, label: f.label, sort: isSortable(f) ? f.key : undefined, filter: isFilterable(f) ? f.key : undefined, width: (WIDTH[f.type] ?? FALLBACK).cls };
+      return { id: f.key, field: f, label: f.label, sort: isSortable(f) && !(mergedVendor && f.key === 'materialVendorId') ? f.key : undefined, filter: isFilterable(f) ? f.key : undefined, width: (WIDTH[f.type] ?? FALLBACK).cls };
     }),
     { id: 'actions', label: 'Actions', width: 'w-[110px]' },
   ];
@@ -192,7 +196,7 @@ export default function RecordsListClient({ moduleId, layout, data, params, abil
                       <tr key={row.id} className="border-b border-gray-200 align-middle hover:bg-[#fafafa]" data-record={row.code}>
                         <td className="px-3 py-2.5 align-middle"><Link href={`${base}/${row.id}`} className="font-semibold text-[#1a56c4] hover:underline">{row.code}</Link></td>
                         {fields.map(f => (
-                          <td key={f.key} className="px-3 py-2.5 align-middle text-[14px] text-gray-800"><div className="max-w-[300px] truncate" title={row.cells[f.key]}>{cellText(f, row.cells[f.key] ?? '')}</div></td>
+                          <td key={f.key} className="px-3 py-2.5 align-middle text-[14px] text-gray-800"><div className="max-w-[300px] truncate" title={cellOf(row, f)}>{cellText(f, cellOf(row, f))}</div></td>
                         ))}
                         <td className="px-3 py-2.5 align-middle sticky right-0 z-10 bg-white shadow-[-6px_0_8px_-6px_rgba(0,0,0,0.15)]">
                           <RecordActions canEdit={abilities.edit} canDelete={abilities.delete} handlers={handlersFor(row.id)} />
@@ -219,7 +223,7 @@ export default function RecordsListClient({ moduleId, layout, data, params, abil
                       {fields.map(f => (
                         <div key={f.key} className="min-w-0">
                           <div className="text-[10px] font-semibold uppercase tracking-wide text-gray-500 mb-0.5">{f.label}</div>
-                          <div className="text-[14px] text-gray-800 break-words">{cellText(f, row.cells[f.key] ?? '')}</div>
+                          <div className="text-[14px] text-gray-800 break-words">{cellText(f, cellOf(row, f))}</div>
                         </div>
                       ))}
                     </div>

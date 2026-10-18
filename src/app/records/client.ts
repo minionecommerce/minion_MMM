@@ -26,7 +26,7 @@ export async function uploadRecordFile(slug: string, fieldKey: string, file: Fil
 
 export const discardRecordFile = (slug: string, id: string) => callApi(api(slug, `/uploads/${id}`), "DELETE").catch(() => {});
 
-export type LookupKind = "deals" | "materialVendors" | "serviceVendors" | "customers" | "projects" | "templates";
+export type LookupKind = "deals" | "vendors" | "materialVendors" | "serviceVendors" | "customers" | "projects" | "templates";
 // What a lookup field offers: deals, vendors, customers, projects. `extra` narrows it (customerId: only the deals / projects of that customer).
 export async function searchLookup(slug: string, kind: LookupKind, q: string, extra: Record<string, string> = {}): Promise<LookupItem[]> {
   const more = Object.entries(extra).map(([k, v]) => `&${k}=${encodeURIComponent(v)}`).join("");

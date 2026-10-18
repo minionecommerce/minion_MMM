@@ -63,7 +63,12 @@ export default function RecordView({ moduleId, layout, record, refs, abilities }
 
       <div className="px-4 sm:px-6 py-6 space-y-8 max-w-[1500px] mx-auto">
         {layout.sections.map(section => {
-          const fields = layout.fields.filter(f => f.section === section.id && f.enabled);
+          let fields = layout.fields.filter(f => f.section === section.id && f.enabled);
+          // Pre-Payment / Payment Collection: one Vendor line, the Material or the Service Vendor the record has
+          if ((moduleId === 'prePayment' || moduleId === 'paymentCollection') && fields.some(f => f.key === 'materialVendorId') && fields.some(f => f.key === 'serviceVendorId')) {
+            const keep = record.values.serviceVendorId && !record.values.materialVendorId ? 'serviceVendorId' : 'materialVendorId';
+            fields = fields.filter(f => f.key === keep || (f.key !== 'materialVendorId' && f.key !== 'serviceVendorId')).map(f => (f.key === keep ? { ...f, label: 'Vendor' } : f));
+          }
           if (fields.length === 0) return null;
           if (kinds.get(section.id) === 'TABLE') {
             const rows = record.rows[section.id] ?? [];
