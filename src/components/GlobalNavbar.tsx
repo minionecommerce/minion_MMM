@@ -2,13 +2,14 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Home, Briefcase, Target, LayoutGrid, TreePine, CheckCircle2, Users, UserCog, BookOpen, Gift, Library, Search, Bell, ChevronUp, LogOut, Menu, X, PanelLeftClose, KeyRound, ClipboardList, Handshake, FileText, Package, Boxes, Wrench, Wallet, HandCoins, CalendarCheck, type LucideIcon } from 'lucide-react';
+import { Home, Briefcase, Target, LayoutGrid, TreePine, CheckCircle2, Users, UserCog, BookOpen, Gift, Library, Search, Bell, ChevronUp, LogOut, Menu, X, PanelLeftClose, KeyRound, ClipboardList, Handshake, FileText, Package, Boxes, Wrench, Wallet, HandCoins, CalendarCheck, LayoutDashboard, type LucideIcon } from 'lucide-react';
 import { NAV_ITEMS, snapshotCanViewAny } from '@/lib/rbac/catalog';
 import { useSession, signOut } from 'next-auth/react';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 
 const NAV_ICONS: Record<string, LucideIcon> = {
   "/": Home,
+  "/my-dashboard": LayoutDashboard,
   "/my-work": Briefcase,
   "/leads": ClipboardList,
   "/deals": Handshake,

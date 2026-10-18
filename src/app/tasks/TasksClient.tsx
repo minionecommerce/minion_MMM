@@ -23,19 +23,26 @@ type Dialog =
 const typeLabel = (id: TaskTypeId) => TASK_TYPES.find(t => t.id === id)!.label;
 const viewMeta = (id: TaskViewId) => TASK_VIEWS.find(v => v.id === id)!;
 
-export default function TasksClient({ data, params, options, canCreate, currentUserName }: {
+export default function TasksClient({ data, params, options, canCreate, currentUserName, autoCreate = false }: {
   data: TaskListResult;
   params: TaskListParams;
   options: TaskOptions;
   canCreate: boolean;
   currentUserName: string;
+  autoCreate?: boolean; // opened from a dashboard Quick Action: the Create Task form is open already
 }) {
   const router = useRouter();
   const search = useSearchParams();
   const toast = useToast();
   const [pending, startTransition] = useTransition();
   const [q, setQ] = useState(params.q ?? '');
-  const [dialog, setDialog] = useState<Dialog>(null);
+  const [dialog, setDialog] = useState<Dialog>(autoCreate && canCreate ? { kind: 'create' } : null);
+  useEffect(() => {
+    if (!autoCreate) return;
+    const next = new URLSearchParams(window.location.search);
+    next.delete('create');
+    window.history.replaceState(null, '', `/tasks${next.toString() ? `?${next}` : ''}`); // so a refresh does not open it again
+  }, [autoCreate]);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
 

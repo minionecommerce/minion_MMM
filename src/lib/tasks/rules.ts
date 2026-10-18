@@ -99,7 +99,7 @@ export function taskVisibility(scope: TaskScope): Prisma.TaskWhereInput {
 const ownerSide = (scope: TaskScope): Prisma.TaskWhereInput => (scope.all ? {} : { assigneeId: { in: scope.people } });
 
 // The six views, from the legacy page's categorization, on top of the person scope
-function viewClause(view: TaskViewId, scope: TaskScope, now: Date): Prisma.TaskWhereInput {
+export function viewClause(view: TaskViewId, scope: TaskScope, now: Date): Prisma.TaskWhereInput {
   const active: Prisma.TaskWhereInput = { status: { notIn: COMPLETED_STATUSES } };
   switch (view) {
     case "completed":

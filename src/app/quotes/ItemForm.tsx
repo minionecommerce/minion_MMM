@@ -87,15 +87,16 @@ const numberBox = (value: string, onChange: (v: string) => void, id: string, lab
 // ---------------------------------------------------------------------------
 // The New Item / Edit Item form
 // ---------------------------------------------------------------------------
-export default function ItemForm({ item, initialName = '', taxes, onSaved, onCancel }: {
+export default function ItemForm({ item, initialName = '', initialKind = 'Goods', taxes, onSaved, onCancel }: {
   item?: ItemDetailDto | null;
   initialName?: string;
+  initialKind?: 'Goods' | 'Service'; // a new item starts as this kind (the Add Material / Add Service quick actions)
   taxes: TaxDef[];
   onSaved: (item: ItemDetailDto) => void;
   onCancel: () => void;
 }) {
   const toast = useToast();
-  const [f, setF] = useState<Form>(() => (item ? itemFormOf(item) : blankItemForm(initialName, defaultTaxId(taxes), interTaxFor(taxes, defaultTaxId(taxes)))));
+  const [f, setF] = useState<Form>(() => (item ? itemFormOf(item) : blankItemForm(initialName, defaultTaxId(taxes), interTaxFor(taxes, defaultTaxId(taxes)), initialKind)));
   const [pics, setPics] = useState<Pics>(() => ({ front: picsOf(item?.images.front ?? []), rear: picsOf(item?.images.rear ?? []), other: picsOf(item?.images.other ?? []) }));
   const [uploads, setUploads] = useState(0);
   const [errors, setErrors] = useState<Record<string, string>>({});

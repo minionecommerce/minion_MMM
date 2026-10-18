@@ -22,5 +22,6 @@ export default async function Page({ searchParams }: { searchParams: Promise<Rec
     dir: one('dir') === 'desc' ? 'desc' : 'asc',
   };
   const [data, settings] = await Promise.all([listItems(ctx, params), loadSettings()]);
-  return <ItemsClient data={data} params={params} taxes={settings.taxes} display={settings.display} abilities={quoteAbilities(ctx)} />;
+  const create = one('create');
+  return <ItemsClient data={data} params={params} taxes={settings.taxes} display={settings.display} abilities={quoteAbilities(ctx)} autoCreate={create === 'Goods' || create === 'Service' ? create : null} />;
 }

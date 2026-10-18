@@ -175,7 +175,7 @@ export function parseListParams(sp: Record<string, string | string[] | undefined
 }
 
 // The rules behind the Status column (see leadStatusText), used by its column filter and by the quick filter buttons
-function statusWhere(status: string): Prisma.LeadWhereInput | null {
+export function statusWhere(status: string): Prisma.LeadWhereInput | null {
   switch (status) {
     case "open": return { closedAt: null, leadFollowUps: { none: { completedAt: { not: null } } } };
     case "follow_up": return { closedAt: null, leadFollowUps: { some: { completedAt: { not: null } } } };

@@ -29,11 +29,13 @@ const query = (p: Params, patch: Partial<Params>) => {
   return s ? `?${s}` : '';
 };
 
-export default function ItemsClient({ data, params, taxes, display, abilities }: { data: Data; params: Params; taxes: TaxDef[]; display: DisplaySettings; abilities: QuoteAbilities }) {
+export default function ItemsClient({ data, params, taxes, display, abilities, autoCreate = null }: { data: Data; params: Params; taxes: TaxDef[]; display: DisplaySettings; abilities: QuoteAbilities; autoCreate?: 'Goods' | 'Service' | null }) {
   const router = useRouter();
   const toast = useToast();
   const [term, setTerm] = useState(params.q ?? '');
-  const [editing, setEditing] = useState<ItemDto | 'new' | null>(null);
+  const [editing, setEditing] = useState<ItemDto | 'new' | null>(autoCreate && abilities.create ? 'new' : null); // opened from a dashboard Quick Action
+  const [newKind, setNewKind] = useState<'Goods' | 'Service' | undefined>(autoCreate ?? undefined);
+  useEffect(() => { if (autoCreate) window.history.replaceState(null, '', '/items'); }, [autoCreate]); // so a refresh does not open it again
   const [removing, setRemoving] = useState<ItemDto | null>(null);
   const [importing, setImporting] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -167,7 +169,7 @@ export default function ItemsClient({ data, params, taxes, display, abilities }:
         </div>
       </div>
 
-      {editing && <ItemOverlay itemId={editing === 'new' ? null : editing.id} taxes={taxes} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); router.refresh(); }} />}
+      {editing && <ItemOverlay itemId={editing === 'new' ? null : editing.id} initialKind={editing === 'new' ? newKind : undefined} taxes={taxes} onClose={() => { setEditing(null); setNewKind(undefined); }} onSaved={() => { setEditing(null); setNewKind(undefined); router.refresh(); }} />}
       {importing && <ImportItems onClose={() => { setImporting(false); router.refresh(); }} />}
       {removing && (
         <Modal title="Delete item?" onClose={() => !busy && setRemoving(null)} busy={busy} width={440} footer={<><Button onClick={() => setRemoving(null)} disabled={busy}>Cancel</Button><Button kind="danger" onClick={remove} busy={busy}>Delete</Button></>}>

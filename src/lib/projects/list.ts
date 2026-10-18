@@ -109,7 +109,7 @@ const listSelect = {
 type ListRecord = Prisma.ProjectGetPayload<{ select: typeof listSelect }>;
 
 // Project Value and Collected Amount of a set of projects: the accepted quotes of each deal (less the Exclusions typed in the project) and its PCRs
-async function projectMoney(projects: { id: string; dealId: string | null }[]): Promise<Map<string, { value: number; collected: number }>> {
+export async function projectMoney(projects: { id: string; dealId: string | null }[]): Promise<Map<string, { value: number; collected: number }>> {
   const out = new Map<string, { value: number; collected: number }>();
   const dealIds = Array.from(new Set(projects.map(p => p.dealId).filter((x): x is string => !!x)));
   if (!dealIds.length) return out;

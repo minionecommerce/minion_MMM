@@ -4,6 +4,7 @@ import { getDealColumnOrder, getDealStatusField } from "@/lib/leads/layout";
 import { getFormOptions } from "@/lib/leads/queries";
 import { getLayout } from "@/lib/records/layout";
 import { isStorageConfigured } from "@/lib/leads/storage";
+import { convertFieldsOf } from "@/lib/projects/convert";
 import DealsClient from "./DealsClient";
 
 export const dynamic = "force-dynamic";
@@ -21,12 +22,7 @@ export default async function DealsPage({ searchParams }: { searchParams: Promis
     ctx.isSuperAdmin ? getDealStatusField() : Promise.resolve(null), // only the Super Admin edits the layout
     canConvert ? getLayout("project") : Promise.resolve(null), // the Convert to Project popup follows the Project layout (labels, mandatory, hidden)
   ]);
-  const convertFields = projectLayout
-    ? ["productOrService", "name", "siteLocation", "siteLocationLink", "startDate", "expectedEndDate", "priorCompletionDate"].flatMap(key => {
-        const f = projectLayout.fields.find(x => x.key === key);
-        return f ? [{ key, label: f.label, required: f.required, enabled: f.enabled, options: f.options }] : [];
-      })
-    : [];
+  const convertFields = projectLayout ? convertFieldsOf(projectLayout) : [];
 
   return (
     <DealsClient

@@ -87,6 +87,7 @@ export const ROUTE_MODULES: { prefix: string; modules: ModuleKey[] }[] = [
   { prefix: "/rewards", modules: ["rewards"] },
   { prefix: "/resources", modules: ["resources"] },
   { prefix: "/my-work", modules: ["my_work"] },
+  { prefix: "/my-dashboard", modules: ["dashboard", "my_work"] },
 ];
 
 export function modulesForPath(pathname: string): ModuleKey[] | null {
@@ -104,6 +105,7 @@ export function modulesForPath(pathname: string): ModuleKey[] | null {
 // Sidebar order; an item shows when the user can view any of its modules.
 export const NAV_ITEMS: { label: string; href: string; modules: ModuleKey[] }[] = [
   { label: "HOME", href: "/", modules: ["dashboard"] },
+  { label: "MY DASHBOARD", href: "/my-dashboard", modules: ["dashboard", "my_work"] },
   { label: "MY WORK", href: "/my-work", modules: ["my_work"] },
   { label: "LEADS", href: "/leads", modules: ["leads"] },
   { label: "DEALS", href: "/deals", modules: ["deals"] },

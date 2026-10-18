@@ -22,6 +22,14 @@ const issue = (key: string, message: string): ZodIssue => ({ code: "custom", pat
 // The popup's seven fields, checked against the Project layout: a field the Super Admin hid is not asked for, one made mandatory is
 export const CONVERT_FIELDS = ["productOrService", "name", "siteLocation", "siteLocationLink", "startDate", "expectedEndDate", "priorCompletionDate"] as const;
 
+// The popup's fields as the Project layout has them (name, mandatory, shown, choices): what the Convert to Project popup is built from
+export function convertFieldsOf(layout: { fields: LayoutField[] }) {
+  return CONVERT_FIELDS.flatMap(key => {
+    const f = layout.fields.find(x => x.key === key);
+    return f ? [{ key, label: f.label, required: f.required, enabled: f.enabled, options: f.options }] : [];
+  });
+}
+
 export function checkConvertInput(fields: LayoutField[], input: ConvertInput): Record<(typeof CONVERT_FIELDS)[number], string | null> {
   const issues: ZodIssue[] = [];
   const out = {} as Record<(typeof CONVERT_FIELDS)[number], string | null>;
