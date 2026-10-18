@@ -13,6 +13,7 @@ import { isId } from "@/lib/records/values";
 import { checkQuoteExclusion, daysBetween, materialCodeFor, selectedVendors, serviceCodeFor, type SelectionIn } from "./calc";
 import { audit, changes, dec, has, isObject, loadProject, lockProject, mergeCustom, need, sectionFields, splitValues, TX, type Db, type ProjectRecord } from "./common";
 import { getProjectDetail } from "./detail";
+import { acceptedQuotesWhere, linkedQuoteIds } from "./quotes";
 import type { ProjectDetail } from "./types";
 
 const issue = (key: string, message: string): ZodIssue => ({ code: "custom", path: ["values", key], message });
@@ -21,9 +22,9 @@ const MAX_BLOCKS = 100;
 const MAX_ROWS_PER_BLOCK = 200;
 
 // The items of the accepted quotes of the deal, in the order the page shows them
-async function acceptedItems(db: Db, dealId: string) {
+async function acceptedItems(db: Db, projectId: string, dealId: string) {
   const quotes = await db.quote.findMany({
-    where: { dealId, status: "Accepted", deletedAt: null },
+    where: acceptedQuotesWhere(dealId, await linkedQuoteIds(projectId, db)), // the quotes chosen in Convert to Project (all accepted ones for an older project)
     orderBy: [{ date: "asc" }, { createdAt: "asc" }],
     select: { id: true, quoteNumber: true, amount: true, lineItems: { orderBy: [{ sortOrder: "asc" }, { createdAt: "asc" }], select: { id: true, name: true, description: true } } },
   });
@@ -40,7 +41,7 @@ export async function updateQuoteLine(ctx: AuthContext, projectId: string, quote
   need(ctx, "edit");
   const project = await loadProject(projectId);
   if (!isId(quoteId)) throw new ServiceError(404, "Quote not found");
-  const quote = await prisma.quote.findFirst({ where: { id: quoteId, dealId: project.dealId, status: "Accepted", deletedAt: null }, select: { id: true, quoteNumber: true, amount: true } });
+  const quote = await prisma.quote.findFirst({ where: { id: quoteId, ...acceptedQuotesWhere(project.dealId, await linkedQuoteIds(project.id)) }, select: { id: true, quoteNumber: true, amount: true } });
   if (!quote) throw new ServiceError(409, "That quote is not an accepted quote of this deal any more. Reload the page.");
   const layout = await getLayout("project");
   const split = await splitValues(sectionFields(layout.fields, "valueInfo"), values);
@@ -90,7 +91,7 @@ export async function updateItemSelection(ctx: AuthContext, projectId: string, q
   need(ctx, "edit");
   const project = await loadProject(projectId);
   if (!isId(quoteItemId)) throw new ServiceError(404, "Item not found");
-  const { items } = await acceptedItems(prisma, project.dealId);
+  const { items } = await acceptedItems(prisma, project.id, project.dealId);
   const item = items.find(i => i.id === quoteItemId);
   if (!item) throw new ServiceError(409, "That item is not in an accepted quote of this deal any more. Reload the page.");
   const layout = await getLayout("project");
@@ -122,7 +123,7 @@ export async function updateItemSelection(ctx: AuthContext, projectId: string, q
 // One Involvement row per vendor chosen anywhere in Vendor Selection, numbered in the order the vendors first appear (MP1M1, MP1M2 ... / MP1S1 ...).
 // A row never changes its code. A vendor that is no longer chosen keeps its row when anything was entered on it or paid to it; an empty row goes.
 export async function syncVendorRows(tx: Prisma.TransactionClient, project: ProjectRecord, me: { userId: string }) {
-  const { items } = await acceptedItems(tx, project.dealId);
+  const { items } = await acceptedItems(tx, project.id, project.dealId);
   const order = items.map(i => i.id);
   const selections = await tx.projectItemSelection.findMany({ where: { projectId: project.id } });
   const chosen = selectedVendors(selections.map<SelectionIn>(s => ({ quoteItemId: s.quoteItemId, templateId: s.templateId, serviceVendorIds: s.serviceVendorIds, materialVendorIds: s.materialVendorIds })), order);
@@ -182,7 +183,7 @@ export async function updateWorkCoverage(ctx: AuthContext, projectId: string, te
   await prisma.$transaction(async tx => {
     await lockProject(tx, project.id);
     // the template must be one used in Vendor Selection now (those are the rows of the table)
-    const { items } = await acceptedItems(tx, project.dealId);
+    const { items } = await acceptedItems(tx, project.id, project.dealId);
     const used = await tx.projectItemSelection.count({ where: { projectId: project.id, templateId, quoteItemId: { in: items.map(i => i.id) } } });
     if (used === 0) throw new ServiceError(409, "That template is not used in Vendor Selection any more. Reload the page.");
     const before = await tx.projectWorkCoverage.findUnique({ where: { projectId_templateId: { projectId: project.id, templateId } } });
@@ -292,7 +293,7 @@ export async function setProcurementItem(ctx: AuthContext, projectId: string, bl
     const block = await ownBlock(tx, project.id, blockId);
     let label: string | null = null;
     if (quoteItemId) {
-      const { items } = await acceptedItems(tx, project.dealId);
+      const { items } = await acceptedItems(tx, project.id, project.dealId);
       const item = items.find(i => i.id === quoteItemId);
       if (!item) throw new ServiceError(409, "That item is not in an accepted quote of this deal. Reload the page.");
       label = item.name;

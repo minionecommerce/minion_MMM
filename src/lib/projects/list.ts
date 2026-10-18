@@ -10,6 +10,7 @@ import { displayValue, formatDay, stripControl } from "@/lib/records/values";
 import type { LayoutField, RecordRefs } from "@/lib/records/types";
 import { EXCLUDED_PAYMENT_STATUSES, toRupees, toPaise, valueInformation } from "./calc";
 import { dec, decOr0, dayOf, fieldValue, need } from "./common";
+import { linkedQuoteIdsFor } from "./quotes";
 import { hasPermission } from "@/lib/rbac/effective";
 import { PROJECT_DATE_TYPES, PROJECT_FILTER_KEYS, PROJECT_PAGE_SIZE, PROJECT_SORT_KEYS, type ProjectDateBy, type ProjectListParams, type ProjectSortKey } from "./constants";
 import type { ProjectListData, ProjectListRow } from "./types";
@@ -112,7 +113,7 @@ async function projectMoney(projects: { id: string; dealId: string | null }[]): 
   const out = new Map<string, { value: number; collected: number }>();
   const dealIds = Array.from(new Set(projects.map(p => p.dealId).filter((x): x is string => !!x)));
   if (!dealIds.length) return out;
-  const [quotes, lines, collected] = await Promise.all([
+  const [quotes, lines, collected, linked] = await Promise.all([
     prisma.quote.findMany({ where: { dealId: { in: dealIds }, status: "Accepted", deletedAt: null }, select: { id: true, dealId: true, amount: true } }),
     prisma.projectQuoteLine.findMany({ where: { projectId: { in: projects.map(p => p.id) } }, select: { projectId: true, quoteId: true, quoteExclusion: true } }),
     prisma.paymentCollection.groupBy({
@@ -120,11 +121,13 @@ async function projectMoney(projects: { id: string; dealId: string | null }[]): 
       where: { dealId: { in: dealIds }, deletedAt: null, OR: [{ paymentStatus: null }, { paymentStatus: { notIn: [...EXCLUDED_PAYMENT_STATUSES] } }] },
       _sum: { amount: true },
     }),
+    linkedQuoteIdsFor(projects.map(p => p.id)),
   ]);
   const exclusion = new Map(lines.map(l => [`${l.projectId}|${l.quoteId}`, dec(l.quoteExclusion)]));
   const sums = new Map(collected.map(c => [c.dealId, dec(c._sum.amount) ?? 0]));
   for (const p of projects) {
-    const mine = quotes.filter(q => q.dealId === p.dealId).map(q => ({ id: q.id, amount: decOr0(q.amount), exclusion: exclusion.get(`${p.id}|${q.id}`) ?? null }));
+    const chosen = linked.get(p.id); // the quotes chosen in Convert to Project; an older project has none and counts every accepted quote of its deal
+    const mine = quotes.filter(q => q.dealId === p.dealId && (!chosen || chosen.has(q.id))).map(q => ({ id: q.id, amount: decOr0(q.amount), exclusion: exclusion.get(`${p.id}|${q.id}`) ?? null }));
     out.set(p.id, { value: valueInformation(mine).total, collected: p.dealId ? sums.get(p.dealId) ?? 0 : 0 });
   }
   return out;

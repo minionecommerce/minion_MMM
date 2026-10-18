@@ -20,6 +20,7 @@ import {
   type SelectionIn,
 } from "./calc";
 import { dec, decOr0, fieldValue, loadProject, need } from "./common";
+import { acceptedQuotesWhere, linkedQuoteIds } from "./quotes";
 import type { ProjectAbilities, ProjectDetail, ProjectRow, VendorName } from "./types";
 
 export function projectAbilities(ctx: AuthContext): ProjectAbilities {
@@ -61,6 +62,7 @@ export async function getProjectDetail(ctx: AuthContext, id: string): Promise<Pr
   const project = await loadProject(id);
   const abilities = projectAbilities(ctx);
   const scope = abilities.tasksView ? await taskScope(ctx) : null;
+  const linked = await linkedQuoteIds(project.id); // the quotes chosen in Convert to Project; null for an older project
 
   const [layout, pprLayout, pcrLayout, deal, quotes, quoteLines, selections, coverage, materialRows, serviceRows, blocks, pprs, pcrs, projectFiles, tasks] = await Promise.all([
     getLayout("project"),
@@ -68,7 +70,7 @@ export async function getProjectDetail(ctx: AuthContext, id: string): Promise<Pr
     getLayout("paymentCollection"),
     prisma.deal.findUnique({ where: { id: project.dealId }, select: { dealNumber: true, title: true, lead: { select: { customerName: true } } } }),
     prisma.quote.findMany({
-      where: { dealId: project.dealId, status: "Accepted", deletedAt: null },
+      where: acceptedQuotesWhere(project.dealId, linked),
       orderBy: [{ date: "asc" }, { createdAt: "asc" }],
       select: {
         id: true, quoteNumber: true, date: true, reference: true, amount: true,
@@ -106,6 +108,12 @@ export async function getProjectDetail(ctx: AuthContext, id: string): Promise<Pr
   const templates: FieldOption[] = templateField?.options ?? [];
   const templateName = new Map(templates.map(o => [o.id, o.label]));
   const templateLabel = (tid: string | null | undefined) => (tid ? templateName.get(tid) ?? "" : "");
+
+  // ---- The quotes chosen in Convert to Project, each with its own value (only an accepted one counts in the Project Value)
+  const linkedQuotes: ProjectDetail["linkedQuotes"] = linked
+    ? (await prisma.quote.findMany({ where: { id: { in: linked }, dealId: project.dealId, deletedAt: null }, orderBy: [{ date: "asc" }, { createdAt: "asc" }], select: { id: true, quoteNumber: true, status: true, amount: true } }))
+        .map(q => ({ id: q.id, quoteNumber: q.quoteNumber ?? "", status: q.status, value: decOr0(q.amount), counted: q.status === "Accepted" }))
+    : null;
 
   // ---- Project Value Information
   const exclusionOf = new Map(quoteLines.map(l => [l.quoteId, dec(l.quoteExclusion)]));
@@ -317,6 +325,7 @@ export async function getProjectDetail(ctx: AuthContext, id: string): Promise<Pr
     values,
     money,
     valueInfo: { rows: valueRows, total: info.total },
+    linkedQuotes,
     selection,
     workCoverage: coverageRows,
     materialVendors: materialInvolvement,

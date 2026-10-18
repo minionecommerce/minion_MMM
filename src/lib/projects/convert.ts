@@ -13,6 +13,7 @@ import { PROJECT_STATUS_DEFAULT } from "@/lib/records/registry";
 import { cleanValue, isEmptyValue } from "@/lib/records/values";
 import type { LayoutField } from "@/lib/records/types";
 import { projectCodeFor } from "./calc";
+import { checkPickedQuotes } from "./quotes";
 import { dayDate, TX } from "./common";
 import type { ConvertInput } from "./types";
 
@@ -56,7 +57,9 @@ export async function convertDealToProject(ctx: AuthContext, dealId: string, inp
   if (deal.lead.closedAt) throw new ServiceError(409, `Deal ${deal.dealNumber} is closed. Revive it first, then convert it to a project.`);
 
   const layout = await getLayout("project");
-  const checked = checkConvertInput(layout.fields, input);
+  // The quotes chosen in the popup decide Product / Service: all goods = Product, all services = Service, both kinds = Product & Service
+  const picked = await checkPickedQuotes(prisma, deal.id, input.quoteIds);
+  const checked = checkConvertInput(layout.fields, picked.productOrService ? { ...input, productOrService: picked.productOrService } : input);
   if (!checked.name) throw new ZodError([issue("name", "Project Name is required")]);
   const productOrService = checked.productOrService ?? null;
 
@@ -98,10 +101,15 @@ export async function convertDealToProject(ctx: AuthContext, dealId: string, inp
         },
         select: { id: true },
       });
+      if (picked.ids.length) {
+        // re-read inside the transaction: a quote deleted or moved while the popup was open must not be linked
+        const again = await checkPickedQuotes(tx, deal.id, picked.ids);
+        await tx.projectQuote.createMany({ data: again.ids.map(quoteId => ({ projectId: project.id, quoteId })), skipDuplicates: true });
+      }
       await tx.deal.update({ where: { id: deal.id }, data: { projectConvertedAt: now } });
       const log = (entityType: string, entityId: string, action: string, newValue: Record<string, unknown>) =>
         tx.cRMAuditLog.create({ data: { entityType, entityId, action, performedById: ctx.employeeId, dealId: deal.id, newValue: JSON.stringify(newValue) } });
-      await log("Project", project.id, "Converted from Deal", { projectCode: code, dealNumber: deal.dealNumber, name: checked.name });
+      await log("Project", project.id, "Converted from Deal", { projectCode: code, dealNumber: deal.dealNumber, name: checked.name, quotes: picked.ids.length });
       await log("Deal", deal.id, "Converted to Project", { projectCode: code, projectId: project.id });
       return { projectId: project.id, code, dealNumber: deal.dealNumber ?? "" };
     }, TX);

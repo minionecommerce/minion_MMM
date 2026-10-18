@@ -184,3 +184,34 @@ export function durationText(planned: number | null, actual: number | null): str
   if (actual !== null) return days(actual);
   return "";
 }
+
+// ---------------------------------------------------------------------------
+// PRODUCT OR SERVICE of a project made from chosen quotes: Product when every item is Goods, Service when every item is a Service, and
+// "Product & Service" when the items are of both kinds (never "Product" just because a quote also has some goods)
+// ---------------------------------------------------------------------------
+export const POS_PRODUCT = "lo_pos_product";
+export const POS_SERVICE = "lo_pos_service";
+export const POS_BOTH = "lo_pos_both";
+export type ItemKind = "Goods" | "Service";
+
+export const itemKindOf = (lineKind: string | null | undefined, catalogKind: string | null | undefined): ItemKind =>
+  lineKind === "Service" || (!lineKind && catalogKind === "Service") ? "Service" : "Goods";
+
+// null when there are no items to judge from (the deal's own Product / Service is then kept)
+export function classifyKinds(kinds: ItemKind[]): typeof POS_PRODUCT | typeof POS_SERVICE | typeof POS_BOTH | null {
+  if (!kinds.length) return null;
+  const services = kinds.filter(k => k === "Service").length;
+  return services === 0 ? POS_PRODUCT : services === kinds.length ? POS_SERVICE : POS_BOTH;
+}
+
+// What a set of quotes adds to a Project Value: each quote once, only the accepted ones, less nothing (Exclusions are typed per quote later)
+export function acceptedTotal(quotes: { id: string; status: string; amount: number }[]): number {
+  const seen = new Set<string>();
+  let paise = 0;
+  for (const q of quotes) {
+    if (q.status !== "Accepted" || seen.has(q.id)) continue;
+    seen.add(q.id);
+    paise += toPaise(q.amount);
+  }
+  return toRupees(paise);
+}

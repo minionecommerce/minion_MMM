@@ -744,6 +744,7 @@ model Quote {
   lineItems    QuoteItem[]
   salesOrders  SalesOrder[]
   crmAuditLogs CRMAuditLog[]
+  projectLinks ProjectQuote[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -919,6 +920,7 @@ model Project {
   landscapes     Landscape[]
   quotes         Quote[]
 
+  quoteLinks        ProjectQuote[]
   quoteLines        ProjectQuoteLine[]
   itemSelections    ProjectItemSelection[]
   workCoverage      ProjectWorkCoverage[]
@@ -939,6 +941,20 @@ model Project {
 // everything else in a template (quote values, given amounts, expenses ...) is read live from the quotes, PPRs and PCRs of the deal.
 // Every table has "projectId" and "customFields" (the columns added in Project → Edit Page Layout).
 // ---------------------------------------------------------
+
+// Deals -> Convert to Project: the quotes of the deal that were chosen in the popup. A project that has rows here counts only these quotes (and only
+// the accepted ones) in its Project Value; an older project with no rows counts every accepted quote of its deal, as it always did.
+model ProjectQuote {
+  id        String   @id @default(cuid())
+  projectId String
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  quoteId   String
+  quote     Quote    @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([projectId, quoteId])
+  @@index([quoteId])
+}
 
 // PROJECT VALUE INFORMATION: the Exclusions typed for one accepted quote (the quote itself is read live)
 model ProjectQuoteLine {

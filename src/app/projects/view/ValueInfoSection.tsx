@@ -47,6 +47,20 @@ export default function ValueInfoSection({ section }: { section: LayoutSection }
         <Info className="mt-0.5 h-4 w-4 shrink-0 text-[#2563eb]" aria-hidden />
         <p>Only accepted quotes are listed here. The total quote value is used as the Project Value.</p>
       </div>
+      {detail.linkedQuotes && (
+        <div className="mt-3 rounded-lg border border-gray-200 px-4 py-3 text-[13px] text-gray-700">
+          <p className="font-semibold text-[#333]">Quotes chosen when this deal was converted</p>
+          <ul className="mt-1.5 flex flex-wrap gap-x-6 gap-y-1">
+            {detail.linkedQuotes.map(q => (
+              <li key={q.id} className="whitespace-nowrap">
+                <Link href={`/quotes/${q.id}`} className="text-[#1a56c4] hover:underline">{q.quoteNumber || 'Quote'}</Link>
+                {' · '}{rupees(q.value)}{' · '}
+                <span className={q.counted ? 'text-[#16a34a]' : 'text-gray-500'}>{q.counted ? 'Counted' : `${q.status} (not counted)`}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
     </Section>
   );
 }

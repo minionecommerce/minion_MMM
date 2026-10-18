@@ -15,6 +15,7 @@ export const convertSchema = z.object({
   startDate: optionalDay,
   expectedEndDate: optionalDay,
   priorCompletionDate: optionalDay,
+  quoteIds: z.array(id).max(100).optional().default([]),
 }).strict();
 
 // A page sends the fields it changed, by layout field key; the server checks each one against the layout

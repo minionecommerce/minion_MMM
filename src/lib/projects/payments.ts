@@ -13,6 +13,7 @@ import type { LayoutField, ModuleLayoutDto } from "@/lib/records/types";
 import { countsAsMoney, templatesOfVendor, totalOf, type SelectionIn } from "./calc";
 import { dec, loadProject, need } from "./common";
 import { getProjectDetail } from "./detail";
+import { acceptedQuotesWhere, linkedQuoteIds } from "./quotes";
 import type { ProjectDetail, VendorPayment } from "./types";
 
 const AMOUNT_MAX = 9_999_999_999.99;
@@ -61,11 +62,12 @@ export async function createServiceVendorPayment(ctx: AuthContext, projectId: st
   if (!vendor) throw new ServiceError(409, "That Service Vendor was deleted, so nothing can be paid to it from here.");
 
   // The template: the one this vendor was chosen for (the first, when it was chosen for items of several), unless the popup chose another
+  const linked = await linkedQuoteIds(project.id);
   const [projectLayout, pprLayout, selections, items] = await Promise.all([
     getLayout("project"),
     getLayout("prePayment"),
     prisma.projectItemSelection.findMany({ where: { projectId: project.id } }),
-    prisma.quoteItem.findMany({ where: { quote: { dealId: project.dealId, status: "Accepted", deletedAt: null } }, orderBy: [{ quote: { date: "asc" } }, { sortOrder: "asc" }], select: { id: true } }),
+    prisma.quoteItem.findMany({ where: { quote: acceptedQuotesWhere(project.dealId, linked) }, orderBy: [{ quote: { date: "asc" } }, { sortOrder: "asc" }], select: { id: true } }),
   ]);
   const templateField = projectLayout.fields.find(f => f.key === "templateId");
   const selectionsIn: SelectionIn[] = selections.map(s => ({ quoteItemId: s.quoteItemId, templateId: s.templateId, serviceVendorIds: s.serviceVendorIds, materialVendorIds: s.materialVendorIds }));

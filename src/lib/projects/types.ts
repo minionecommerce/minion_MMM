@@ -36,6 +36,8 @@ export type ProjectDetail = {
   values: Record<string, unknown>;
   money: FinancialsOut;
   valueInfo: { rows: ProjectRow[]; total: number }; // an accepted quote per row; the total is the Project Value
+  // the quotes chosen in Convert to Project, each with its own value (only an accepted one counts in the Project Value); null for an older project that has none chosen
+  linkedQuotes: { id: string; quoteNumber: string; status: string; value: number; counted: boolean }[] | null;
   selection: { groups: { quoteId: string; quoteNumber: string; rows: ProjectRow[] }[] }; // the items of each accepted quote
   workCoverage: ProjectRow[];
   materialVendors: ProjectRow[];
@@ -109,6 +111,14 @@ export type ConvertInput = {
   startDate: string | null;
   expectedEndDate: string | null;
   priorCompletionDate: string | null;
+  quoteIds: string[]; // the quotes of the deal chosen in the popup (none: every accepted quote of the deal counts)
+};
+
+// A quote of the deal as the Convert to Project popup shows it (the list and the information popup)
+export type DealQuoteItem = { id: string; name: string; description: string; quantity: number; unit: string; rate: number; amount: number; kind: "Goods" | "Service" };
+export type DealQuote = {
+  id: string; quoteNumber: string; date: string; reference: string; subject: string; status: string;
+  value: number; subTotal: number | null; taxTotal: number | null; items: DealQuoteItem[];
 };
 
 export type { FileDto };
