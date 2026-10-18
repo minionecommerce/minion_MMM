@@ -2,7 +2,7 @@
 
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Home, Briefcase, Target, LayoutGrid, TreePine, CheckCircle2, Users, UserCog, BookOpen, Gift, Library, Search, Bell, ChevronUp, LogOut, Menu, X, PanelLeftClose, KeyRound, ClipboardList, Handshake, FileText, Package, Boxes, Wrench, Wallet, HandCoins, CalendarCheck, LayoutDashboard, type LucideIcon } from 'lucide-react';
+import { Home, Briefcase, Target, LayoutGrid, TreePine, CheckCircle2, Users, UserCog, BookOpen, Gift, Library, Search, Bell, ChevronUp, LogOut, Menu, X, PanelLeftClose, KeyRound, ClipboardList, Handshake, FileText, Package, Boxes, Wallet, HandCoins, CalendarCheck, LayoutDashboard, type LucideIcon } from 'lucide-react';
 import { NAV_ITEMS, snapshotCanViewAny } from '@/lib/rbac/catalog';
 import { useSession, signOut } from 'next-auth/react';
 import { useEffect, useState, useSyncExternalStore } from 'react';
@@ -15,8 +15,7 @@ const NAV_ICONS: Record<string, LucideIcon> = {
   "/deals": Handshake,
   "/quotes": FileText,
   "/items": Package,
-  "/material-vendors": Boxes,
-  "/service-vendors": Wrench,
+  "/vendors": Boxes,
   "/pre-payments": Wallet,
   "/payment-collections": HandCoins,
   "/attendance": CalendarCheck,
@@ -124,7 +123,7 @@ export default function GlobalNavbar() {
   }, [sessionInvalid, router]);
 
   // The page a customer opens with a quote's share link and the print page of a quote have no navigator
-  if (pathname === '/login' || pathname === '/unauthorized' || pathname === '/forgot-password' || pathname === '/account/change-password' || pathname?.startsWith('/q/') || /^\/quotes\/[^/]+\/print$/.test(pathname ?? '')) {
+  if (pathname === '/login' || pathname === '/unauthorized' || pathname === '/forgot-password' || pathname === '/account/change-password' || pathname?.startsWith('/q/') || pathname?.startsWith('/vendor-embed/') || /^\/quotes\/[^/]+\/print$/.test(pathname ?? '')) {
     return null;
   }
 

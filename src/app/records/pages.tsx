@@ -32,7 +32,7 @@ export async function RecordsListPage(moduleId: ModuleId, searchParams: SearchPa
   return <RecordsListClient moduleId={moduleId} layout={layout} data={data} params={params} abilities={abilitiesOf(ctx, moduleId)} users={users} />;
 }
 
-export async function RecordFormPage(moduleId: ModuleId, mode: "create" | "edit", id?: string, projectId?: string) {
+export async function RecordFormPage(moduleId: ModuleId, mode: "create" | "edit", id?: string, projectId?: string, popup?: boolean) {
   const def = MODULES[moduleId];
   const ctx = await requirePageAccess([def.permission], mode === "create" ? "create" : "edit");
   const layout = await getLayout(moduleId);
@@ -69,6 +69,8 @@ export async function RecordFormPage(moduleId: ModuleId, mode: "create" | "edit"
         canLayout={ctx.isSuperAdmin}
         nextCode={nextCode}
         fromProject={fromProject}
+        canAddVendor={(moduleId === "prePayment" || moduleId === "paymentCollection") && hasPermission(ctx.permissions, "vendors", "create")}
+        popup={popup && (moduleId === "materialVendor" || moduleId === "serviceVendor")}
       />
     </div>
   );

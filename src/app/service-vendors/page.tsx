@@ -1,8 +1,8 @@
-import { RecordsListPage } from "@/app/records/pages";
+import { redirect } from "next/navigation";
 
 export const dynamic = "force-dynamic";
 
-// Service Vendor: the list page. Everything it shows comes from the module's Edit Page Layout (see src/app/records).
-export default function Page({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  return RecordsListPage("serviceVendor", searchParams);
+// The Material and Service Vendor lists are one list now: Vendors, filtered by Vendor Type. The old address keeps working.
+export default function Page() {
+  redirect("/vendors?type=service");
 }

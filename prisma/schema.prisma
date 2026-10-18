@@ -1331,8 +1331,9 @@ model ModuleFile {
 
 model MaterialVendor {
   id   String @id @default(cuid())
-  seq  Int    @unique // 1, 2, 3, ...
-  code String @unique // MV1, MV2, ...
+  seq  Int    @unique // shared with Service Vendors: one series V1, V2, V3 ... (Counter "vendor")
+  code String @unique // V1, V2, ...
+  legacyCode String? // the ID it had before the unified series (MV1, MV2, ...)
 
   companyName    String
   phone1         String?
@@ -1395,8 +1396,9 @@ model MaterialVendorPrice {
 
 model ServiceVendor {
   id   String @id @default(cuid())
-  seq  Int    @unique // 1, 2, 3, ...
-  code String @unique // SV1, SV2, ...
+  seq  Int    @unique // shared with Material Vendors: one series V1, V2, V3 ... (Counter "vendor")
+  code String @unique // V1, V2, ...
+  legacyCode String? // the ID it had before the unified series (SV1, SV2, ...)
 
   name             String // Service Vendor Name
   nickName         String?

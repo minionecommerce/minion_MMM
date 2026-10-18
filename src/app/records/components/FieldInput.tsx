@@ -23,7 +23,7 @@ export type FieldCtx = {
 };
 
 const LOOKUP_KIND: Record<string, LookupKind> = { deal: 'deals', materialVendor: 'materialVendors', serviceVendor: 'serviceVendors', customer: 'customers', project: 'projects', template: 'templates' };
-const LOOKUP_EMPTY: Record<LookupKind, string> = { deals: 'No deals found', materialVendors: 'No vendors found', serviceVendors: 'No vendors found', customers: 'No customers found', projects: 'No projects found', templates: 'No templates found' };
+const LOOKUP_EMPTY: Record<LookupKind, string> = { deals: 'No deals found', vendors: 'No vendors found', materialVendors: 'No vendors found', serviceVendors: 'No vendors found', customers: 'No customers found', projects: 'No projects found', templates: 'No templates found' };
 
 export const controlClass = (invalid: boolean, required: boolean, extra = '') =>
   `w-full h-[38px] border rounded px-3 text-[14px] text-gray-900 bg-white focus:outline-none disabled:bg-gray-100 disabled:text-gray-500 ${invalid ? 'border-red-500' : 'border-gray-300 focus:border-[#f5b800]'} ${required ? 'border-l-[3px] border-l-[#e5484d]' : ''} ${extra}`;

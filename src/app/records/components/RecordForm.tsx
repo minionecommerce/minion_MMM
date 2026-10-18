@@ -13,6 +13,7 @@ import { LayoutButton } from '../layout-editor/LayoutEditor';
 import { api, initialValue, isBlankValue, toFormValue, toPayloadValue, type FormValues } from '../client';
 import FieldInput, { type FieldCtx } from './FieldInput';
 import TableSection, { newRow, type RowState } from './TableSection';
+import VendorField, { type VendorCreated } from './VendorField';
 
 type Props = {
   moduleId: ModuleId;
@@ -28,6 +29,8 @@ type Props = {
   nextCode: string;
   // Create PPR / Create PCR inside a project: the deal is the project's, shown and not changeable; Save goes to the project and comes back to it
   fromProject?: { id: string; code: string; dealId: string; dealLabel: string };
+  canAddVendor?: boolean; // Pre-Payment / Payment Collection: the Add Vendor button next to the Vendor dropdown
+  popup?: boolean; // a vendor form shown inside the Add Vendor window of a Pre-Payment / Payment Collection form: saving tells that page instead of leaving this one
 };
 
 export function FieldRow({ f, children, error, htmlId }: { f: LayoutField; children: React.ReactNode; error?: string; htmlId: string }) {
@@ -55,15 +58,20 @@ export function TwoColumns<T>({ items, render }: { items: T[]; render: (item: T)
   );
 }
 
-export default function RecordForm({ moduleId, mode, layout, record, refs, users, approvers, me, canApprove, canLayout, nextCode, fromProject }: Props) {
+export default function RecordForm({ moduleId, mode, layout, record, refs, users, approvers, me, canApprove, canLayout, nextCode, fromProject, canAddVendor, popup }: Props) {
   const router = useRouter();
   const toast = useToast();
   const def = MODULES[moduleId];
-  const backHref = fromProject ? `/projects/${fromProject.id}?tab=payments` : `/${def.slug}`; // Create PCR / Create PPR come from the Payments tab
+  const isVendor = moduleId === 'materialVendor' || moduleId === 'serviceVendor';
+  const backHref = fromProject ? `/projects/${fromProject.id}?tab=payments` : isVendor ? '/vendors' : `/${def.slug}`; // Create PCR / Create PPR come from the Payments tab
   const dealLocked = (f: LayoutField) => !!fromProject && f.key === 'dealId' && f.type === 'LOOKUP';
+  // Pre-Payment / Payment Collection: the Material Vendor and Service Vendor fields are one Vendor dropdown (the two relations stay on the record)
+  const unifiedVendor = (moduleId === 'prePayment' || moduleId === 'paymentCollection') && layout.fields.some(f => f.key === 'materialVendorId' && f.enabled) && layout.fields.some(f => f.key === 'serviceVendorId' && f.enabled);
+  const vendorKeys = ['materialVendorId', 'serviceVendorId'];
   const kinds = useMemo(() => new Map(layout.sections.map(s => [s.id, s.kind])), [layout.sections]);
   const formFields = layout.fields.filter(f => kinds.get(f.section) === 'FORM');
   const tableSections = layout.sections.filter(s => s.kind === 'TABLE');
+  const vendorField = { ...layout.fields.find(f => f.key === 'materialVendorId')!, label: 'Vendor', required: layout.fields.some(f => vendorKeys.includes(f.key) && f.required && f.enabled) } as LayoutField;
   const colsOf = (sectionId: string) => layout.fields.filter(f => f.section === sectionId && f.enabled);
   const start = (f: LayoutField) => initialValue(f, me, nextCode);
 
@@ -123,8 +131,9 @@ export default function RecordForm({ moduleId, mode, layout, record, refs, users
       const pv = toPayloadValue(f, valueOf(f));
       const res = cleanValue(f, pv);
       if ('error' in res) found[`values.${f.key}`] = res.error;
-      else if (f.required && f.type !== 'APPROVER' && (isBlankValue(f, valueOf(f)))) found[`values.${f.key}`] = `${f.label} is required`;
+      else if (f.required && f.type !== 'APPROVER' && !(unifiedVendor && vendorKeys.includes(f.key)) && (isBlankValue(f, valueOf(f)))) found[`values.${f.key}`] = `${f.label} is required`;
     }
+    if (unifiedVendor && vendorField.required && !valueOf(vendorField) && !values.serviceVendorId) found['values.materialVendorId'] = 'Vendor is required';
     for (const s of tableSections) {
       const cols = colsOf(s.id);
       for (const row of rows[s.id] ?? []) {
@@ -180,9 +189,15 @@ export default function RecordForm({ moduleId, mode, layout, record, refs, users
     try {
       const body = { values: payloadValues, rows: payloadRows };
       const res = mode === 'create'
-        ? await callApi<{ code: string }>(fromProject ? `/api/projects/${fromProject.id}/records/${def.slug}` : api(def.slug), 'POST', body)
+        ? await callApi<{ code: string; id?: string }>(fromProject ? `/api/projects/${fromProject.id}/records/${def.slug}` : api(def.slug), 'POST', body)
         : await callApi<{ code: string }>(api(def.slug, `/${record!.id}`), 'PUT', body);
       toast.success(mode === 'create' ? `${res.code} created` : `${res.code} saved`);
+      if (popup && window.parent !== window) {
+        const nameKey = def.nameKey;
+        const created: VendorCreated = { type: 'vendor-created', kind: moduleId === 'serviceVendor' ? 'service' : 'material', id: (res as { id?: string }).id ?? '', code: res.code, name: String(payloadValues[nameKey] ?? '') };
+        window.parent.postMessage(created, window.location.origin);
+        return;
+      }
       router.push(backHref); // inside a project: back to the project, which now shows the new record
       router.refresh();
     } catch (err) {
@@ -207,13 +222,21 @@ export default function RecordForm({ moduleId, mode, layout, record, refs, users
   return (
     <div className="min-h-screen flex flex-col bg-white">
       <div className="px-4 sm:px-6 pt-6 pb-4 border-b border-gray-200 flex flex-wrap items-center gap-3">
-        <Link href={backHref} aria-label={fromProject ? `Back to project ${fromProject.code}` : `Back to ${def.plural}`} className="w-9 h-9 rounded-full border border-gray-300 hover:bg-gray-100 flex items-center justify-center text-gray-700"><ArrowLeft className="w-4 h-4" /></Link>
+        {!popup && <Link href={backHref} aria-label={fromProject ? `Back to project ${fromProject.code}` : `Back to ${def.plural}`} className="w-9 h-9 rounded-full border border-gray-300 hover:bg-gray-100 flex items-center justify-center text-gray-700"><ArrowLeft className="w-4 h-4" /></Link>}
         <div className="min-w-0">
           <h1 className="text-[22px] sm:text-[26px] font-semibold text-[#222] leading-tight">{title}</h1>
           {mode === 'edit' && <p className="text-[13px] text-gray-500">{def.label}</p>}
           {fromProject && <p className="text-[13px] text-gray-500">For project {fromProject.code} · the deal is the project&apos;s and cannot be changed here</p>}
         </div>
-        {canLayout && <div className="ml-auto"><LayoutButton moduleId={moduleId} layout={layout} variant="text" /></div>}
+        {isVendor && mode === 'create' && (
+          <div role="group" aria-label="Vendor Type" className="ml-auto sm:ml-4 inline-flex rounded-md border border-gray-300 overflow-hidden text-[14px]">
+            {(['materialVendor', 'serviceVendor'] as const).map(m => (
+              <button key={m} type="button" aria-pressed={moduleId === m} onClick={() => { if (m !== moduleId) router.replace(popup ? `/vendor-embed/${m === 'materialVendor' ? 'material' : 'service'}` : `/${MODULES[m].slug}/new`); }}
+                className={`px-4 h-[36px] font-medium ${moduleId === m ? 'bg-[#f5b800] text-black' : 'bg-white text-gray-700 hover:bg-gray-100'}`}>{m === 'materialVendor' ? 'Material' : 'Service'}</button>
+            ))}
+          </div>
+        )}
+        {canLayout && !popup && <div className="ml-auto"><LayoutButton moduleId={moduleId} layout={layout} variant="text" /></div>}
       </div>
 
       <form onSubmit={submit} noValidate className="flex-1 flex flex-col">
@@ -235,7 +258,7 @@ export default function RecordForm({ moduleId, mode, layout, record, refs, users
                 </section>
               );
             }
-            const fields = formFields.filter(f => f.section === section.id && f.enabled);
+            const fields = formFields.filter(f => f.section === section.id && f.enabled && !(unifiedVendor && f.key === 'serviceVendorId'));
             if (fields.length === 0) return null;
             return (
               <section key={section.id} aria-labelledby={`sec-${section.id}`}>
@@ -243,8 +266,11 @@ export default function RecordForm({ moduleId, mode, layout, record, refs, users
                 <TwoColumns
                   items={fields}
                   render={f => (
-                    <FieldRow key={f.key} f={f} htmlId={`f-${f.key}`} error={errors[`values.${f.key}`]}>
-                      {dealLocked(f) ? (
+                    <FieldRow key={f.key} f={unifiedVendor && f.key === 'materialVendorId' ? vendorField : f} htmlId={`f-${f.key}`} error={errors[`values.${f.key}`]}>
+                      {unifiedVendor && f.key === 'materialVendorId' ? (
+                        <VendorField label="Vendor" required={vendorField.required} materialId={String(valueOf(f) ?? '')} serviceId={String(values.serviceVendorId ?? '')} htmlId={`f-${f.key}`} ctx={ctx} invalid={!!errors[`values.${f.key}`]} canAdd={!!canAddVendor}
+                          onChange={next => { setValue('materialVendorId', next.materialVendorId); setValue('serviceVendorId', next.serviceVendorId); }} />
+                      ) : dealLocked(f) ? (
                         <div id={`f-${f.key}`} data-locked-deal className="w-full h-[38px] border border-gray-200 rounded px-3 bg-gray-100 text-[14px] text-gray-700 flex items-center justify-between gap-2">
                           <span className="truncate">{fromProject!.dealLabel}</span><Lock className="w-4 h-4 text-gray-400 shrink-0" aria-label="Locked" />
                         </div>
@@ -261,7 +287,11 @@ export default function RecordForm({ moduleId, mode, layout, record, refs, users
 
         <div className="sticky bottom-0 z-20 bg-white border-t border-gray-200 px-4 sm:px-6 py-3 flex items-center justify-end gap-3">
           {uploads > 0 && <span className="mr-auto text-[13px] text-gray-500 inline-flex items-center gap-2"><Loader2 className="w-4 h-4 animate-spin" /> Uploading files…</span>}
-          <Link href={backHref} className="px-5 h-[40px] rounded-md bg-gray-200 hover:bg-gray-300 text-gray-800 text-[14px] font-medium inline-flex items-center">Cancel</Link>
+          {popup ? (
+            <button type="button" onClick={() => window.parent.postMessage({ type: 'vendor-cancelled' }, window.location.origin)} className="px-5 h-[40px] rounded-md bg-gray-200 hover:bg-gray-300 text-gray-800 text-[14px] font-medium inline-flex items-center">Cancel</button>
+          ) : (
+            <Link href={backHref} className="px-5 h-[40px] rounded-md bg-gray-200 hover:bg-gray-300 text-gray-800 text-[14px] font-medium inline-flex items-center">Cancel</Link>
+          )}
           <button type="submit" disabled={saving || uploads > 0} className="px-7 h-[40px] rounded-md bg-black hover:bg-[#222] text-white text-[14px] font-medium disabled:opacity-60 inline-flex items-center gap-2">
             {saving && <Loader2 className="w-4 h-4 animate-spin" />}{saving ? 'Saving…' : 'Save'}
           </button>
